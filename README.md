@@ -90,7 +90,7 @@ tw connect \
   --rendezvous wss://[relay.yourcompany.com/connect](https://relay.yourcompany.com/connect) \
   --service mri-scanner-01 \
   --map 11112:104
-
+```
 3. Consumer (The Destination)
 On the network where you need the data
 ```bash
