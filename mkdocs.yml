@@ -1,10 +1,10 @@
 site_name: Tunnel Whisperer
-site_url: https://tunnelwhisperer.github.io/tw
+site_url: https://tunnel-whisperer.github.io/Tunnel-Whisperer/
 site_description: >-
   Surgical, resilient connectivity for restrictive enterprise environments.
   Port-to-port bridges over HTTPS that traverse firewalls, NAT, and DPI.
-repo_url: https://github.com/tunnelwhisperer/tw
-repo_name: tunnelwhisperer/tw
+repo_url: https://github.com/Tunnel-Whisperer/Tunnel-Whisperer
+repo_name: Tunnel-Whisperer/Tunnel-Whisperer
 edit_uri: edit/main/docs/
 
 theme:
@@ -74,7 +74,7 @@ markdown_extensions:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/tunnelwhisperer/tw
+      link: https://github.com/Tunnel-Whisperer/Tunnel-Whisperer
 
 nav:
   - Home: index.md

@@ -2,12 +2,12 @@
 
 **Surgical, resilient connectivity for restrictive enterprise environments.**
 
-[![Status](https://img.shields.io/badge/Status-Pre--Alpha-orange)](https://github.com/yourusername/tunnel-whisperer)
+[![Status](https://img.shields.io/badge/Status-Alpha-yellow)](https://github.com/Tunnel-Whisperer/Tunnel-Whisperer)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
 Tunnel Whisperer creates **resilient, application-layer bridges** for specific ports across separated private networks. It encapsulates traffic in standard HTTPS to traverse firewalls, NAT, and Deep Packet Inspection (DPI).
 
-> **[Full Documentation](https://tunnelwhisperer.github.io/tw)** — getting started, guides, architecture, API reference, and more.
+> **[Full Documentation](https://tunnel-whisperer.github.io/Tunnel-Whisperer)** — getting started, guides, architecture, API reference, and more.
 
 ---
 
@@ -65,7 +65,7 @@ Client Network                   Public Cloud                    Server Network
 - Per-user port lockdown via `permitopen` in `authorized_keys`
 - Automatic reconnection with exponential backoff (2s → 30s max)
 
-> See [Architecture Documentation](https://tunnelwhisperer.github.io/tw/architecture/) for sequence diagrams, component views, and deployment details.
+> See [Architecture Documentation](https://tunnel-whisperer.github.io/Tunnel-Whisperer/architecture/) for sequence diagrams, component views, and deployment details.
 
 ---
 
@@ -89,7 +89,7 @@ tw connect                # connect using config from server admin
 tw dashboard              # manage everything from a browser
 ```
 
-> See [Getting Started](https://tunnelwhisperer.github.io/tw/getting-started/) for the full walkthrough.
+> See [Getting Started](https://tunnel-whisperer.github.io/Tunnel-Whisperer/getting-started/) for the full walkthrough.
 
 ---
 
@@ -111,7 +111,7 @@ tw dashboard              # manage everything from a browser
 | `tw destroy relay-server` | Tear down relay infrastructure |
 | `tw proxy [set\|clear]` | Manage SOCKS5/HTTP proxy for tunnel traffic |
 
-> See [CLI Reference](https://tunnelwhisperer.github.io/tw/reference/cli/) for details and flags.
+> See [CLI Reference](https://tunnel-whisperer.github.io/Tunnel-Whisperer/reference/cli/) for details and flags.
 
 ---
 
@@ -128,7 +128,7 @@ tw dashboard              # manage everything from a browser
 - **Least privilege** — each user can only forward to explicitly allowed ports
 - **Dynamic keys** — add/revoke users without restarting the server
 
-> See [Security Documentation](https://tunnelwhisperer.github.io/tw/security/) for encryption details, access control, and compliance properties.
+> See [Security Documentation](https://tunnel-whisperer.github.io/Tunnel-Whisperer/security/) for encryption details, access control, and compliance properties.
 
 ---
 
