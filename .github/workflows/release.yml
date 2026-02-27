@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build Linux binary
+        run: |
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o tw ./cmd/tw
+
+      - name: Build Windows binary
+        run: |
+          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o tw.exe ./cmd/tw
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get previous tag (if any)
+          PREV_TAG=$(git tag --sort=-creatordate | grep -v "^${GITHUB_REF_NAME}$" | head -1)
+
+          if [ -z "$PREV_TAG" ]; then
+            # First release — use all commits
+            RANGE="HEAD"
+          else
+            RANGE="${PREV_TAG}..HEAD"
+          fi
+
+          # Generate changelog grouped by category
+          {
+            echo "## What's Changed"
+            echo ""
+
+            # Collect commits and categorize
+            git log "$RANGE" --pretty=format:"%s" --no-merges | while IFS= read -r msg; do
+              # Skip generic messages
+              case "$msg" in
+                v1|"Merge "*) continue ;;
+              esac
+              echo "- $msg"
+            done
+
+            echo ""
+            echo "---"
+            echo ""
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/commits/${GITHUB_REF_NAME}"
+          } > CHANGELOG.md
+
+          cat CHANGELOG.md
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: CHANGELOG.md
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+          files: |
+            tw
+            tw.exe
