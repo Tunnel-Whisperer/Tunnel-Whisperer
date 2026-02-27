@@ -1,0 +1,119 @@
+#cloud-config
+
+users:
+  - default
+  - name: {{.SSHUser}}
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - {{.PublicKey}}
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - debian-keyring
+  - debian-archive-keyring
+  - apt-transport-https
+  - curl
+  - ufw
+  - unzip
+
+write_files:
+  - path: /usr/local/etc/xray/config.json
+    permissions: "0644"
+    content: |
+      {
+        "log": { "loglevel": "warning" },
+        "stats": {},
+        "api": {
+          "tag": "api",
+          "services": ["HandlerService", "StatsService"]
+        },
+        "policy": {
+          "system": {
+            "statsInboundUplink": true, "statsInboundDownlink": true,
+            "statsOutboundUplink": true, "statsOutboundDownlink": true
+          },
+          "levels": { "0": { "statsUserUplink": true, "statsUserDownlink": true, "statsUserOnline": true } }
+        },
+        "inbounds": [
+          {
+            "tag": "vless-in",
+            "listen": "127.0.0.1",
+            "port": 10000,
+            "protocol": "vless",
+            "settings": {
+              "clients": [{ "id": "{{.UUID}}", "email": "{{.UUID}}" }],
+              "decryption": "none"
+            },
+            "streamSettings": {
+              "network": "splithttp",
+              "splithttpSettings": { "path": "{{.XrayPath}}" }
+            }
+          },
+          {
+            "tag": "api-in",
+            "listen": "127.0.0.1",
+            "port": 10085,
+            "protocol": "dokodemo-door",
+            "settings": { "address": "127.0.0.1" }
+          }
+        ],
+        "outbounds": [
+          { "tag": "freedom", "protocol": "freedom" }
+        ],
+        "routing": {
+          "rules": [
+            { "type": "field", "inboundTag": ["api-in"], "outboundTag": "api" }
+          ]
+        }
+      }
+
+  - path: /etc/ssh/sshd_config.d/99-tw-localhost.conf
+    permissions: "0644"
+    content: |
+      ListenAddress 127.0.0.1
+      PasswordAuthentication no
+{{if .CaddyCertsB64}}
+  - path: /tmp/caddy-certs.tar.gz
+    permissions: "0600"
+    encoding: b64
+    content: {{.CaddyCertsB64}}
+{{end}}
+runcmd:
+  # Install Caddy
+  - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+  - apt-get update
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y caddy
+
+  # Write Caddyfile after installation to avoid dpkg conffile prompt
+  - |
+    cat > /etc/caddy/Caddyfile <<'CADDYEOF'
+    {{.Domain}} {
+        reverse_proxy {{.XrayPath}}* 127.0.0.1:10000
+    }
+    CADDYEOF
+
+  # Install Xray (pinned version for reproducibility)
+  - bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --version {{.XrayVersion}}
+
+  # Firewall — only 80 and 443
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw --force enable
+
+  # Restart services (Ubuntu 24.04 uses 'ssh' not 'sshd')
+  - systemctl restart ssh
+  - systemctl enable --now xray
+{{if .CaddyCertsB64}}
+  # Restore saved TLS certificates (avoids Let's Encrypt rate limits on reprovision)
+  - mkdir -p /var/lib/caddy/.local/share/caddy
+  - tar xzf /tmp/caddy-certs.tar.gz -C /var/lib/caddy/.local/share/caddy
+  - chown -R caddy:caddy /var/lib/caddy
+  - rm -f /tmp/caddy-certs.tar.gz
+{{end}}
+  - systemctl restart caddy

@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package api.v1;
+
+option go_package = "github.com/tunnelwhisperer/tw/internal/api";
+
+// TunnelWhisperer exposes all operations as unary RPCs.
+// The actual implementation uses a JSON codec with hand-written Go structs
+// (no protoc code generation required).
+service TunnelWhisperer {
+  rpc GetStatus         (Empty)                     returns (StatusResponse);
+  rpc GetConfig         (Empty)                     returns (ConfigResponse);
+  rpc SetMode           (SetModeRequest)            returns (Empty);
+
+  // Providers
+  rpc ListProviders     (Empty)                     returns (ListProvidersResponse);
+
+  // Relay
+  rpc GetRelayStatus    (Empty)                     returns (RelayStatusResponse);
+  rpc TestCredentials   (TestCredentialsRequest)     returns (Empty);
+  rpc ProvisionRelay    (ProvisionRelayRequest)      returns (ProvisionRelayResponse);
+  rpc DestroyRelay      (DestroyRelayRequest)        returns (Empty);
+  rpc TestRelay         (Empty)                     returns (TestRelayResponse);
+
+  // Server
+  rpc StartServer       (Empty)                     returns (Empty);
+  rpc StopServer        (Empty)                     returns (Empty);
+
+  // Client
+  rpc StartClient       (Empty)                     returns (Empty);
+  rpc StopClient        (Empty)                     returns (Empty);
+  rpc UploadClientConfig(UploadClientConfigRequest)  returns (Empty);
+
+  // Users
+  rpc ListUsers         (Empty)                     returns (ListUsersResponse);
+  rpc CreateUser        (CreateUserRequest)          returns (Empty);
+  rpc DeleteUser        (DeleteUserRequest)          returns (Empty);
+  rpc GetUserConfig     (GetUserConfigRequest)       returns (UserConfigResponse);
+}
+
+message Empty {}
+
+message StatusResponse {
+  string mode       = 1;
+  string version    = 2;
+  int32  user_count = 3;
+  // relay, server, client fields are JSON-encoded structs
+}
+
+message ConfigResponse {
+  // JSON-encoded config.Config
+}
+
+message SetModeRequest {
+  string mode = 1;
+}
+
+message ListProvidersResponse {
+  // JSON-encoded []CloudProvider
+}
+
+message RelayStatusResponse {
+  bool   provisioned = 1;
+  string domain      = 2;
+  string ip          = 3;
+  string provider    = 4;
+}
+
+message TestCredentialsRequest {
+  string provider_name  = 1;
+  string token          = 2;
+  string aws_secret_key = 3;
+}
+
+message ProvisionRelayRequest {
+  string domain        = 1;
+  string provider_key  = 2;
+  string provider_name = 3;
+  string token         = 4;
+  string aws_secret_key = 5;
+}
+
+message ProvisionRelayResponse {
+  string message = 1;
+}
+
+message DestroyRelayRequest {
+  map<string, string> creds = 1;
+}
+
+message TestRelayResponse {
+  string message = 1;
+}
+
+message UploadClientConfigRequest {
+  bytes data = 1;
+}
+
+message ListUsersResponse {
+  // JSON-encoded []UserInfo
+}
+
+message CreateUserRequest {
+  string name = 1;
+  repeated PortMapping mappings = 2;
+}
+
+message PortMapping {
+  int32 client_port = 1;
+  int32 server_port = 2;
+}
+
+message DeleteUserRequest {
+  string name = 1;
+}
+
+message GetUserConfigRequest {
+  string name = 1;
+}
+
+message UserConfigResponse {
+  bytes data = 1;
+}

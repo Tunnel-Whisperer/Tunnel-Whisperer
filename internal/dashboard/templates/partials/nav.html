@@ -1,0 +1,20 @@
+{{define "nav"}}
+<nav class="navbar">
+  <div class="navbar-brand">
+    <a href="/">Tunnel Whisperer</a>
+  </div>
+  {{if .Mode}}
+  <ul class="navbar-links">
+    <li><a href="/" class="{{if eq .Active "index"}}active{{end}}">Status</a></li>
+    {{if eq .Mode "server"}}
+    <li><a href="/relay" class="{{if eq .Active "relay"}}active{{end}}">Relay</a></li>
+    <li><a href="/users" class="{{if eq .Active "users"}}active{{end}}">Users</a></li>
+    {{end}}
+    <li><a href="/config" class="{{if eq .Active "config"}}active{{end}}">Config</a></li>
+  </ul>
+  <div class="navbar-mode">
+    <span class="badge badge-dim">{{.Mode}}</span>
+  </div>
+  {{end}}
+</nav>
+{{end}}

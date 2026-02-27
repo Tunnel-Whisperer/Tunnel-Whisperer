@@ -1,0 +1,58 @@
+{{define "content"}}
+<h1>Configuration</h1>
+
+<div class="card mb-16">
+  <div class="card-header">
+    <h2>Log Level</h2>
+    <span class="badge {{if eq .LogLevel "debug"}}badge-yellow{{else if eq .LogLevel "warn"}}badge-yellow{{else if eq .LogLevel "error"}}badge-red{{else}}badge-dim{{end}}" id="log-level-badge">{{.LogLevel}}</span>
+  </div>
+  <p class="text-dim mb-16">Controls verbosity of application and Xray logs. Takes effect on {{if eq .Mode "client"}}reconnect{{else}}restart{{end}}.</p>
+  <div class="form-group">
+    <label>Level</label>
+    <select id="log-level-select">
+      <option value="debug" {{if eq .LogLevel "debug"}}selected{{end}}>debug</option>
+      <option value="info" {{if eq .LogLevel "info"}}selected{{end}}>info</option>
+      <option value="warn" {{if eq .LogLevel "warn"}}selected{{end}}>warn</option>
+      <option value="error" {{if eq .LogLevel "error"}}selected{{end}}>error</option>
+    </select>
+  </div>
+  <button class="btn btn-primary" id="btn-log-level-save" onclick="saveLogLevel()">Save</button>
+  <div id="log-level-error" class="alert alert-error mt-16 hidden"></div>
+  <div id="log-level-success" class="alert alert-success mt-16 hidden"></div>
+</div>
+
+<div class="card mb-16">
+  <div class="card-header">
+    <h2>Proxy</h2>
+    {{if .Proxy}}
+    <span class="badge badge-green" id="proxy-badge">configured</span>
+    {{else}}
+    <span class="badge badge-dim" id="proxy-badge">none</span>
+    {{end}}
+  </div>
+  <p class="text-dim mb-16">Route all connections through a SOCKS5 or HTTP proxy. Takes effect on next {{if eq .Mode "client"}}reconnect{{else}}start{{end}}.</p>
+  <div class="form-group">
+    <label>Proxy URL</label>
+    <input type="text" id="proxy-url" placeholder="socks5://user:pass@host:port" value="{{.Proxy}}" autocomplete="off">
+  </div>
+  <div class="flex gap-8">
+    <button class="btn btn-primary" id="btn-proxy-save" onclick="saveProxy()">Save</button>
+    <button class="btn" onclick="clearProxy()">Clear</button>
+  </div>
+  <div id="proxy-error" class="alert alert-error mt-16 hidden"></div>
+  <div id="proxy-success" class="alert alert-success mt-16 hidden"></div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2>config.yaml</h2>
+    <span class="text-dim">{{.ConfigPath}}</span>
+  </div>
+  <pre>{{.ConfigYAML}}</pre>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>var serviceRunning = {{.Running}}; var serviceMode = '{{.Mode}}';</script>
+<script src="/static/js/config.js"></script>
+{{end}}

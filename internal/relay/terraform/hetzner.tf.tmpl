@@ -1,0 +1,56 @@
+terraform {
+  required_version = ">= 1.0"
+  required_providers {
+    hcloud = {
+      source  = "hetznercloud/hcloud"
+      version = "~> 1.45"
+    }
+  }
+}
+
+variable "hcloud_token" {
+  sensitive = true
+}
+
+variable "location" {
+  default = "nbg1"
+}
+
+variable "server_type" {
+  default = "cx22"
+}
+
+provider "hcloud" {
+  token = var.hcloud_token
+}
+
+resource "hcloud_firewall" "relay" {
+  name = "tw-relay"
+
+  rule {
+    direction = "in"
+    protocol  = "tcp"
+    port      = "80"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+  rule {
+    direction = "in"
+    protocol  = "tcp"
+    port      = "443"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+}
+
+resource "hcloud_server" "relay" {
+  name        = "tw-relay"
+  image       = "ubuntu-24.04"
+  server_type = var.server_type
+  location    = var.location
+  user_data   = file("${path.module}/cloud-init.yaml")
+
+  firewall_ids = [hcloud_firewall.relay.id]
+}
+
+output "relay_ip" {
+  value = hcloud_server.relay.ipv4_address
+}

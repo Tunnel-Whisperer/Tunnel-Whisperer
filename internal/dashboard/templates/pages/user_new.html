@@ -1,0 +1,60 @@
+{{define "content"}}
+<h1>Create User</h1>
+
+{{if not .RelayReady}}
+<div class="alert alert-info">Provision a relay before creating users. <a href="/relay/wizard">Provision Relay</a></div>
+{{else if not .ServerRunning}}
+<div class="alert alert-info">Start the server before creating users. <a href="/">Go to Status</a></div>
+{{else}}
+<div id="user-form">
+  <div class="card">
+    <h2>User Details</h2>
+
+    <div class="form-group">
+      <label for="user-name">Username</label>
+      <input type="text" id="user-name" placeholder="alice" pattern="[a-zA-Z0-9_-]+">
+    </div>
+
+    <h3 class="mt-24 mb-8">Port Mappings</h3>
+    <p class="text-dim mb-16">Map client local ports to server ports (127.0.0.1 only).</p>
+
+    <div id="mappings">
+      <div class="mapping-row">
+        <input type="number" class="client-port" placeholder="Client port" min="1" max="65535">
+        <span class="arrow">-></span>
+        <input type="number" class="server-port" placeholder="Server port" min="1" max="65535">
+        <button class="btn btn-sm btn-danger" onclick="removeMapping(this)" style="visibility:hidden">x</button>
+      </div>
+    </div>
+
+    <button class="btn btn-sm mt-16" onclick="addMapping()">+ Add Mapping</button>
+
+    <div class="mt-24 flex gap-8">
+      <a href="/users" class="btn">Cancel</a>
+      <button class="btn btn-primary" id="btn-create-user" onclick="createUser()">Create User</button>
+    </div>
+  </div>
+</div>
+
+<div id="user-progress" class="hidden">
+  <div class="card">
+    <h2>Creating User</h2>
+    <div class="progress-log" id="create-progress"></div>
+    <div id="create-done" class="hidden mt-16">
+      <div class="alert alert-success">User created successfully.</div>
+      <div class="flex gap-8">
+        <a href="/users" class="btn">View Users</a>
+        <a id="download-link" class="btn btn-primary" href="#">Download Config</a>
+      </div>
+    </div>
+    <div id="create-error" class="hidden mt-16">
+      <div class="alert alert-error" id="create-error-msg"></div>
+    </div>
+  </div>
+</div>
+{{end}}
+{{end}}
+
+{{define "scripts"}}
+<script src="/static/js/users.js"></script>
+{{end}}

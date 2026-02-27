@@ -1,0 +1,274 @@
+{{define "content"}}
+
+{{if .ConfigChanged}}
+<div class="alert alert-warning mb-16" id="config-changed">Configuration has changed. {{if eq .Mode "client"}}Reconnect{{else}}Restart{{end}} to apply.</div>
+{{else}}
+<div class="alert alert-warning mb-16 hidden" id="config-changed">Configuration has changed. {{if eq .Mode "client"}}Reconnect{{else}}Restart{{end}} to apply.</div>
+{{end}}
+
+{{if eq .Mode "server"}}
+<!-- ── Server Mode — 3-column dashboard ──────────────────────────────── -->
+<div class="dash-grid">
+
+  <!-- ── Server (left) ──────────────────────────────────────────────── -->
+  <div class="card dash-card">
+    <div class="card-header">
+      <h2>Server</h2>
+      <div class="card-actions">
+        <span class="badge badge-state" data-bind="server-badge">{{.ServerStatus.State}}</span>
+        <a href="/config" class="settings-btn" title="Settings">&#9881;</a>
+      </div>
+    </div>
+
+    <div class="kv">
+      <span class="kv-label">SSH</span>
+      <span class="kv-value {{if .ServerStatus.SSH}}status-up{{else}}status-down{{end}}" data-bind="srv-ssh">{{if .ServerStatus.SSH}}up{{else}}down{{end}}</span>
+      <span class="kv-label">Xray</span>
+      <span class="kv-value {{if .ServerStatus.Xray}}status-up{{else}}status-down{{end}}" data-bind="srv-xray">{{if .ServerStatus.Xray}}up{{else}}down{{end}}</span>
+      <span class="kv-label">Tunnel</span>
+      <span class="kv-value {{if .ServerStatus.Tunnel}}status-up{{else if .ServerStatus.TunnelError}}status-error{{else}}status-down{{end}}" data-bind="srv-tunnel">{{if .ServerStatus.Tunnel}}up{{else if .ServerStatus.TunnelError}}error{{else}}down{{end}}</span>
+    </div>
+
+    <div class="alert alert-error mt-16 {{if not .ServerStatus.TunnelError}}hidden{{end}}" data-bind="srv-tunnel-error">{{.ServerStatus.TunnelError}}</div>
+    <div class="alert alert-error mt-16 {{if not .ServerStatus.Error}}hidden{{end}}" data-bind="srv-error">{{.ServerStatus.Error}}</div>
+
+    <div class="mt-16">
+      {{if eq .ServerStatus.State "stopped"}}
+        {{if .Relay.Provisioned}}
+          <button class="btn btn-primary btn-block" id="btn-server-start" onclick="serverStart()">Start Server</button>
+        {{else}}
+          <a href="/relay/wizard" class="btn btn-primary btn-block">Provision Relay First</a>
+        {{end}}
+      {{else if eq .ServerStatus.State "running"}}
+        <div class="flex gap-8">
+          <button class="btn btn-danger flex-1" id="btn-server-stop" onclick="serverStop()">Stop</button>
+          <button class="btn btn-primary flex-1" id="btn-server-restart" onclick="serverRestart()">Restart</button>
+        </div>
+      {{else if eq .ServerStatus.State "error"}}
+        <button class="btn btn-primary btn-block" id="btn-server-start" onclick="serverStart()">Retry Start</button>
+      {{else}}
+        <button class="btn btn-block" disabled>{{.ServerStatus.State}}...</button>
+      {{end}}
+    </div>
+
+    <div id="server-progress" class="progress-log mt-16 hidden"></div>
+  </div>
+
+  <!-- ── Relay (center) ─────────────────────────────────────────────── -->
+  <div class="card dash-card">
+    <div class="card-header">
+      <h2>Relay</h2>
+      <div class="card-actions">
+        {{if .Relay.Provisioned}}
+          <span class="badge badge-green">provisioned</span>
+        {{else}}
+          <span class="badge badge-dim">not provisioned</span>
+        {{end}}
+        <a href="{{if .Relay.Provisioned}}/relay{{else}}/relay/wizard{{end}}" class="settings-btn" title="Settings">&#9881;</a>
+      </div>
+    </div>
+
+    <div class="kv">
+      <span class="kv-label">Domain</span>
+      <span class="kv-value">{{or .Relay.Domain "—"}}</span>
+      {{if .Relay.Provisioned}}
+      <span class="kv-label">IP</span>
+      <span class="kv-value">{{or .Relay.IP "—"}}</span>
+      <span class="kv-label">Provider</span>
+      <span class="kv-value">{{or .Relay.Provider "—"}}</span>
+      {{end}}
+    </div>
+
+    {{if not .Relay.Provisioned}}
+    <div class="mt-16">
+      <a href="/relay/wizard" class="btn btn-primary btn-block">Provision Relay</a>
+    </div>
+    {{end}}
+  </div>
+
+  <!-- ── Clients (right) ────────────────────────────────────────────── -->
+  <div class="card dash-card">
+    <div class="card-header">
+      <h2>Clients</h2>
+      <div class="card-actions">
+        <span class="badge {{if .OnlineCount}}badge-green{{else}}badge-dim{{end}}" data-bind="online-count">{{if .OnlineCount}}{{.OnlineCount}} online{{else}}0 online{{end}}</span>
+        <span class="badge badge-dim" data-bind="user-count">{{.UserCount}} total</span>
+        <a href="/users" class="settings-btn" title="Manage Users">&#9881;</a>
+      </div>
+    </div>
+
+    {{if .Users}}
+    <div class="user-list user-list-scroll" id="user-list">
+      {{range .Users}}
+      <div class="user-row" data-uuid="{{.UUID}}">
+        <a href="/users/{{.Name}}">{{.Name}}</a>
+        <span>
+          <span class="badge {{if .Online}}badge-green{{else}}badge-dim hidden{{end}} user-online-badge">online</span>
+          <span class="text-dim text-mono">{{len .Tunnels}} tunnel{{if ne (len .Tunnels) 1}}s{{end}}</span>
+        </span>
+      </div>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="text-dim">No users yet.</p>
+    {{end}}
+
+    {{if and .Relay.Provisioned (eq .ServerStatus.State "running")}}
+    <div class="mt-16">
+      <a href="/users/new" class="btn btn-primary btn-block">Create User</a>
+    </div>
+    {{end}}
+  </div>
+
+</div>
+
+<!-- ── Console ───────────────────────────────────────────────────────── -->
+<div class="card console-card">
+  <div class="card-header">
+    <h2>Console</h2>
+    <button class="btn btn-sm" onclick="clearConsole()">Clear</button>
+  </div>
+  <div id="console-log" class="console-log"></div>
+</div>
+
+{{else if eq .Mode "client"}}
+<!-- ── Client Mode — 3-column dashboard ──────────────────────────────── -->
+<div class="dash-grid">
+
+  <!-- ── Client (left) ──────────────────────────────────────────────── -->
+  <div class="card dash-card">
+    <div class="card-header">
+      <h2>Client</h2>
+      <div class="card-actions">
+        <span class="badge badge-state" data-bind="client-badge">{{.ClientStatus.State}}</span>
+        <a href="/config" class="settings-btn" title="Settings">&#9881;</a>
+      </div>
+    </div>
+
+    {{if and (eq .ClientStatus.State "stopped") (eq .Config.Xray.RelayHost "")}}
+    <p class="text-dim mb-16">Upload the config zip you received from the server admin.</p>
+    <form id="upload-form" enctype="multipart/form-data">
+      <div class="upload-area" id="upload-area">
+        <input type="file" name="config" id="config-file" accept=".zip" class="hidden">
+        <p>Drop config zip here or <a href="#" onclick="document.getElementById('config-file').click(); return false;">browse</a></p>
+        <p class="text-dim" id="upload-filename"></p>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block mt-16" id="btn-upload" disabled>Upload Config</button>
+    </form>
+    <div id="upload-error" class="alert alert-error mt-16 hidden"></div>
+
+    {{else}}
+    <div class="kv">
+      <span class="kv-label">Xray</span>
+      <span class="kv-value {{if .ClientStatus.Xray}}status-up{{else}}status-down{{end}}" data-bind="cli-xray">{{if .ClientStatus.Xray}}up{{else}}down{{end}}</span>
+      <span class="kv-label">Tunnel</span>
+      <span class="kv-value {{if .ClientStatus.Tunnel}}status-up{{else if .ClientStatus.TunnelError}}status-error{{else}}status-down{{end}}" data-bind="cli-tunnel">{{if .ClientStatus.Tunnel}}up{{else if .ClientStatus.TunnelError}}error{{else}}down{{end}}</span>
+    </div>
+
+    <div class="alert alert-error mt-16 {{if not .ClientStatus.TunnelError}}hidden{{end}}" data-bind="cli-tunnel-error">{{.ClientStatus.TunnelError}}</div>
+    <div class="alert alert-error mt-16 {{if not .ClientStatus.Error}}hidden{{end}}" data-bind="cli-error">{{.ClientStatus.Error}}</div>
+
+    <div class="mt-16">
+      {{if eq .ClientStatus.State "stopped"}}
+        <button class="btn btn-primary btn-block" id="btn-client-start" onclick="clientStart()">Connect</button>
+      {{else if eq .ClientStatus.State "running"}}
+        <div class="flex gap-8">
+          <button class="btn btn-danger flex-1" id="btn-client-stop" onclick="clientStop()">Disconnect</button>
+          <button class="btn btn-primary flex-1" id="btn-client-reconnect" onclick="clientReconnect()">Reconnect</button>
+        </div>
+      {{else if eq .ClientStatus.State "error"}}
+        <button class="btn btn-primary btn-block" id="btn-client-start" onclick="clientStart()">Retry</button>
+      {{else}}
+        <button class="btn btn-block" disabled>{{.ClientStatus.State}}...</button>
+      {{end}}
+    </div>
+
+    <div id="client-progress" class="progress-log mt-16 hidden"></div>
+    {{end}}
+  </div>
+
+  <!-- ── Relay (center) ─────────────────────────────────────────────── -->
+  <div class="card dash-card">
+    <div class="card-header">
+      <h2>Relay</h2>
+      <div class="card-actions">
+        {{if ne .Config.Xray.RelayHost ""}}
+          <span class="badge badge-green">configured</span>
+        {{else}}
+          <span class="badge badge-dim">not configured</span>
+        {{end}}
+        <a href="/config" class="settings-btn" title="Settings">&#9881;</a>
+      </div>
+    </div>
+
+    {{if ne .Config.Xray.RelayHost ""}}
+    <div class="kv">
+      <span class="kv-label">Host</span>
+      <span class="kv-value">{{.Config.Xray.RelayHost}}</span>
+      <span class="kv-label">Port</span>
+      <span class="kv-value">{{.Config.Xray.RelayPort}}</span>
+      <span class="kv-label">Path</span>
+      <span class="kv-value">{{.Config.Xray.Path}}</span>
+    </div>
+    {{else}}
+    <p class="text-dim">Upload a config to configure the relay.</p>
+    {{end}}
+  </div>
+
+  <!-- ── Tunnels (right) ────────────────────────────────────────────── -->
+  <div class="card dash-card">
+    <div class="card-header">
+      <h2>Tunnels</h2>
+      <div class="card-actions">
+        {{if eq .ClientStatus.State "running"}}
+        <span class="badge {{if .ClientStatus.Tunnel}}badge-green{{else}}badge-dim{{end}}" data-bind="tunnel-badge">{{if .ClientStatus.Tunnel}}connected{{else}}disconnected{{end}}</span>
+        {{end}}
+        <span class="badge badge-dim">{{len .Config.Client.Tunnels}}</span>
+      </div>
+    </div>
+
+    {{if .Config.Client.Tunnels}}
+    <div class="tunnel-list-scroll">
+      <div class="kv">
+        {{range .Config.Client.Tunnels}}
+        <span class="kv-label copyable" onclick="copyText('localhost:{{.LocalPort}}', this)" title="Click to copy">localhost:{{.LocalPort}}</span>
+        <span class="kv-value">{{.RemoteHost}}:{{.RemotePort}}</span>
+        {{end}}
+      </div>
+    </div>
+    {{else}}
+    <p class="text-dim">No tunnels configured.</p>
+    {{end}}
+
+    {{if and (ne .Config.Xray.RelayHost "") (eq .ClientStatus.State "stopped")}}
+    <div class="mt-16">
+      <form id="upload-form" enctype="multipart/form-data">
+        <div class="upload-area upload-area-sm" id="upload-area">
+          <input type="file" name="config" id="config-file" accept=".zip" class="hidden">
+          <p>Drop new config or <a href="#" onclick="document.getElementById('config-file').click(); return false;">browse</a></p>
+          <p class="text-dim" id="upload-filename"></p>
+        </div>
+        <button type="submit" class="btn btn-block mt-16" id="btn-upload" disabled>Replace Config</button>
+      </form>
+      <div id="upload-error" class="alert alert-error mt-16 hidden"></div>
+    </div>
+    {{end}}
+  </div>
+
+</div>
+
+<!-- ── Console ───────────────────────────────────────────────────────── -->
+<div class="card console-card">
+  <div class="card-header">
+    <h2>Console</h2>
+    <button class="btn btn-sm" onclick="clearConsole()">Clear</button>
+  </div>
+  <div id="console-log" class="console-log"></div>
+</div>
+
+{{end}}
+{{end}}
+
+{{define "scripts"}}
+<script src="/static/js/status.js"></script>
+{{end}}

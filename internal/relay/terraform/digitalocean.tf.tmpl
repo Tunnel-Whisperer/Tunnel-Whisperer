@@ -1,0 +1,64 @@
+terraform {
+  required_version = ">= 1.0"
+  required_providers {
+    digitalocean = {
+      source  = "digitalocean/digitalocean"
+      version = "~> 2.0"
+    }
+  }
+}
+
+variable "do_token" {
+  sensitive = true
+}
+
+variable "region" {
+  default = "fra1"
+}
+
+variable "size" {
+  default = "s-1vcpu-1gb"
+}
+
+provider "digitalocean" {
+  token = var.do_token
+}
+
+resource "digitalocean_firewall" "relay" {
+  name = "tw-relay"
+
+  droplet_ids = [digitalocean_droplet.relay.id]
+
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "80"
+    source_addresses = ["0.0.0.0/0", "::/0"]
+  }
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "443"
+    source_addresses = ["0.0.0.0/0", "::/0"]
+  }
+  outbound_rule {
+    protocol              = "tcp"
+    port_range            = "1-65535"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+  outbound_rule {
+    protocol              = "udp"
+    port_range            = "1-65535"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+}
+
+resource "digitalocean_droplet" "relay" {
+  name     = "tw-relay"
+  image    = "ubuntu-24-04-x64"
+  size     = var.size
+  region   = var.region
+  user_data = file("${path.module}/cloud-init.yaml")
+}
+
+output "relay_ip" {
+  value = digitalocean_droplet.relay.ipv4_address
+}

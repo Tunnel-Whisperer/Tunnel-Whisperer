@@ -1,0 +1,86 @@
+{{define "content"}}
+<h1>Users</h1>
+
+{{if not .RelayReady}}
+<div class="alert alert-info mb-16">Provision a relay before creating users. <a href="/relay/wizard">Provision Relay</a></div>
+{{else if not .ServerRunning}}
+<div class="alert alert-info mb-16">Start the server before creating users. <a href="/">Go to Status</a></div>
+{{end}}
+
+{{if and (gt .InactiveCount 0) .RelayReady .ServerRunning}}
+<div class="alert alert-info mb-16 flex justify-between items-center">
+  <span>{{.InactiveCount}} user{{if ne .InactiveCount 1}}s{{end}} not registered on the current relay. Apply to register their UUIDs and update configs.</span>
+  <button class="btn btn-sm btn-primary" onclick="applyAllUsers()">Apply All to Relay</button>
+</div>
+{{end}}
+
+<div id="apply-progress-container" class="hidden mb-16">
+  <div class="progress-log" id="apply-progress"></div>
+</div>
+
+<div class="flex justify-between items-center mb-16">
+  <p class="text-dim">{{len .Users}} user{{if ne (len .Users) 1}}s{{end}} configured</p>
+  {{if and .RelayReady .ServerRunning}}
+  <a href="/users/new" class="btn btn-primary">Create User</a>
+  {{else}}
+  <button class="btn btn-primary" disabled>Create User</button>
+  {{end}}
+</div>
+
+{{if .Users}}
+<div class="search-bar mb-16">
+  <input type="text" id="user-search" placeholder="Search users..." autocomplete="off">
+</div>
+<div class="card">
+  <table id="users-table">
+    <thead>
+      <tr>
+        <th class="sortable" data-sort="name">Name</th>
+        <th>UUID</th>
+        <th class="sortable" data-sort="tunnels">Tunnels</th>
+        <th class="sortable active" data-sort="status" data-dir="asc">Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Users}}
+      <tr data-user="{{.Name}}" data-uuid="{{.UUID}}" data-tunnels="{{len .Tunnels}}" data-status="{{if .Online}}0{{else if .Active}}1{{else}}2{{end}}">
+        <td><a href="/users/{{.Name}}">{{.Name}}</a></td>
+        <td class="text-mono text-dim">{{if .UUID}}{{slice .UUID 0 8}}...{{else}}—{{end}}</td>
+        <td>{{len .Tunnels}}</td>
+        <td>
+          {{if .Active}}
+          <span class="badge badge-green">registered</span>
+          {{if .Online}}
+          <span class="badge badge-green user-online-badge">online</span>
+          {{else}}
+          <span class="badge badge-dim user-online-badge">offline</span>
+          {{end}}
+          {{else}}
+          <span class="badge badge-dim">not registered</span>
+          {{end}}
+        </td>
+        <td class="flex gap-8">
+          <a href="/users/{{.Name}}" class="btn btn-sm">View</a>
+          {{if .Active}}
+          <button class="btn btn-sm btn-danger" onclick="unregisterUser('{{.Name}}')">Unregister</button>
+          {{else}}
+          <button class="btn btn-sm btn-primary" onclick="applyUser('{{.Name}}')">Register</button>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+<div class="pagination" id="pagination"></div>
+{{else}}
+<div class="card">
+  <p class="text-dim">No users yet. Create one to grant tunnel access.</p>
+</div>
+{{end}}
+{{end}}
+
+{{define "scripts"}}
+<script src="/static/js/users.js"></script>
+{{end}}

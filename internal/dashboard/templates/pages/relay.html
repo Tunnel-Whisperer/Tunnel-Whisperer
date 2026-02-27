@@ -1,0 +1,78 @@
+{{define "content"}}
+<h1>Relay</h1>
+
+{{if .Relay.Provisioned}}
+<div class="card">
+  <div class="card-header">
+    <h2>Relay Status</h2>
+    <span class="badge badge-green">provisioned</span>
+  </div>
+  <div class="kv">
+    <span class="kv-label">Domain</span>
+    <span class="kv-value">{{.Relay.Domain}}</span>
+    <span class="kv-label">IP</span>
+    <span class="kv-value">{{if .Relay.IP}}<code class="copyable" id="relay-ip-value" onclick="copyRelayIP()">{{.Relay.IP}}</code> <button class="btn btn-sm" onclick="copyRelayIP()" id="btn-copy-ip">Copy</button>{{else}}—{{end}}</span>
+    <span class="kv-label">Provider</span>
+    <span class="kv-value">{{or .Relay.Provider "—"}}</span>
+  </div>
+  <div class="mt-16 flex gap-8">
+    <button class="btn" onclick="testRelay()" id="btn-test-relay">Test Connectivity</button>
+    <button class="btn btn-danger" id="btn-destroy" onclick="showDestroyPrompt()">Destroy Relay</button>
+  </div>
+  <div id="test-result" class="hidden mt-16"></div>
+</div>
+
+<!-- AWS credential prompt (hidden by default) -->
+<div id="destroy-creds" class="card hidden">
+  <div class="card-header"><h2>AWS Credentials Required</h2></div>
+  <p class="text-dim mb-16">Terraform needs AWS credentials to destroy the relay resources.</p>
+  <div class="form-group">
+    <label>AWS Access Key ID</label>
+    <input type="text" id="destroy-aws-key">
+  </div>
+  <div class="form-group">
+    <label>AWS Secret Access Key</label>
+    <input type="password" id="destroy-aws-secret">
+  </div>
+  <div class="flex gap-8">
+    <button class="btn btn-danger" id="btn-destroy-confirm" onclick="destroyRelay()">Confirm Destroy</button>
+    <button class="btn" onclick="hideDestroyPrompt()">Cancel</button>
+  </div>
+</div>
+
+<div id="destroy-progress" class="progress-log hidden"></div>
+
+<div class="card" id="ssh-card">
+  <div class="card-header">
+    <h2>SSH Terminal</h2>
+    <span class="badge badge-dim" id="ssh-badge">disconnected</span>
+  </div>
+  <div id="ssh-terminal" class="ssh-terminal hidden"></div>
+  <div class="mt-12 flex gap-8">
+    <button class="btn" id="btn-ssh-connect" onclick="sshConnect()">Connect</button>
+    <button class="btn btn-danger hidden" id="btn-ssh-disconnect" onclick="sshDisconnect()">Disconnect</button>
+  </div>
+</div>
+{{else}}
+<div class="card">
+  <div class="card-header">
+    <h2>No Relay Provisioned</h2>
+  </div>
+  <p class="text-dim">A relay server is required to create tunnels through firewalls.</p>
+  <div class="mt-16">
+    <a href="/relay/wizard" class="btn btn-primary">Provision Relay</a>
+  </div>
+</div>
+{{end}}
+{{end}}
+
+{{define "scripts"}}
+<link rel="stylesheet" href="/static/css/xterm.min.css">
+<script src="/static/js/vendor/xterm.min.js"></script>
+<script src="/static/js/vendor/xterm-addon-fit.min.js"></script>
+<script>
+  var relayProvider = "{{.Relay.Provider}}";
+  var relayProvisioned = {{.Relay.Provisioned}};
+</script>
+<script src="/static/js/relay.js"></script>
+{{end}}

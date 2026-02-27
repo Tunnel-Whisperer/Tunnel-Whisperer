@@ -1,0 +1,142 @@
+{{define "content"}}
+<h1>Provision Relay Server</h1>
+
+<div class="wizard-steps" id="wizard-steps">
+  <div class="wizard-step active" data-step="1">Domain</div>
+  <div class="wizard-step" data-step="2">Provider</div>
+  <div class="wizard-step" data-step="3">Credentials</div>
+  <div class="wizard-step" data-step="4">Confirm</div>
+  <div class="wizard-step" data-step="5">Provisioning</div>
+</div>
+
+<!-- Step 1: Domain -->
+<div class="wizard-panel active" id="step-1">
+  <div class="card">
+    <h2>Relay Domain</h2>
+    <p class="text-dim mb-16">Enter the domain that will point to your relay server.</p>
+    <div class="form-group">
+      <label for="domain">Domain</label>
+      <input type="text" id="domain" placeholder="relay.example.com" value="{{.Config.Xray.RelayHost}}">
+    </div>
+    <button class="btn btn-primary" onclick="wizardNext(2)">Next</button>
+  </div>
+</div>
+
+<!-- Step 2: Provider -->
+<div class="wizard-panel" id="step-2">
+  <div class="card">
+    <h2>Cloud Provider</h2>
+    <p class="text-dim mb-16">Select a cloud provider for the relay VM.</p>
+    <div id="provider-list"></div>
+    <div class="mt-16 flex gap-8">
+      <button class="btn" onclick="wizardBack(1)">Back</button>
+    </div>
+  </div>
+</div>
+
+<!-- Step 3: Credentials -->
+<div class="wizard-panel" id="step-3">
+  <div class="card">
+    <h2>Cloud Credentials</h2>
+    <p class="text-dim mb-16" id="cred-help"></p>
+    <div id="cred-fields"></div>
+    <div id="cred-test-result" class="hidden mt-16"></div>
+    <div class="mt-16 flex gap-8">
+      <button class="btn" onclick="wizardBack(2)">Back</button>
+      <button class="btn btn-primary" id="btn-test-creds" onclick="testCreds()">Test & Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- Step 4: Confirm -->
+<div class="wizard-panel" id="step-4">
+  <div class="card">
+    <h2>Confirm</h2>
+    <div class="kv mb-16" id="confirm-details"></div>
+    <div class="alert alert-info">
+      This will create a VM with Ubuntu 24.04, Caddy, Xray, and SSH (localhost-only). Firewall allows ports 80 and 443 only.
+    </div>
+    <div class="mt-16 flex gap-8">
+      <button class="btn" onclick="wizardBack(3)">Back</button>
+      <button class="btn btn-primary" id="btn-provision" onclick="startProvision()">Provision</button>
+    </div>
+  </div>
+</div>
+
+<!-- Step 5: Provisioning -->
+<div class="wizard-panel" id="step-5">
+  <div class="card">
+    <h2>Provisioning</h2>
+
+    <!-- DNS setup instruction card — shown after terraform gives us the IP -->
+    <div id="dns-setup-card" class="dns-setup-card hidden">
+      <h3>Action Required: Set Up DNS</h3>
+      <p>Go to your DNS provider and create an <strong>A record</strong> pointing your domain to the relay IP:</p>
+      <div class="dns-record-box">
+        <div class="dns-record-row">
+          <span class="dns-label">Type</span>
+          <span class="dns-val">A</span>
+        </div>
+        <div class="dns-record-row">
+          <span class="dns-label">Name</span>
+          <span class="dns-val" id="dns-domain"></span>
+        </div>
+        <div class="dns-record-row">
+          <span class="dns-label">Value</span>
+          <span class="dns-val"><code class="copyable" id="dns-ip" onclick="copyRelayIP()"></code> <button class="btn btn-sm" onclick="copyRelayIP()" id="btn-copy-ip">Copy</button></span>
+        </div>
+      </div>
+      <p class="text-dim mt-8">Waiting for DNS to propagate... This page will continue automatically once the domain resolves.</p>
+    </div>
+
+    <div class="progress-log" id="provision-progress"></div>
+    <div id="provision-done" class="hidden mt-16">
+      <div class="alert alert-success">Relay provisioned successfully.</div>
+      <div class="flex gap-8">
+        <a href="/relay" class="btn btn-primary">View Relay</a>
+        <button class="btn" onclick="testRelay()" id="btn-test-relay">Test Connectivity</button>
+      </div>
+    </div>
+    <div id="provision-error" class="hidden mt-16">
+      <div class="alert alert-error" id="provision-error-msg"></div>
+      <button class="btn" onclick="wizardBack(3)">Back</button>
+    </div>
+    <div id="test-result" class="hidden mt-16"></div>
+
+    <!-- Manual install result -->
+    <div id="manual-result" class="hidden">
+      <h3>Install Script</h3>
+      <p class="text-dim mb-16">Copy this script and run it as root on your Linux machine (Ubuntu/Debian):</p>
+      <div class="alert alert-warning mb-16">This script will disable public SSH access on the relay server (port 22 will be blocked by the firewall). After running it, use <strong>tw relay ssh</strong> to connect to the relay.</div>
+      <pre id="manual-script" style="max-height:400px; overflow-y:auto; font-size:13px;"></pre>
+      <div class="mt-16 flex gap-8">
+        <button class="btn btn-primary" onclick="copyScript()">Copy to Clipboard</button>
+        <button class="btn" onclick="downloadScript()">Download .sh</button>
+      </div>
+
+      <div class="card mt-16">
+        <h3>After Running the Script</h3>
+        <p class="text-dim mb-16">Enter the public IP address of the machine where you ran the script:</p>
+        <div class="form-group">
+          <label for="manual-ip">Relay IP Address</label>
+          <input type="text" id="manual-ip" placeholder="203.0.113.1">
+        </div>
+        <div class="alert alert-info">
+          Set a DNS A record: <strong><span id="manual-domain"></span></strong> &rarr; this IP address.
+        </div>
+        <div class="mt-16">
+          <button class="btn btn-primary" onclick="saveManualRelay()">Save & Finish</button>
+        </div>
+        <div id="manual-save-error" class="hidden mt-16 alert alert-error"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+  var providers = {{.ProvidersJSON}};
+</script>
+<script src="/static/js/relay.js"></script>
+{{end}}

@@ -1,0 +1,15 @@
+{{.Domain}} {
+    # Public OAuth endpoint — unauthenticated
+    handle /oauth/* {
+        reverse_proxy {{.OAuthUpstream}}
+    }
+
+    # Protected endpoint — requires valid JWT
+    handle /tunnel/* {
+        # Validate JWT against the OAuth provider
+        # caddy-security or caddy-jwt plugin required
+        reverse_proxy {{.ProtectedUpstream}}
+    }
+
+    # TLS is automatically managed by Caddy
+}

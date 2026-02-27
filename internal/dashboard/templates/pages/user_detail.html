@@ -1,0 +1,67 @@
+{{define "content"}}
+<h1>User: {{.User.Name}}</h1>
+
+<div class="card" data-user="{{.User.Name}}" data-uuid="{{.User.UUID}}">
+  <div class="card-header">
+    <h2>Details</h2>
+    <div class="card-actions">
+      {{if .User.Active}}
+      <span class="badge badge-green">registered</span>
+      {{if .User.Online}}
+      <span class="badge badge-green user-online-badge">online</span>
+      {{else}}
+      <span class="badge badge-dim user-online-badge">offline</span>
+      {{end}}
+      {{else}}
+      <span class="badge badge-dim">not registered</span>
+      {{end}}
+      <a href="/api/users/{{.User.Name}}/download" class="btn btn-sm btn-primary">Download Config</a>
+      {{if .User.Active}}
+      <button class="btn btn-sm btn-danger" onclick="unregisterUser('{{.User.Name}}')">Unregister from Relay</button>
+      {{else}}
+      <button class="btn btn-sm btn-primary" onclick="applyUser('{{.User.Name}}')">Register on Relay</button>
+      {{end}}
+      <button class="btn btn-sm btn-danger" id="btn-delete" onclick="deleteUser('{{.User.Name}}')">Delete</button>
+    </div>
+  </div>
+  <div id="apply-progress-container" class="hidden mb-16">
+    <div class="progress-log" id="apply-progress"></div>
+  </div>
+  <div class="kv">
+    <span class="kv-label">Name</span>
+    <span class="kv-value">{{.User.Name}}</span>
+    <span class="kv-label">UUID</span>
+    <span class="kv-value">{{or .User.UUID "—"}}</span>
+    <span class="kv-label">SSH Key</span>
+    <span class="kv-value">{{if .User.HasKey}}present{{else}}missing{{end}}</span>
+  </div>
+</div>
+
+{{if .User.Tunnels}}
+<div class="card">
+  <h2>Port Mappings</h2>
+  <table class="mt-16">
+    <thead>
+      <tr>
+        <th>Client Port</th>
+        <th>Remote Host</th>
+        <th>Remote Port</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .User.Tunnels}}
+      <tr>
+        <td class="text-mono">{{.LocalPort}}</td>
+        <td class="text-mono">{{.RemoteHost}}</td>
+        <td class="text-mono">{{.RemotePort}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+{{end}}
+
+{{define "scripts"}}
+<script src="/static/js/users.js"></script>
+{{end}}

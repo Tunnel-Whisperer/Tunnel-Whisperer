@@ -1,0 +1,44 @@
+{{define "content"}}
+<div class="setup-container">
+  <h1>Welcome to Tunnel Whisperer</h1>
+  <p class="text-dim mb-16">Choose how this instance will operate.</p>
+
+  <div class="mode-cards">
+    <div class="mode-card" onclick="selectMode('server')">
+      <h2>Server</h2>
+      <p class="text-dim">Run behind a firewall. Provisions a relay, starts SSH + Xray, and lets clients connect in.</p>
+      <ul class="mode-features">
+        <li>Provision a cloud relay</li>
+        <li>Reverse tunnel through Xray</li>
+        <li>Create client configs</li>
+      </ul>
+      <button class="btn btn-primary" style="margin-top:auto">Set up as Server</button>
+    </div>
+
+    <div class="mode-card" onclick="selectMode('client')">
+      <h2>Client</h2>
+      <p class="text-dim">Connect to an existing server through a relay. Upload the config zip you received.</p>
+      <ul class="mode-features">
+        <li>Upload config bundle</li>
+        <li>Forward tunnel through Xray</li>
+        <li>Access remote services locally</li>
+      </ul>
+      <button class="btn btn-primary" style="margin-top:auto">Set up as Client</button>
+    </div>
+  </div>
+</div>
+
+{{end}}
+
+{{define "scripts"}}
+<script>
+async function selectMode(mode) {
+  try {
+    await api.post('/api/mode', { mode });
+    window.location.href = '/';
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+</script>
+{{end}}

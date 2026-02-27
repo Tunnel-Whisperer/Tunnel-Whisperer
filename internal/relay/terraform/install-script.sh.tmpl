@@ -1,0 +1,137 @@
+#!/bin/bash
+set -euo pipefail
+
+# Tunnel Whisperer — Relay Install Script
+# Domain: {{.Domain}}
+#
+# Run as root on a fresh Ubuntu/Debian machine:
+#   sudo bash install-relay.sh
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Error: must run as root (try: sudo bash $0)"
+  exit 1
+fi
+
+echo "=== Tunnel Whisperer Relay Setup ==="
+echo "Domain: {{.Domain}}"
+echo ""
+
+# ── Create SSH user ──────────────────────────────────────────
+echo "[1/7] Creating SSH user '{{.SSHUser}}'..."
+useradd -m -s /bin/bash {{.SSHUser}} 2>/dev/null || true
+echo "{{.SSHUser}} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/99-{{.SSHUser}}
+mkdir -p /home/{{.SSHUser}}/.ssh
+cat > /home/{{.SSHUser}}/.ssh/authorized_keys <<'KEYEOF'
+{{.PublicKey}}
+KEYEOF
+chmod 700 /home/{{.SSHUser}}/.ssh
+chmod 600 /home/{{.SSHUser}}/.ssh/authorized_keys
+chown -R {{.SSHUser}}:{{.SSHUser}} /home/{{.SSHUser}}/.ssh
+
+# ── Install packages ─────────────────────────────────────────
+echo "[2/7] Installing packages..."
+apt-get update -qq
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+  debian-keyring debian-archive-keyring apt-transport-https curl ufw unzip
+
+# ── Install Caddy ────────────────────────────────────────────
+echo "[3/7] Installing Caddy..."
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+  | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+  | tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null
+apt-get update -qq
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq caddy
+
+cat > /etc/caddy/Caddyfile <<'CADDYEOF'
+{{.Domain}} {
+    reverse_proxy {{.XrayPath}}* 127.0.0.1:10000
+}
+CADDYEOF
+
+# ── Install Xray (pinned version for reproducibility) ──────
+echo "[4/7] Installing Xray {{.XrayVersion}}..."
+bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --version {{.XrayVersion}}
+
+mkdir -p /usr/local/etc/xray
+cat > /usr/local/etc/xray/config.json <<'XRAYEOF'
+{
+  "log": { "loglevel": "warning" },
+  "stats": {},
+  "api": {
+    "tag": "api",
+    "services": ["HandlerService", "StatsService"]
+  },
+  "policy": {
+    "system": {
+      "statsInboundUplink": true, "statsInboundDownlink": true,
+      "statsOutboundUplink": true, "statsOutboundDownlink": true
+    },
+    "levels": { "0": { "statsUserUplink": true, "statsUserDownlink": true, "statsUserOnline": true } }
+  },
+  "inbounds": [
+    {
+      "tag": "vless-in",
+      "listen": "127.0.0.1",
+      "port": 10000,
+      "protocol": "vless",
+      "settings": {
+        "clients": [{ "id": "{{.UUID}}", "email": "{{.UUID}}" }],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "splithttp",
+        "splithttpSettings": { "path": "{{.XrayPath}}" }
+      }
+    },
+    {
+      "tag": "api-in",
+      "listen": "127.0.0.1",
+      "port": 10085,
+      "protocol": "dokodemo-door",
+      "settings": { "address": "127.0.0.1" }
+    }
+  ],
+  "outbounds": [
+    { "tag": "freedom", "protocol": "freedom" }
+  ],
+  "routing": {
+    "rules": [
+      { "type": "field", "inboundTag": ["api-in"], "outboundTag": "api" }
+    ]
+  }
+}
+XRAYEOF
+
+# ── Configure SSH ────────────────────────────────────────────
+echo "[5/7] Configuring SSH (localhost-only)..."
+cat > /etc/ssh/sshd_config.d/99-tw-localhost.conf <<'SSHEOF'
+ListenAddress 127.0.0.1
+PasswordAuthentication no
+SSHEOF
+
+# ── Firewall ─────────────────────────────────────────────────
+echo "[6/7] Configuring firewall..."
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw --force enable
+
+# ── Start services ───────────────────────────────────────────
+echo "[7/7] Starting services..."
+systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
+systemctl enable xray
+systemctl restart xray
+systemctl restart caddy
+
+PUBLIC_IP=$(curl -4s ifconfig.me 2>/dev/null || echo "could not detect")
+
+echo ""
+echo "=== Setup complete ==="
+echo ""
+echo "Public IP: ${PUBLIC_IP}"
+echo ""
+echo "Next steps:"
+echo "  1. Set a DNS A record:  {{.Domain}}  ->  ${PUBLIC_IP}"
+echo "  2. Go back to the Tunnel Whisperer dashboard and enter the IP above"

@@ -1,0 +1,108 @@
+site_name: Tunnel Whisperer
+site_url: https://tunnelwhisperer.github.io/tw
+site_description: >-
+  Surgical, resilient connectivity for restrictive enterprise environments.
+  Port-to-port bridges over HTTPS that traverse firewalls, NAT, and DPI.
+repo_url: https://github.com/tunnelwhisperer/tw
+repo_name: tunnelwhisperer/tw
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+  font:
+    text: Inter
+    code: JetBrains Mono
+
+plugins:
+  - search
+  - minify:
+      minify_html: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.mark
+  - pymdownx.keys
+  - attr_list
+  - md_in_html
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/tunnelwhisperer/tw
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - getting-started/index.md
+    - Installation: getting-started/installation.md
+    - Server Setup: getting-started/server-setup.md
+    - Client Setup: getting-started/client-setup.md
+  - Guides:
+    - Relay Provisioning: guides/relay-provisioning.md
+    - User Management: guides/user-management.md
+    - Web Dashboard: guides/dashboard.md
+    - Proxy Configuration: guides/proxy-configuration.md
+    - Troubleshooting: guides/troubleshooting.md
+  - Reference:
+    - CLI Commands: reference/cli.md
+    - Configuration: reference/configuration.md
+    - API: reference/api.md
+    - File Layout: reference/file-layout.md
+  - Architecture:
+    - architecture/index.md
+    - System Context: architecture/system-context.md
+    - Solution Strategy: architecture/solution-strategy.md
+    - Building Blocks: architecture/building-blocks.md
+    - Runtime Views: architecture/runtime-views.md
+    - Deployment: architecture/deployment.md
+    - Cross-cutting Concepts: architecture/cross-cutting.md
+  - Security:
+    - security/index.md
+    - Encryption: security/encryption.md
+    - Access Control: security/access-control.md
