@@ -1,9 +1,15 @@
-# Tunnel Whisperer
+<p align="center">
+  <img src="docs/assets/icon.svg" alt="Tunnel Whisperer" width="180"/>
+</p>
 
-**Surgical, resilient connectivity for restrictive enterprise environments.**
+<h1 align="center">Tunnel Whisperer</h1>
 
-[![Status](https://img.shields.io/badge/Status-Alpha-yellow)](https://github.com/Tunnel-Whisperer/Tunnel-Whisperer)
-[![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
+<p align="center"><strong>Surgical, resilient connectivity for restrictive enterprise environments.</strong></p>
+
+<p align="center">
+  <a href="https://github.com/Tunnel-Whisperer/Tunnel-Whisperer"><img src="https://img.shields.io/badge/Status-Alpha-yellow" alt="Status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue" alt="License"></a>
+</p>
 
 Tunnel Whisperer creates **resilient, application-layer bridges** for specific ports across separated private networks. It encapsulates traffic in standard HTTPS to traverse firewalls, NAT, and Deep Packet Inspection (DPI).
 
