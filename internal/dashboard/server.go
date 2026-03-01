@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -9,18 +10,20 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
 // Server serves the web dashboard.
 type Server struct {
-	ops   *ops.Ops
-	addr  string
-	mux   *http.ServeMux
-	pages map[string]*template.Template
-	sse   *sseHub
-	logs  *logBuffer
+	ops     *ops.Ops
+	addr    string
+	mux     *http.ServeMux
+	httpSrv *http.Server
+	pages   map[string]*template.Template
+	sse     *sseHub
+	logs    *logBuffer
 }
 
 // NewServer creates a dashboard server.
@@ -124,8 +127,23 @@ func (s *Server) routes() {
 
 // Run starts the HTTP server (blocking).
 func (s *Server) Run() error {
+	s.httpSrv = &http.Server{Addr: s.addr, Handler: s.mux}
 	slog.Info("dashboard listening", "addr", s.addr)
-	return http.ListenAndServe(s.addr, s.mux)
+	err := s.httpSrv.ListenAndServe()
+	if err == http.ErrServerClosed {
+		return nil
+	}
+	return err
+}
+
+// Stop gracefully shuts down the HTTP server.
+func (s *Server) Stop() error {
+	if s.httpSrv == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return s.httpSrv.Shutdown(ctx)
 }
 
 // pageData is the common data passed to all page templates.
