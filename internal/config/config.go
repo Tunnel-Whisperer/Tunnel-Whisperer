@@ -31,12 +31,13 @@ type XrayConfig struct {
 
 // ServerConfig holds settings only used by `tw serve`.
 type ServerConfig struct {
-	SSHPort      int    `yaml:"ssh_port"`
-	APIPort      int    `yaml:"api_port"`
-	DashboardPort int   `yaml:"dashboard_port"`
-	RelaySSHPort int    `yaml:"relay_ssh_port"`
-	RelaySSHUser string `yaml:"relay_ssh_user"`
-	RemotePort   int    `yaml:"remote_port"`
+	SSHPort       int    `yaml:"ssh_port"`
+	APIPort       int    `yaml:"api_port"`
+	DashboardPort int    `yaml:"dashboard_port"`
+	RelaySSHPort  int    `yaml:"relay_ssh_port"`
+	RelaySSHUser  string `yaml:"relay_ssh_user"`
+	RemotePort    int    `yaml:"remote_port"`
+	TempXrayPort  int    `yaml:"temp_xray_port,omitempty"`
 }
 
 // ClientConfig holds settings only used by `tw connect`.
@@ -84,12 +85,13 @@ func Default() *Config {
 			Path:      "/tw",
 		},
 		Server: ServerConfig{
-			SSHPort:      2222,
-			APIPort:      50051,
+			SSHPort:       2222,
+			APIPort:       50051,
 			DashboardPort: 8080,
-			RelaySSHPort: 22,
-			RelaySSHUser: "ubuntu",
-			RemotePort:   2222,
+			RelaySSHPort:  22,
+			RelaySSHUser:  "ubuntu",
+			RemotePort:    2222,
+			TempXrayPort:  59000,
 		},
 		Client: ClientConfig{
 			SSHUser:       "tunnel",

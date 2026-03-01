@@ -67,7 +67,7 @@ sequenceDiagram
     Admin ->> Admin: [1] Enter username (alphanumeric + dash/underscore)
     Admin ->> Admin: [2] Define port mappings one at a time<br/>(client local port -> server port, localhost only)
     Admin ->> Admin: [3] Generate UUID + ed25519 SSH key pair
-    Admin ->> R: [4] Start temp Xray on port 59001,<br/>SSH to relay, add UUID to Xray config,<br/>restart Xray (kills own tunnel -- expected)
+    Admin ->> R: [4] Start temp Xray on configurable port<br/>(default 59001), SSH to relay, add UUID<br/>to Xray config, restart Xray
     Admin ->> AK: [5] Append public key with permitopen restrictions
     Admin ->> Admin: Write client config + keys to users/<name>/
 ```
@@ -76,7 +76,7 @@ sequenceDiagram
 
 **Relay update mechanism:**
 
-1. Starts a temporary Xray instance on port 59000 (dokodemo-door on 59001) to avoid conflicts with a running `tw serve`
+1. Starts a temporary Xray instance on `server.temp_xray_port` (default 59000, dokodemo-door on port+1) to avoid conflicts with a running `tw serve`
 2. SSHs into the relay through the temporary tunnel using the server's private key
 3. Reads `/usr/local/etc/xray/config.json` via `sudo cat`
 4. Parses the JSON, adds the new UUID to `inbounds[0].settings.clients[]`

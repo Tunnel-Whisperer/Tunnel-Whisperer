@@ -38,6 +38,9 @@ endpoints accept and return JSON unless noted otherwise.
 |---|---|---|
 | `POST` | `/api/proxy` | Set or clear the outbound proxy URL |
 | `POST` | `/api/log-level` | Set the log level (`debug`, `info`, `warn`, `error`) |
+| `POST` | `/api/settings/server` | Update server settings (ports, relay SSH user, temp Xray port) |
+| `POST` | `/api/settings/xray` | Update Xray transport settings (relay host, port, path) |
+| `POST` | `/api/settings/client` | Update client settings (SSH user, server SSH port) |
 
 **Proxy request body:**
 
@@ -48,12 +51,47 @@ endpoints accept and return JSON unless noted otherwise.
 **Log level request body:**
 
 ```json
-{ "level": "debug" }
+{ "log_level": "debug" }
+```
+
+**Server settings request body:**
+
+```json
+{
+  "ssh_port": 2222,
+  "api_port": 50051,
+  "dashboard_port": 8080,
+  "relay_ssh_port": 22,
+  "relay_ssh_user": "ubuntu",
+  "remote_port": 2222,
+  "temp_xray_port": 59000
+}
+```
+
+Only non-zero / non-empty fields are applied; omitted fields keep their current value.
+
+**Xray settings request body:**
+
+```json
+{
+  "relay_host": "relay.example.com",
+  "relay_port": 443,
+  "path": "/tw"
+}
+```
+
+**Client settings request body:**
+
+```json
+{
+  "ssh_user": "tunnel",
+  "server_ssh_port": 2222
+}
 ```
 
 !!! note "Restart required"
-    Changing the log level persists the value to `config.yaml` and restarts
-    the daemon process to apply the new level.
+    Settings changes are persisted to `config.yaml` immediately. A restart
+    (server) or reconnect (client) is needed for the changes to take effect.
 
 ### Server control
 

@@ -267,6 +267,9 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		LogLevel   string
 		Proxy      string
 		Running    bool
+		Server     config.ServerConfig
+		Client     config.ClientConfig
+		Xray       config.XrayConfig
 	}{
 		pageData:   pageData{Title: "Config", Active: "config", Mode: mode},
 		ConfigPath: config.FilePath(),
@@ -274,6 +277,9 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		LogLevel:   logLevel,
 		Proxy:      cfg.Proxy,
 		Running:    running,
+		Server:     cfg.Server,
+		Client:     cfg.Client,
+		Xray:       cfg.Xray,
 	}
 	s.renderPage(w, "config", data)
 }

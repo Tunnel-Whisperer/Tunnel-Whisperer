@@ -43,6 +43,88 @@
   <div id="proxy-success" class="alert alert-success mt-16 hidden"></div>
 </div>
 
+<div class="card mb-16">
+  <div class="card-header">
+    <h2>Xray Transport</h2>
+  </div>
+  <p class="text-dim mb-16">Xray VLESS + splitHTTP transport settings. Changes take effect on {{if eq .Mode "client"}}reconnect{{else}}restart{{end}}.</p>
+  <div class="form-group">
+    <label>Relay Host</label>
+    <input type="text" id="xray-relay-host" placeholder="relay.example.com" value="{{.Xray.RelayHost}}" autocomplete="off">
+  </div>
+  <div class="form-group">
+    <label>Relay Port</label>
+    <input type="number" id="xray-relay-port" value="{{.Xray.RelayPort}}" min="1" max="65535">
+  </div>
+  <div class="form-group">
+    <label>Path</label>
+    <input type="text" id="xray-path" value="{{.Xray.Path}}" autocomplete="off">
+  </div>
+  <button class="btn btn-primary" id="btn-xray-save" onclick="saveXraySettings()">Save</button>
+  <div id="xray-error" class="alert alert-error mt-16 hidden"></div>
+  <div id="xray-success" class="alert alert-success mt-16 hidden"></div>
+</div>
+
+{{if ne .Mode "client"}}
+<div class="card mb-16">
+  <div class="card-header">
+    <h2>Server Settings</h2>
+  </div>
+  <p class="text-dim mb-16">Server-specific port and relay configuration. Changes take effect on restart.</p>
+  <div class="form-group">
+    <label>SSH Port</label>
+    <input type="number" id="srv-ssh-port" value="{{.Server.SSHPort}}" min="1" max="65535">
+  </div>
+  <div class="form-group">
+    <label>API Port (gRPC)</label>
+    <input type="number" id="srv-api-port" value="{{.Server.APIPort}}" min="1" max="65535">
+  </div>
+  <div class="form-group">
+    <label>Dashboard Port</label>
+    <input type="number" id="srv-dashboard-port" value="{{.Server.DashboardPort}}" min="1" max="65535">
+  </div>
+  <div class="form-group">
+    <label>Relay SSH Port</label>
+    <input type="number" id="srv-relay-ssh-port" value="{{.Server.RelaySSHPort}}" min="1" max="65535">
+  </div>
+  <div class="form-group">
+    <label>Relay SSH User</label>
+    <input type="text" id="srv-relay-ssh-user" value="{{.Server.RelaySSHUser}}" autocomplete="off">
+  </div>
+  <div class="form-group">
+    <label>Remote Port (exposed on relay)</label>
+    <input type="number" id="srv-remote-port" value="{{.Server.RemotePort}}" min="1" max="65535">
+  </div>
+  <div class="form-group">
+    <label>Temp Xray Port (relay config updates)</label>
+    <input type="number" id="srv-temp-xray-port" value="{{.Server.TempXrayPort}}" min="1" max="65535">
+  </div>
+  <button class="btn btn-primary" id="btn-server-save" onclick="saveServerSettings()">Save</button>
+  <div id="server-error" class="alert alert-error mt-16 hidden"></div>
+  <div id="server-success" class="alert alert-success mt-16 hidden"></div>
+</div>
+{{end}}
+
+{{if ne .Mode "server"}}
+<div class="card mb-16">
+  <div class="card-header">
+    <h2>Client Settings</h2>
+  </div>
+  <p class="text-dim mb-16">Client-specific connection settings. Changes take effect on reconnect.</p>
+  <div class="form-group">
+    <label>SSH User</label>
+    <input type="text" id="cli-ssh-user" value="{{.Client.SSHUser}}" autocomplete="off">
+  </div>
+  <div class="form-group">
+    <label>Server SSH Port (on relay)</label>
+    <input type="number" id="cli-server-ssh-port" value="{{.Client.ServerSSHPort}}" min="1" max="65535">
+  </div>
+  <button class="btn btn-primary" id="btn-client-save" onclick="saveClientSettings()">Save</button>
+  <div id="client-error" class="alert alert-error mt-16 hidden"></div>
+  <div id="client-success" class="alert alert-success mt-16 hidden"></div>
+</div>
+{{end}}
+
 <div class="card">
   <div class="card-header">
     <h2>config.yaml</h2>

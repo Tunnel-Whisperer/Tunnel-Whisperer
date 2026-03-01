@@ -22,6 +22,7 @@ server:                            # only needed for `tw serve`
   relay_ssh_port: 22
   relay_ssh_user: ubuntu
   remote_port: 2222                # port exposed on relay for clients
+  temp_xray_port: 59000            # temp tunnel for relay config updates
 
 client:                            # only needed for `tw connect`
   ssh_user: tunnel

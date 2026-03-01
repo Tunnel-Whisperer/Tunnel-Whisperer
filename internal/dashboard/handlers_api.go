@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
@@ -561,6 +562,102 @@ func (s *Server) apiSetLogLevel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonOK(w, map[string]string{"status": "ok", "log_level": req.LogLevel})
+}
+
+// ── Server settings ─────────────────────────────────────────────────────────
+
+func (s *Server) apiSetServerSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		SSHPort       int    `json:"ssh_port"`
+		APIPort       int    `json:"api_port"`
+		DashboardPort int    `json:"dashboard_port"`
+		RelaySSHPort  int    `json:"relay_ssh_port"`
+		RelaySSHUser  string `json:"relay_ssh_user"`
+		RemotePort    int    `json:"remote_port"`
+		TempXrayPort  int    `json:"temp_xray_port"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.ops.SetServerSettings(config.ServerConfig{
+		SSHPort:       req.SSHPort,
+		APIPort:       req.APIPort,
+		DashboardPort: req.DashboardPort,
+		RelaySSHPort:  req.RelaySSHPort,
+		RelaySSHUser:  req.RelaySSHUser,
+		RemotePort:    req.RemotePort,
+		TempXrayPort:  req.TempXrayPort,
+	}); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	jsonOK(w, map[string]string{"status": "ok"})
+}
+
+// ── Xray settings ───────────────────────────────────────────────────────────
+
+func (s *Server) apiSetXraySettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		RelayHost string `json:"relay_host"`
+		RelayPort int    `json:"relay_port"`
+		Path      string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.ops.SetXraySettings(config.XrayConfig{
+		RelayHost: req.RelayHost,
+		RelayPort: req.RelayPort,
+		Path:      req.Path,
+	}); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	jsonOK(w, map[string]string{"status": "ok"})
+}
+
+// ── Client settings ─────────────────────────────────────────────────────────
+
+func (s *Server) apiSetClientSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		SSHUser       string `json:"ssh_user"`
+		ServerSSHPort int    `json:"server_ssh_port"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.ops.SetClientSettings(config.ClientConfig{
+		SSHUser:       req.SSHUser,
+		ServerSSHPort: req.ServerSSHPort,
+	}); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	jsonOK(w, map[string]string{"status": "ok"})
 }
 
 // ── Log streaming ───────────────────────────────────────────────────────────

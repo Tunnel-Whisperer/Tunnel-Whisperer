@@ -82,6 +82,7 @@ The dashboard is a web UI served by an embedded HTTP server. It provides:
 - **SSE Hub** -- manages progress event sessions for long-running operations (relay provisioning, user creation, server start/stop). Each operation gets a unique session ID; the browser subscribes via `/api/events/{id}`.
 - **WebSocket SSH Terminal** -- the `/api/relay/ssh` endpoint upgrades to a WebSocket and bridges it to an interactive SSH session on the relay via the Xray tunnel. The browser runs xterm.js to render the terminal. Binary messages carry stdin/stdout data; text messages carry JSON control frames (e.g., terminal resize).
 - **Mode-aware UI** -- pages and navigation adapt based on the configured `mode` (server or client). Server-only pages (relay, users) are hidden in client mode.
+- **Settings Management** -- the config page exposes all server, client, and Xray settings through form-based editing. Changes are persisted via REST API (`/api/settings/server`, `/api/settings/xray`, `/api/settings/client`) and the config YAML preview auto-refreshes after each save.
 
 #### Dashboard Component Architecture
 

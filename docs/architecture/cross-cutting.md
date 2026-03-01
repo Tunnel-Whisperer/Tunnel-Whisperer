@@ -57,7 +57,7 @@ When the SSH server authenticates a client, it parses `permitopen` options from 
 ```mermaid
 sequenceDiagram
     participant S as Server (tw)
-    participant TX as Temp Xray :59001
+    participant TX as Temp Xray (configurable port)
     participant R as Relay (SSH)
     participant XR as Relay Xray
 
@@ -77,7 +77,7 @@ sequenceDiagram
 
 `tw create user` updates the relay's Xray config remotely:
 
-1. Starts a temporary Xray instance (dokodemo-door on port 59001, separate from `tw serve`)
+1. Starts a temporary Xray instance (dokodemo-door on `server.temp_xray_port+1`, default 59001, separate from `tw serve`)
 2. SSHs into the relay through the temporary tunnel using the server's SSH key
 3. Reads `/usr/local/etc/xray/config.json` via `sudo cat`
 4. Parses the JSON, checks for duplicate UUID, adds new client entry

@@ -140,6 +140,71 @@ func (o *Ops) SetLogLevel(level string) error {
 	return config.Save(cfg)
 }
 
+// SetServerSettings updates server config fields and persists to disk.
+// Only non-zero values are applied. Takes effect on next restart.
+func (o *Ops) SetServerSettings(s config.ServerConfig) error {
+	o.mu.Lock()
+	if s.SSHPort > 0 {
+		o.cfg.Server.SSHPort = s.SSHPort
+	}
+	if s.APIPort > 0 {
+		o.cfg.Server.APIPort = s.APIPort
+	}
+	if s.DashboardPort > 0 {
+		o.cfg.Server.DashboardPort = s.DashboardPort
+	}
+	if s.RelaySSHPort > 0 {
+		o.cfg.Server.RelaySSHPort = s.RelaySSHPort
+	}
+	if s.RelaySSHUser != "" {
+		o.cfg.Server.RelaySSHUser = s.RelaySSHUser
+	}
+	if s.RemotePort > 0 {
+		o.cfg.Server.RemotePort = s.RemotePort
+	}
+	if s.TempXrayPort > 0 {
+		o.cfg.Server.TempXrayPort = s.TempXrayPort
+	}
+	cfg := o.cfg
+	o.mu.Unlock()
+	return config.Save(cfg)
+}
+
+// SetXraySettings updates Xray config fields and persists to disk.
+// Takes effect on next restart.
+func (o *Ops) SetXraySettings(x config.XrayConfig) error {
+	o.mu.Lock()
+	if x.RelayHost != "" {
+		o.cfg.Xray.RelayHost = x.RelayHost
+	}
+	if x.RelayPort > 0 {
+		o.cfg.Xray.RelayPort = x.RelayPort
+	}
+	if x.Path != "" {
+		o.cfg.Xray.Path = x.Path
+	}
+	// UUID is not settable through the UI
+	cfg := o.cfg
+	o.mu.Unlock()
+	return config.Save(cfg)
+}
+
+// SetClientSettings updates client config fields and persists to disk.
+// Takes effect on next reconnect.
+func (o *Ops) SetClientSettings(c config.ClientConfig) error {
+	o.mu.Lock()
+	if c.SSHUser != "" {
+		o.cfg.Client.SSHUser = c.SSHUser
+	}
+	if c.ServerSSHPort > 0 {
+		o.cfg.Client.ServerSSHPort = c.ServerSSHPort
+	}
+	// Tunnels are managed separately (user creation), not updated here.
+	cfg := o.cfg
+	o.mu.Unlock()
+	return config.Save(cfg)
+}
+
 // StartServer starts all server components.
 func (o *Ops) StartServer(progress ProgressFunc) error {
 	return o.srv.Start(o, progress)

@@ -73,6 +73,10 @@ server:
   # Remote port on the relay that maps back to the local SSH port.
   remote_port: 2222
 
+  # Port used for temporary Xray tunnel during relay config updates
+  # (user creation, user registration). Change if 59000 is in use.
+  temp_xray_port: 59000
+
 # Client-only settings (ignored in server mode).
 client:
   # SSH user to authenticate as on the server.
@@ -120,6 +124,7 @@ client:
 | `relay_ssh_port` | int | `22` | SSH port on the relay for the reverse tunnel. |
 | `relay_ssh_user` | string | `ubuntu` | SSH user on the relay server. |
 | `remote_port` | int | `2222` | Remote port on the relay forwarded back to local SSH. |
+| `temp_xray_port` | int | `59000` | Port for the temporary Xray tunnel used during relay config updates (user creation/registration). Change if `59000` is already in use on your system. |
 
 ### `client` section
 

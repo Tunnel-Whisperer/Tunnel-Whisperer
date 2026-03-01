@@ -57,13 +57,39 @@ Real-time log streaming at the bottom of the page. Logs are captured from the ap
 
 ## Config Page
 
-Accessible from the settings icon on any card:
+Accessible from the settings icon on any card. All settings are editable from the web UI and are persisted to `config.yaml` immediately. A restart (server) or reconnect (client) is needed for the changes to take effect.
 
-- **Log Level** — dropdown to select debug/info/warn/error, saved to config
+### General Settings
+
+- **Log Level** — dropdown to select debug/info/warn/error
 - **Proxy** — SOCKS5 or HTTP proxy URL field
-- **config.yaml** — read-only view of the current configuration file
 
-Changes to log level or proxy trigger a "Configuration has changed" notification with a Restart (server) or Reconnect (client) prompt.
+### Xray Transport Settings
+
+- **Relay Host** — domain or IP of the relay server
+- **Relay Port** — HTTPS port on the relay (default 443)
+- **Path** — WebSocket path used by Xray (default `/tw`)
+
+### Server Settings (server mode only)
+
+- **SSH Port** — embedded SSH server listen port
+- **API Port** — gRPC API listen port
+- **Dashboard Port** — web dashboard listen port
+- **Relay SSH Port** — SSH port on the relay for reverse tunneling
+- **Relay SSH User** — SSH user on the relay
+- **Remote Port** — port exposed on relay for clients
+- **Temp Xray Port** — port used for the temporary Xray tunnel during relay config updates (user creation/registration). Change this if port 59000 is already in use on your system.
+
+### Client Settings (client mode only)
+
+- **SSH User** — username for SSH authentication to the server
+- **Server SSH Port** — server's SSH port on the relay
+
+### Config File
+
+- **config.yaml** — read-only view of the current configuration file, auto-refreshed after each save
+
+Changes trigger a "Configuration has changed" notification with a Restart (server) or Reconnect (client) prompt.
 
 ## Relay Page
 

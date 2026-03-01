@@ -129,6 +129,92 @@ function showProxySuccess(msg) {
   }
 }
 
+// ── Xray settings ───────────────────────────────────────────────────────────
+
+async function saveXraySettings() {
+  const btn = $('#btn-xray-save');
+  btn.disabled = true;
+
+  try {
+    await api.post('/api/settings/xray', {
+      relay_host: $('#xray-relay-host').value.trim(),
+      relay_port: parseInt($('#xray-relay-port').value) || 0,
+      path: $('#xray-path').value.trim(),
+    });
+    showResult('xray', true, 'Xray settings saved.' + restartMsg());
+    reloadConfigYAML();
+  } catch (err) {
+    showResult('xray', false, err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Server settings ─────────────────────────────────────────────────────────
+
+async function saveServerSettings() {
+  const btn = $('#btn-server-save');
+  btn.disabled = true;
+
+  try {
+    await api.post('/api/settings/server', {
+      ssh_port: parseInt($('#srv-ssh-port').value) || 0,
+      api_port: parseInt($('#srv-api-port').value) || 0,
+      dashboard_port: parseInt($('#srv-dashboard-port').value) || 0,
+      relay_ssh_port: parseInt($('#srv-relay-ssh-port').value) || 0,
+      relay_ssh_user: $('#srv-relay-ssh-user').value.trim(),
+      remote_port: parseInt($('#srv-remote-port').value) || 0,
+      temp_xray_port: parseInt($('#srv-temp-xray-port').value) || 0,
+    });
+    showResult('server', true, 'Server settings saved.' + restartMsg());
+    reloadConfigYAML();
+  } catch (err) {
+    showResult('server', false, err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Client settings ─────────────────────────────────────────────────────────
+
+async function saveClientSettings() {
+  const btn = $('#btn-client-save');
+  btn.disabled = true;
+
+  try {
+    await api.post('/api/settings/client', {
+      ssh_user: $('#cli-ssh-user').value.trim(),
+      server_ssh_port: parseInt($('#cli-server-ssh-port').value) || 0,
+    });
+    showResult('client', true, 'Client settings saved. Reconnect to apply.');
+    reloadConfigYAML();
+  } catch (err) {
+    showResult('client', false, err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function restartMsg() {
+  if (typeof serviceRunning === 'undefined' || !serviceRunning) return '';
+  const action = typeof serviceMode !== 'undefined' && serviceMode === 'client' ? ' Reconnect' : ' Restart';
+  return action + ' to apply.';
+}
+
+function showResult(section, success, msg) {
+  const errEl = $('#' + section + '-error');
+  const okEl = $('#' + section + '-success');
+  if (success) {
+    if (errEl) errEl.classList.add('hidden');
+    if (okEl) { okEl.textContent = msg; okEl.classList.remove('hidden'); }
+  } else {
+    if (okEl) okEl.classList.add('hidden');
+    if (errEl) { errEl.textContent = msg; errEl.classList.remove('hidden'); }
+  }
+}
+
 // Reload the config YAML block without a full page refresh.
 async function reloadConfigYAML() {
   try {
