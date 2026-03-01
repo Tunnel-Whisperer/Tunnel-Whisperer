@@ -28,12 +28,14 @@ config is set to `client`, and vice versa.
 | `tw service start` | any | Start the system service |
 | `tw service stop` | any | Stop the system service |
 | `tw completion` | any | Generate a zsh completion script |
+| `tw --version` | any | Print the version and exit |
 
 ## Global flags
 
 | Flag | Values | Default | Description |
 |---|---|---|---|
 | `--log-level` | `debug`, `info`, `warn`, `error` | `info` | Set the log verbosity level |
+| `--version`, `-v` | | | Print the version and exit |
 
 The `--log-level` flag is **persisted to the config file** when specified
 explicitly. On subsequent runs without the flag, the saved value is used

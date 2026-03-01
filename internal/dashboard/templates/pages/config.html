@@ -3,6 +3,13 @@
 
 <div class="card mb-16">
   <div class="card-header">
+    <h2>Version</h2>
+    <span class="badge badge-dim">{{.Version}}</span>
+  </div>
+</div>
+
+<div class="card mb-16">
+  <div class="card-header">
     <h2>Log Level</h2>
     <span class="badge {{if eq .LogLevel "debug"}}badge-yellow{{else if eq .LogLevel "warn"}}badge-yellow{{else if eq .LogLevel "error"}}badge-red{{else}}badge-dim{{end}}" id="log-level-badge">{{.LogLevel}}</span>
   </div>

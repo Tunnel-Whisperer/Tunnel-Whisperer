@@ -15,7 +15,7 @@ endpoints accept and return JSON unless noted otherwise.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/status` | Current daemon status (mode, relay, server/client state) |
+| `GET` | `/api/status` | Current daemon status (mode, version, relay, server/client state) |
 | `GET` | `/api/config` | Current configuration (sanitized) |
 | `GET` | `/api/relay` | Relay provisioning status (provisioned, domain, IP, provider) |
 | `GET` | `/api/providers` | List of supported cloud providers for relay provisioning |

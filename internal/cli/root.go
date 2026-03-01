@@ -6,13 +6,15 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/logging"
+	"github.com/tunnelwhisperer/tw/internal/version"
 )
 
 var logLevel string
 
 var rootCmd = &cobra.Command{
-	Use:   "tw",
-	Short: "Tunnel Whisperer — surgical, resilient connectivity",
+	Use:     "tw",
+	Short:   "Tunnel Whisperer — surgical, resilient connectivity",
+	Version: version.Version,
 	Long: `Tunnel Whisperer creates resilient, application-layer bridges for specific
 ports across separated private networks. It encapsulates traffic in standard
 HTTPS/WebSocket to traverse strict firewalls and DPI.`,

@@ -309,6 +309,24 @@ The `/api/relay/ssh` endpoint provides a browser-based SSH terminal to the relay
 
 ---
 
+## Build-time Version Injection
+
+The application version is stored in a single package-level variable:
+
+```go
+// internal/version/version.go
+var Version = "dev"
+```
+
+This variable is overridden at build time via Go's `-ldflags -X` mechanism. The Makefile auto-detects the version from `git describe --tags --always --dirty`, while the GitHub Actions release workflow injects the exact tag name (e.g. `v1.2.3`).
+
+The version is consumed in two places:
+
+- **CLI**: Cobra's `Version` field on the root command, enabling `tw --version`
+- **Dashboard API**: The `/api/status` endpoint includes the `version` field in its JSON response
+
+---
+
 ## Xray Version Pinning
 
 The Xray version installed on the relay is controlled by a single constant:

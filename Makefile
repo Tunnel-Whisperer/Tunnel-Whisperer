@@ -1,6 +1,8 @@
 BINARY  := tw
 CMD     := ./cmd/tw
 BIN_DIR := bin
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS := -X github.com/tunnelwhisperer/tw/internal/version.Version=$(VERSION)
 
 export GOTOOLCHAIN := local
 
@@ -8,15 +10,15 @@ export GOTOOLCHAIN := local
 
 build:
 	@mkdir -p $(BIN_DIR)
-	go build -o $(BIN_DIR)/$(BINARY) $(CMD)
+	go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) $(CMD)
 
 build-linux:
 	@mkdir -p $(BIN_DIR)
-	GOOS=linux GOARCH=amd64 go build -o $(BIN_DIR)/$(BINARY) $(CMD)
+	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) $(CMD)
 
 build-windows:
 	@mkdir -p $(BIN_DIR)
-	GOOS=windows GOARCH=amd64 go build -o $(BIN_DIR)/$(BINARY).exe $(CMD)
+	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY).exe $(CMD)
 
 build-all: build-linux build-windows
 

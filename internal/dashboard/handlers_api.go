@@ -11,6 +11,7 @@ import (
 
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/ops"
+	"github.com/tunnelwhisperer/tw/internal/version"
 )
 
 func jsonOK(w http.ResponseWriter, v interface{}) {
@@ -41,7 +42,7 @@ func (s *Server) apiStatus(w http.ResponseWriter, r *http.Request) {
 
 	resp := map[string]interface{}{
 		"mode":           mode,
-		"version":        "0.1.0-dev",
+		"version":        version.Version,
 		"relay":          relay,
 		"user_count":     registeredCount,
 		"config_changed": s.ops.ConfigChanged(),

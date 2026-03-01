@@ -10,6 +10,7 @@ import (
 
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/ops"
+	"github.com/tunnelwhisperer/tw/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
@@ -270,6 +271,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		Server     config.ServerConfig
 		Client     config.ClientConfig
 		Xray       config.XrayConfig
+		Version    string
 	}{
 		pageData:   pageData{Title: "Config", Active: "config", Mode: mode},
 		ConfigPath: config.FilePath(),
@@ -280,6 +282,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		Server:     cfg.Server,
 		Client:     cfg.Client,
 		Xray:       cfg.Xray,
+		Version:    version.Version,
 	}
 	s.renderPage(w, "config", data)
 }

@@ -95,13 +95,28 @@ All templates use `user_data = file("${path.module}/cloud-init.yaml")` and outpu
 
 Requires **Go 1.22+**.
 
+### Version Injection
+
+The `Version` variable in `internal/version/version.go` defaults to `"dev"` and is overridden at build time via `-ldflags`:
+
+```bash
+go build -ldflags "-X github.com/tunnelwhisperer/tw/internal/version.Version=v1.2.3" ./cmd/tw
+```
+
+The Makefile auto-detects the version from the latest git tag (`git describe --tags --always --dirty`). Override with `make build VERSION=v1.2.3`. The GitHub Actions release workflow injects the exact tag name (e.g. `v1.2.3`) from `github.ref_name`.
+
+The version is used in:
+
+- `tw --version` — CLI version output
+- `/api/status` — `version` field in the JSON response
+
 ### Makefile Targets
 
 | Target | Command | Description |
 | ------ | ------- | ----------- |
-| `make build` | `go build -o bin/tw ./cmd/tw` | Build for current platform |
-| `make build-linux` | `GOOS=linux GOARCH=amd64 go build ...` | Cross-compile for Linux amd64 |
-| `make build-windows` | `GOOS=windows GOARCH=amd64 go build ...` | Cross-compile for Windows amd64 |
+| `make build` | `go build -ldflags "..." -o bin/tw ./cmd/tw` | Build for current platform (version auto-detected) |
+| `make build-linux` | `GOOS=linux GOARCH=amd64 go build -ldflags "..." ...` | Cross-compile for Linux amd64 |
+| `make build-windows` | `GOOS=windows GOARCH=amd64 go build -ldflags "..." ...` | Cross-compile for Windows amd64 |
 | `make build-all` | | Build both Linux and Windows |
 | `make run` | Build + execute `./bin/tw` | Build and run |
 | `make clean` | `rm -rf bin/` | Remove build artifacts |

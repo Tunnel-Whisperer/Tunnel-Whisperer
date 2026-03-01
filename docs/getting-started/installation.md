@@ -43,9 +43,21 @@ go build -o bin/tw ./cmd/tw
 | `make run` | Build and run locally |
 | `make clean` | Remove build artifacts |
 
+### Version Injection
+
+All build targets inject the version at build time via `-ldflags`. The version is auto-detected from the latest git tag:
+
+```bash
+make build                    # version from git describe
+make build VERSION=v1.2.3     # explicit override
+```
+
+Release builds (GitHub Actions) inject the exact git tag (e.g. `v1.2.3`) into the binary.
+
 ## Verify
 
 ```bash
+tw --version    # prints: tw version v1.2.3
 tw --help
 ```
 

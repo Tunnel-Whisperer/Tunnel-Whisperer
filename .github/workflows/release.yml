@@ -24,11 +24,11 @@ jobs:
 
       - name: Build Linux binary
         run: |
-          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o tw ./cmd/tw
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X github.com/tunnelwhisperer/tw/internal/version.Version=${{ github.ref_name }}" -o tw ./cmd/tw
 
       - name: Build Windows binary
         run: |
-          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o tw.exe ./cmd/tw
+          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X github.com/tunnelwhisperer/tw/internal/version.Version=${{ github.ref_name }}" -o tw.exe ./cmd/tw
 
       - name: Generate changelog
         id: changelog
