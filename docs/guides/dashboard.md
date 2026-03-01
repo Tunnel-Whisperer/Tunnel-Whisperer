@@ -89,6 +89,28 @@ The SSH terminal connects through a WebSocket to a Go SSH bridge that tunnels th
 - **Download** — export user config as zip
 - **Delete** — remove user and revoke access
 
+## Running as a System Service
+
+The dashboard can run as a system service for unattended operation. The service starts `tw dashboard`, which auto-starts the server or client based on config mode.
+
+=== "Linux"
+
+    ```bash
+    sudo tw service install   # create and enable systemd unit
+    sudo tw service start     # start the service
+    ```
+
+=== "Windows"
+
+    ```powershell
+    tw.exe service install    # register with Windows SCM
+    tw.exe service start      # start the service
+    ```
+
+The service restarts automatically on failure. Use `tw service stop` and `tw service uninstall` to stop and remove it.
+
+See [Installation — Install as a System Service](../getting-started/installation.md#install-as-a-system-service) for setup details.
+
 ## Progress Events
 
 Long-running operations (provisioning, starting, stopping) show real-time step-by-step progress via Server-Sent Events. Each step displays its status (running/completed/failed) with descriptive labels and error messages.

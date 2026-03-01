@@ -87,6 +87,10 @@ tw connect                # connect using config from server admin
 
 # Web dashboard
 tw dashboard              # manage everything from a browser
+
+# Install as system service (Linux systemd / Windows SCM)
+sudo tw service install   # register and enable the service
+sudo tw service start     # start the service
 ```
 
 > See [Getting Started](https://tunnel-whisperer.github.io/Tunnel-Whisperer/getting-started/) for the full walkthrough.
@@ -110,6 +114,10 @@ tw dashboard              # manage everything from a browser
 | `tw relay ssh` | Open SSH terminal to relay through Xray tunnel |
 | `tw destroy relay-server` | Tear down relay infrastructure |
 | `tw proxy [set\|clear]` | Manage SOCKS5/HTTP proxy for tunnel traffic |
+| `tw service install` | Install tw as a system service (Linux systemd / Windows SCM) |
+| `tw service uninstall` | Remove the system service |
+| `tw service start` | Start the system service |
+| `tw service stop` | Stop the system service |
 
 > See [CLI Reference](https://tunnel-whisperer.github.io/Tunnel-Whisperer/reference/cli/) for details and flags.
 

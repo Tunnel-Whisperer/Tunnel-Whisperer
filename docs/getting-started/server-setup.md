@@ -69,6 +69,26 @@ This starts:
 !!! note "Auto-start"
     When using `tw dashboard`, the server starts automatically if a relay is provisioned.
 
+## 5. Run as a Service (Optional)
+
+To keep the server running in the background and start it on boot:
+
+=== "Linux"
+
+    ```bash
+    sudo tw service install
+    sudo tw service start
+    ```
+
+=== "Windows"
+
+    ```powershell
+    tw.exe service install
+    tw.exe service start
+    ```
+
+The service runs `tw dashboard`, which auto-starts the server if a relay is provisioned. See [Installation — Install as a System Service](installation.md#install-as-a-system-service).
+
 ## What's Next
 
 - [Create more users](../guides/user-management.md)

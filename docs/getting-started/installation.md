@@ -49,6 +49,30 @@ go build -o bin/tw ./cmd/tw
 tw --help
 ```
 
+## Install as a System Service
+
+After building, you can register `tw` as a system service so it starts on boot and runs in the background.
+
+=== "Linux (systemd)"
+
+    ```bash
+    sudo tw service install
+    sudo tw service start
+    ```
+
+    This creates a systemd unit at `/etc/systemd/system/tw.service` that runs `tw dashboard` with automatic restart on failure.
+
+=== "Windows (SCM)"
+
+    ```powershell
+    tw.exe service install
+    tw.exe service start
+    ```
+
+    This registers a Windows service that starts automatically on boot. Manage it from `services.msc` or with `tw.exe service stop` / `tw.exe service uninstall`.
+
+The service runs `tw dashboard`, which auto-starts the server or client based on your config mode. See [CLI Reference — Running as a Service](../reference/cli.md#running-as-a-service) for details.
+
 ## Config Directory
 
 Tunnel Whisperer stores configuration in a platform-specific directory:

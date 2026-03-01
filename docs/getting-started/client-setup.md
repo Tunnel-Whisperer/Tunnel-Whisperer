@@ -62,6 +62,26 @@ psql -h localhost -p 5432 -U myuser mydb
 
 The connection goes through the tunnel transparently.
 
+## 5. Run as a Service (Optional)
+
+To keep the client running in the background and auto-connect on boot:
+
+=== "Linux"
+
+    ```bash
+    sudo tw service install
+    sudo tw service start
+    ```
+
+=== "Windows"
+
+    ```powershell
+    tw.exe service install
+    tw.exe service start
+    ```
+
+The service runs `tw dashboard`, which auto-connects the client if `relay_host` is configured. See [Installation — Install as a System Service](installation.md#install-as-a-system-service).
+
 ## Reconnecting
 
 If the server admin updates your configuration, the dashboard shows a "Configuration has changed. Reconnect to apply." notification. Click **Reconnect** to apply changes without a full restart.

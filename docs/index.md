@@ -34,6 +34,7 @@ Both server and client connect **outbound** to a lightweight relay VM on port 44
 - **End-to-end encryption** — SSH inside Xray inside TLS; the relay is just a passthrough
 - **Automatic reconnection** — exponential backoff (2s → 30s max) on both sides
 - **Web dashboard** — manage relay, users, and tunnels from a browser
+- **System service** — run as a Linux systemd or Windows SCM service with auto-start on boot
 
 ---
 

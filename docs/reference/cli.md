@@ -23,6 +23,10 @@ config is set to `client`, and vice versa.
 | `tw proxy` | any | Show the current outbound proxy setting |
 | `tw proxy set <url>` | any | Set the outbound proxy URL |
 | `tw proxy clear` | any | Remove the outbound proxy |
+| `tw service install` | any | Install tw as a system service (Linux systemd / Windows SCM) |
+| `tw service uninstall` | any | Remove the system service |
+| `tw service start` | any | Start the system service |
+| `tw service stop` | any | Stop the system service |
 | `tw completion` | any | Generate a zsh completion script |
 
 ## Global flags
@@ -69,6 +73,32 @@ appropriate service:
 
 The dashboard also starts the gRPC API, so CLI commands like `tw status` and
 `tw list users` can communicate with the running daemon.
+
+## Running as a Service
+
+Tunnel Whisperer can run as a system service on both Linux and Windows. The service runs `tw dashboard`, which auto-starts the server or client based on your config mode.
+
+=== "Linux (systemd)"
+
+    ```bash
+    sudo tw service install    # writes /etc/systemd/system/tw.service, enables it
+    sudo tw service start      # systemctl start tw
+    sudo tw service stop       # systemctl stop tw
+    sudo tw service uninstall  # stops, disables, removes the unit file
+    ```
+
+    The systemd unit is configured with `Restart=on-failure` and a 5-second restart delay.
+
+=== "Windows (SCM)"
+
+    ```powershell
+    tw.exe service install    # registers with Windows Service Control Manager
+    tw.exe service start      # starts the service
+    tw.exe service stop       # stops the service
+    tw.exe service uninstall  # removes the service
+    ```
+
+    The Windows service is set to start automatically on boot with automatic restart on failure.
 
 ## Shell completion
 
