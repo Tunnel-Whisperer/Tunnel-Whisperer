@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="shieldGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3F51B5"/>
+      <stop offset="100%" stop-color="#1A237E"/>
+    </linearGradient>
+    <linearGradient id="tunnelGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#009688"/>
+      <stop offset="100%" stop-color="#4DB6AC"/>
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4DB6AC" stop-opacity="0.6"/>
+      <stop offset="50%" stop-color="#80CBC4" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#4DB6AC" stop-opacity="0.6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Shield body -->
+  <path d="M256 28 L462 120 C462 120 472 310 256 484 C40 310 50 120 50 120 Z"
+        fill="url(#shieldGrad)" stroke="#283593" stroke-width="6"/>
+
+  <!-- Inner shield bevel -->
+  <path d="M256 58 L432 138 C432 138 441 300 256 452 C71 300 80 138 80 138 Z"
+        fill="none" stroke="#5C6BC0" stroke-width="2" opacity="0.4"/>
+
+  <!-- Firewall wall (barrier) -->
+  <rect x="232" y="110" width="48" height="300" rx="6" fill="#1A237E" opacity="0.5"/>
+  <rect x="240" y="120" width="32" height="280" rx="4" fill="#0D1442" opacity="0.4"/>
+
+  <!-- Tunnel passage through the wall -->
+  <ellipse cx="256" cy="250" rx="62" ry="62" fill="#0D1442" opacity="0.7"/>
+  <ellipse cx="256" cy="250" rx="50" ry="50" fill="#0A0F2E"/>
+  <ellipse cx="256" cy="250" rx="38" ry="38" fill="url(#tunnelGrad)" opacity="0.15"/>
+
+  <!-- Tunnel rings (depth perspective) -->
+  <ellipse cx="256" cy="250" rx="50" ry="50" fill="none" stroke="url(#tunnelGrad)" stroke-width="3" opacity="0.8"/>
+  <ellipse cx="256" cy="250" rx="38" ry="38" fill="none" stroke="#4DB6AC" stroke-width="2" opacity="0.5"/>
+  <ellipse cx="256" cy="250" rx="26" ry="26" fill="none" stroke="#4DB6AC" stroke-width="1.5" opacity="0.3"/>
+
+  <!-- Connection path going through tunnel (left to right) -->
+  <!-- Left side incoming line -->
+  <path d="M90 250 L194 250" stroke="url(#glowGrad)" stroke-width="4" stroke-linecap="round"/>
+  <path d="M90 250 L194 250" stroke="#80CBC4" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Right side outgoing line -->
+  <path d="M318 250 L422 250" stroke="url(#glowGrad)" stroke-width="4" stroke-linecap="round"/>
+  <path d="M318 250 L422 250" stroke="#80CBC4" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Left node (source) -->
+  <circle cx="90" cy="250" r="12" fill="#009688"/>
+  <circle cx="90" cy="250" r="7" fill="#4DB6AC"/>
+  <circle cx="90" cy="250" r="3" fill="#E0F2F1"/>
+
+  <!-- Right node (destination) -->
+  <circle cx="422" cy="250" r="12" fill="#009688"/>
+  <circle cx="422" cy="250" r="7" fill="#4DB6AC"/>
+  <circle cx="422" cy="250" r="3" fill="#E0F2F1"/>
+
+  <!-- Center keyhole / lock icon inside tunnel -->
+  <path d="M256 232 C248 232 242 238 242 246 C242 251 245 255 249 257 L247 268 C247 270 249 272 251 272 L261 272 C263 272 265 270 265 268 L263 257 C267 255 270 251 270 246 C270 238 264 232 256 232 Z"
+        fill="#80CBC4" opacity="0.9"/>
+
+  <!-- Whisper waves (left side) -->
+  <path d="M130 220 Q145 235 130 250" fill="none" stroke="#4DB6AC" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+  <path d="M142 212 Q162 231 142 250" fill="none" stroke="#4DB6AC" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+
+  <!-- Whisper waves (right side) -->
+  <path d="M382 250 Q397 265 382 280" fill="none" stroke="#4DB6AC" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+  <path d="M370 250 Q390 269 370 288" fill="none" stroke="#4DB6AC" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+
+  <!-- Small data packets animating through (static representation) -->
+  <rect x="155" y="246" width="8" height="8" rx="2" fill="#80CBC4" opacity="0.6"/>
+  <rect x="175" y="246" width="8" height="8" rx="2" fill="#80CBC4" opacity="0.8"/>
+  <rect x="335" y="246" width="8" height="8" rx="2" fill="#80CBC4" opacity="0.8"/>
+  <rect x="355" y="246" width="8" height="8" rx="2" fill="#80CBC4" opacity="0.6"/>
+</svg>

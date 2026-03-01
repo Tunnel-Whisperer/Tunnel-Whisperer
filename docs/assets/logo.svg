@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <!-- Shield -->
+  <path d="M64 6 L118 30 C118 30 121 80 64 122 C7 80 10 30 10 30 Z"
+        fill="#3F51B5" stroke="#5C6BC0" stroke-width="2"/>
+
+  <!-- Tunnel opening -->
+  <circle cx="64" cy="62" r="22" fill="#1A237E"/>
+  <circle cx="64" cy="62" r="22" fill="none" stroke="#4DB6AC" stroke-width="2.5"/>
+  <circle cx="64" cy="62" r="15" fill="none" stroke="#4DB6AC" stroke-width="1.5" opacity="0.5"/>
+
+  <!-- Connection line through tunnel -->
+  <line x1="22" y1="62" x2="42" y2="62" stroke="#80CBC4" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="86" y1="62" x2="106" y2="62" stroke="#80CBC4" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Nodes -->
+  <circle cx="22" cy="62" r="5" fill="#009688"/>
+  <circle cx="22" cy="62" r="2.5" fill="#E0F2F1"/>
+  <circle cx="106" cy="62" r="5" fill="#009688"/>
+  <circle cx="106" cy="62" r="2.5" fill="#E0F2F1"/>
+
+  <!-- Lock keyhole -->
+  <circle cx="64" cy="58" r="5" fill="#80CBC4"/>
+  <rect x="61" y="62" width="6" height="8" rx="1" fill="#80CBC4"/>
+</svg>
