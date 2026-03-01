@@ -50,7 +50,7 @@ Connect a cloud Jupyter notebook to an on-premise database behind a corporate fi
 ```
 Client Network                   Public Cloud                    Server Network
 +--------------+             +------------------+             +--------------+
-|  tw connect  |-- HTTPS -->|     Relay VM      |<-- HTTPS --|   tw serve   |
+|  tw connect  |-- HTTPS --> |     Relay VM      |<-- HTTPS --|   tw serve   |
 |              |   (Xray     |                  |   (Xray     |              |
 | local ports  |   VLESS +   |  Caddy :443      |   VLESS +   | SSH server   |
 | :5432 :3389  |   splitHTTP)|  reverse proxy   |   splitHTTP)| :2222        |

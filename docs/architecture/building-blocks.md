@@ -2,6 +2,51 @@
 
 ## Level 1 -- System Overview
 
+```mermaid
+graph TB
+    subgraph SN["Server Network"]
+        S["<b>Server</b><br/>tw serve"]
+        SSHD["SSH Server<br/>:2222"]
+        XS["Xray<br/>:2223"]
+        API["gRPC API<br/>:50051"]
+        S --- SSHD
+        S --- XS
+        S --- API
+    end
+
+    subgraph RELAY["Relay VM (Public Cloud)"]
+        CADDY["Caddy<br/>:443"]
+        XR["Xray<br/>:10000"]
+        OSSH["OpenSSH<br/>127.0.0.1:22"]
+        CADDY -->|"/tw*"| XR
+        XR -->|freedom| OSSH
+    end
+
+    subgraph CN["Client Network"]
+        CL["<b>Client</b><br/>tw connect"]
+        XC["Xray<br/>:54001"]
+        FWD["Port Forwards<br/>:5432, :8080, ..."]
+        CL --- XC
+        CL --- FWD
+    end
+
+    XS ==>|"VLESS+splitHTTP<br/>TLS :443"| CADDY
+    XC ==>|"VLESS+splitHTTP<br/>TLS :443"| CADDY
+    SSHD -.->|"reverse tunnel<br/>-R 2222"| OSSH
+    FWD -.->|"forward tunnel<br/>-L ports"| SSHD
+
+    style S fill:#1565C0,color:#fff
+    style CL fill:#00897B,color:#fff
+    style CADDY fill:#5C6BC0,color:#fff
+    style XR fill:#5C6BC0,color:#fff
+    style OSSH fill:#5C6BC0,color:#fff
+    style SSHD fill:#1976D2,color:#fff
+    style XS fill:#1976D2,color:#fff
+    style API fill:#1976D2,color:#fff
+    style XC fill:#00ACC1,color:#fff
+    style FWD fill:#00ACC1,color:#fff
+```
+
 ### Server (`tw serve`)
 
 The server brings up four internal services:
@@ -37,6 +82,51 @@ The dashboard is a web UI served by an embedded HTTP server. It provides:
 - **SSE Hub** -- manages progress event sessions for long-running operations (relay provisioning, user creation, server start/stop). Each operation gets a unique session ID; the browser subscribes via `/api/events/{id}`.
 - **WebSocket SSH Terminal** -- the `/api/relay/ssh` endpoint upgrades to a WebSocket and bridges it to an interactive SSH session on the relay via the Xray tunnel. The browser runs xterm.js to render the terminal. Binary messages carry stdin/stdout data; text messages carry JSON control frames (e.g., terminal resize).
 - **Mode-aware UI** -- pages and navigation adapt based on the configured `mode` (server or client). Server-only pages (relay, users) are hidden in client mode.
+
+#### Dashboard Component Architecture
+
+```mermaid
+graph LR
+    subgraph Browser
+        UI[Web UI]
+        XTERM[xterm.js]
+    end
+
+    subgraph "Dashboard Server"
+        HTTP["HTTP Server<br/>:8080"]
+        SSE_HUB["SSE Hub<br/>/api/events"]
+        LOG_SSE["Log SSE<br/>/api/logs"]
+        WS["WebSocket<br/>/api/relay/ssh"]
+        REST["REST API<br/>/api/*"]
+    end
+
+    subgraph Backend
+        OPS[Ops Layer]
+        LOGBUF["Log Buffer<br/>(ring, 500)"]
+        SLOG["slog<br/>teeHandler"]
+    end
+
+    UI -->|"EventSource"| SSE_HUB
+    UI -->|"EventSource"| LOG_SSE
+    UI -->|"fetch"| REST
+    XTERM -->|"WebSocket"| WS
+    REST --> OPS
+    SSE_HUB --> OPS
+    WS --> OPS
+    SLOG --> LOGBUF
+    LOGBUF --> LOG_SSE
+
+    style UI fill:#26A69A,color:#fff
+    style XTERM fill:#26A69A,color:#fff
+    style HTTP fill:#1565C0,color:#fff
+    style SSE_HUB fill:#1976D2,color:#fff
+    style LOG_SSE fill:#1976D2,color:#fff
+    style WS fill:#1976D2,color:#fff
+    style REST fill:#1976D2,color:#fff
+    style OPS fill:#00897B,color:#fff
+    style LOGBUF fill:#00897B,color:#fff
+    style SLOG fill:#00897B,color:#fff
+```
 
 ---
 

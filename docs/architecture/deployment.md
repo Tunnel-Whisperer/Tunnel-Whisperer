@@ -110,6 +110,34 @@ Requires **Go 1.22+**.
 
 ## What `tw serve` Starts
 
+```mermaid
+flowchart TD
+    START([tw serve]) --> LOAD[Load / create config.yaml]
+    LOAD --> KEYS{Keys exist?}
+    KEYS -->|No| GEN["Generate ed25519 key pair<br/>+ host key + seed authorized_keys"]
+    KEYS -->|Yes| HASH
+    GEN --> HASH["Save config file hash as cfgHash"]
+    HASH --> INIT[Initialize core service]
+    INIT --> SSHD["Start SSH Server :2222<br/><i>dynamic auth + permitopen</i>"]
+    SSHD --> RELAY{relay_host<br/>configured?}
+    RELAY -->|No| GRPC
+    RELAY -->|Yes| UUID{UUID exists?}
+    UUID -->|No| GENUUID[Generate UUID, save to config]
+    UUID -->|Yes| XRAY
+    GENUUID --> XRAY
+    XRAY["Start Xray in-process<br/><i>dokodemo :2223 → relay SSH :22</i>"]
+    XRAY --> RTUNNEL["Open SSH reverse tunnel<br/><i>-R remote_port:localhost:ssh_port</i>"]
+    RTUNNEL --> GRPC["Start gRPC API :50051"]
+    GRPC --> READY([Server Ready])
+
+    style START fill:#1565C0,color:#fff
+    style READY fill:#00897B,color:#fff
+    style SSHD fill:#1976D2,color:#fff
+    style XRAY fill:#1976D2,color:#fff
+    style RTUNNEL fill:#1976D2,color:#fff
+    style GRPC fill:#1976D2,color:#fff
+```
+
 1. Loads (or creates) `config.yaml` from the platform config directory
 2. Generates an ed25519 SSH key pair (`id_ed25519` / `id_ed25519.pub`) if missing
 3. Generates an ed25519 host key (`ssh_host_ed25519_key`) for the embedded SSH server
@@ -126,6 +154,27 @@ Requires **Go 1.22+**.
 9. Starts the **gRPC API server** on the configured port (default `:50051`)
 
 ## What `tw connect` Starts
+
+```mermaid
+flowchart TD
+    START([tw connect]) --> LOAD[Load config, ensure keys exist]
+    LOAD --> VALIDATE["Validate relay_host +<br/>at least one tunnel mapping"]
+    VALIDATE --> UUID{UUID exists?}
+    UUID -->|No| GENUUID[Generate UUID, save to config]
+    UUID -->|Yes| HASH
+    GENUUID --> HASH
+    HASH["Save config file hash as cfgHash"]
+    HASH --> XRAY["Start Xray client<br/><i>dokodemo :54001 → relay :2222</i>"]
+    XRAY --> SSH["SSH via Xray tunnel<br/><i>public key auth</i>"]
+    SSH --> PORTS["Start local port listeners<br/><i>:5432, :8080, ...</i>"]
+    PORTS --> BLOCK(["Block — auto-reconnect on failure"])
+
+    style START fill:#00897B,color:#fff
+    style BLOCK fill:#00897B,color:#fff
+    style XRAY fill:#00ACC1,color:#fff
+    style SSH fill:#00ACC1,color:#fff
+    style PORTS fill:#00ACC1,color:#fff
+```
 
 1. Loads config and ensures keys exist
 2. Validates that `relay_host` and at least one tunnel mapping are configured
