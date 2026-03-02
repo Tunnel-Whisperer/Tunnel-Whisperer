@@ -28,6 +28,7 @@ type ReverseTunnel struct {
 
 	mu        sync.Mutex
 	client    *gossh.Client
+	listener  net.Listener
 	done      chan struct{}
 	connected bool
 	lastErr   string
@@ -76,6 +77,9 @@ func (rt *ReverseTunnel) Run() error {
 			attempt = 0
 		}
 
+		// Clean up before reconnecting.
+		rt.cleanup()
+
 		select {
 		case <-rt.done:
 			return nil
@@ -95,6 +99,23 @@ func (rt *ReverseTunnel) Run() error {
 			backoff = 30 * time.Second
 		}
 	}
+}
+
+// cleanup closes the listener and SSH client so the next reconnect starts
+// fresh.
+func (rt *ReverseTunnel) cleanup() {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+
+	if rt.listener != nil {
+		rt.listener.Close()
+		rt.listener = nil
+	}
+	if rt.client != nil {
+		rt.client.Close()
+		rt.client = nil
+	}
+	rt.connected = false
 }
 
 func (rt *ReverseTunnel) connect() error {
@@ -146,9 +167,9 @@ func (rt *ReverseTunnel) connect() error {
 		rt.client.Close()
 		return fmt.Errorf("requesting reverse forward on :%d: %w", rt.RemotePort, err)
 	}
-	defer listener.Close()
 
 	rt.mu.Lock()
+	rt.listener = listener
 	rt.connected = true
 	rt.lastErr = ""
 	rt.mu.Unlock()
@@ -171,6 +192,8 @@ func (rt *ReverseTunnel) connect() error {
 }
 
 // keepalive sends periodic SSH keepalive requests to detect dead connections.
+// On failure, it closes the listener and SSH connection so that connect()
+// unblocks and the reconnect loop fires.
 func (rt *ReverseTunnel) keepalive(conn gossh.Conn) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
@@ -182,7 +205,13 @@ func (rt *ReverseTunnel) keepalive(conn gossh.Conn) {
 		case <-ticker.C:
 			_, _, err := conn.SendRequest("keepalive@tw", true, nil)
 			if err != nil {
-				slog.Warn("reverse tunnel keepalive failed", "error", err)
+				slog.Warn("reverse tunnel keepalive failed, triggering reconnect", "error", err)
+				// Close listener first — this unblocks Accept() in connect().
+				rt.mu.Lock()
+				if rt.listener != nil {
+					rt.listener.Close()
+				}
+				rt.mu.Unlock()
 				conn.Close()
 				return
 			}
@@ -232,10 +261,5 @@ func (rt *ReverseTunnel) Stop() {
 	if rt.done != nil {
 		close(rt.done)
 	}
-	if rt.client != nil {
-		rt.client.Close()
-	}
-	rt.mu.Lock()
-	rt.connected = false
-	rt.mu.Unlock()
+	rt.cleanup()
 }
