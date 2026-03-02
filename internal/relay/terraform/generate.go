@@ -40,6 +40,7 @@ type Config struct {
 	CaddyCertsB64 string // base64-encoded tar.gz of saved Caddy TLS certs (optional)
 	XrayVersion   string // populated automatically from the pinned constant
 	SSHOpen       bool   // when true, SSH listens on 0.0.0.0 and port 22 is allowed in firewall
+	Name          string // cloud resource display name (e.g., "relay-hj38")
 }
 
 var providerTemplates = map[string]string{

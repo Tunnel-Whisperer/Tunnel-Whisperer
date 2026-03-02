@@ -10,6 +10,8 @@
   <div class="kv">
     <span class="kv-label">Domain</span>
     <span class="kv-value">{{.Relay.Domain}}</span>
+    {{if .Relay.Name}}<span class="kv-label">Instance</span>
+    <span class="kv-value">{{.Relay.Name}}</span>{{end}}
     <span class="kv-label">IP</span>
     <span class="kv-value">{{if .Relay.IP}}<code class="copyable" id="relay-ip-value" onclick="copyRelayIP()">{{.Relay.IP}}</code> <button class="btn btn-sm" onclick="copyRelayIP()" id="btn-copy-ip">Copy</button>{{else}}—{{end}}</span>
     <span class="kv-label">Provider</span>

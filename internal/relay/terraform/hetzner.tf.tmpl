@@ -25,7 +25,7 @@ provider "hcloud" {
 }
 
 resource "hcloud_firewall" "relay" {
-  name = "tw-relay"
+  name = "tw-{{.Name}}"
 
   rule {
     direction = "in"
@@ -50,7 +50,7 @@ resource "hcloud_firewall" "relay" {
 }
 
 resource "hcloud_server" "relay" {
-  name        = "tw-relay"
+  name        = "tw-{{.Name}}"
   image       = "ubuntu-24.04"
   server_type = var.server_type
   location    = var.location

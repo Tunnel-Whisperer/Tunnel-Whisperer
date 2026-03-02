@@ -2,10 +2,12 @@ package ops
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/big"
 	"net"
 	"net/http"
 	"os"
@@ -28,6 +30,7 @@ type RelayProvisionRequest struct {
 	AWSSecretKey string `json:"aws_secret_key"`
 	Region       string `json:"region"`   // provider region/location
 	SSHOpen      bool   `json:"ssh_open"` // leave SSH port 22 open on relay
+	Name         string `json:"name"`     // cloud instance display name (default: "relay-XXXX")
 }
 
 // RelayStatus describes the current state of the relay.
@@ -37,6 +40,18 @@ type RelayStatus struct {
 	IP          string `json:"ip,omitempty"`
 	Provider    string `json:"provider,omitempty"`
 	SSHOpen     bool   `json:"ssh_open"`
+	Name        string `json:"name,omitempty"` // cloud instance display name
+}
+
+// randomSuffix generates a short random lowercase alphanumeric string.
+func randomSuffix(n int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, n)
+	for i := range b {
+		idx, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		b[i] = charset[idx.Int64()]
+	}
+	return string(b)
 }
 
 // ManualRelayMarker is written to the relay directory when the user sets up
@@ -77,13 +92,15 @@ func (o *Ops) GetRelayStatus() RelayStatus {
 				status.Provider = "AWS"
 			}
 		}
-		// Read relay metadata (SSHOpen, etc.).
+		// Read relay metadata (SSHOpen, Name, etc.).
 		if data, err := os.ReadFile(filepath.Join(relayDir, "relay-meta.json")); err == nil {
 			var meta struct {
-				SSHOpen bool `json:"ssh_open"`
+				SSHOpen bool   `json:"ssh_open"`
+				Name    string `json:"name"`
 			}
 			if json.Unmarshal(data, &meta) == nil {
 				status.SSHOpen = meta.SSHOpen
+				status.Name = meta.Name
 			}
 		}
 		return status
@@ -109,6 +126,11 @@ func (o *Ops) GetRelayStatus() RelayStatus {
 func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, progress ProgressFunc) error {
 	if progress == nil {
 		progress = func(ProgressEvent) {}
+	}
+
+	// Generate a default instance name if not provided.
+	if req.Name == "" {
+		req.Name = "relay-" + randomSuffix(4)
 	}
 
 	relayDir := config.RelayDir()
@@ -187,6 +209,7 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 		PublicKey: strings.TrimSpace(string(pubKeyBytes)),
 		Provider:  req.ProviderKey,
 		SSHOpen:   req.SSHOpen,
+		Name:      req.Name,
 	}
 
 	// Load saved TLS certificates for reuse (avoids Let's Encrypt rate limits).
@@ -200,8 +223,11 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 		return fmt.Errorf("generating terraform files: %w", err)
 	}
 
-	// Persist relay metadata (SSHOpen flag) alongside terraform state.
-	relayMeta, _ := json.MarshalIndent(map[string]interface{}{"ssh_open": req.SSHOpen}, "", "  ")
+	// Persist relay metadata alongside terraform state.
+	relayMeta, _ := json.MarshalIndent(map[string]interface{}{
+		"ssh_open": req.SSHOpen,
+		"name":     req.Name,
+	}, "", "  ")
 	_ = os.WriteFile(filepath.Join(relayDir, "relay-meta.json"), relayMeta, 0644)
 
 	// Write credentials and region.

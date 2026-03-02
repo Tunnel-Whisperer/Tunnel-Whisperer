@@ -30,7 +30,7 @@ data "aws_ami" "ubuntu" {
 }
 
 resource "aws_security_group" "relay" {
-  name_prefix = "tw-relay-"
+  name_prefix = "tw-{{.Name}}-"
   description = "Tunnel Whisperer relay"
 
   ingress {
@@ -72,7 +72,7 @@ resource "aws_instance" "relay" {
     volume_type = "gp3"
   }
 
-  tags = { Name = "tw-relay" }
+  tags = { Name = "tw-{{.Name}}" }
 }
 
 output "relay_ip" {

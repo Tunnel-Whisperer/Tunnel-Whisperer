@@ -20,7 +20,15 @@ let wizardState = {
   region: '',
   regionName: '',
   sshOpen: false,
+  name: '',
 };
+
+function randomSuffix(n) {
+  const charset = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let s = '';
+  for (let i = 0; i < n; i++) s += charset[Math.floor(Math.random() * charset.length)];
+  return s;
+}
 
 function wizardNext(step) {
   // Validate current step before advancing.
@@ -50,6 +58,20 @@ function wizardNext(step) {
       `;
       btn.textContent = 'Provision';
       btn.onclick = startProvision;
+    }
+    // Pre-fill instance name with a random default if empty (cloud providers only).
+    const nameInput = $('#instance-name');
+    const nameGroup = nameInput ? nameInput.closest('.form-group') : null;
+    if (nameInput && nameGroup) {
+      if (wizardState.providerKey === 'manual') {
+        nameGroup.classList.add('hidden');
+      } else {
+        nameGroup.classList.remove('hidden');
+        if (!wizardState.name) {
+          wizardState.name = 'relay-' + randomSuffix(4);
+        }
+        nameInput.value = wizardState.name;
+      }
     }
     // Reset checkbox to match current state and update info text.
     const cb = $('#ssh-open');
@@ -216,6 +238,11 @@ async function startProvision() {
   const btn = $('#btn-provision');
   btn.disabled = true;
   relayOpInProgress = true;
+
+  // Read the instance name (use current input value or generated default).
+  const nameInput = $('#instance-name');
+  if (nameInput) wizardState.name = nameInput.value.trim();
+
   showStep(5);
 
   try {
@@ -227,6 +254,7 @@ async function startProvision() {
       aws_secret_key: wizardState.awsSecretKey,
       region: wizardState.region,
       ssh_open: wizardState.sshOpen,
+      name: wizardState.name,
     });
 
     const log = $('#provision-progress');
@@ -292,6 +320,13 @@ async function destroyRelay() {
   const btn = $('#btn-destroy-confirm') || $('#btn-destroy');
   if (btn) btn.disabled = true;
   relayOpInProgress = true;
+
+  // Disable the SSH card while destroying.
+  const sshCard = $('#ssh-card');
+  if (sshCard) {
+    sshCard.style.opacity = '0.5';
+    sshCard.style.pointerEvents = 'none';
+  }
 
   const credsPanel = $('#destroy-creds');
   if (credsPanel) credsPanel.classList.add('hidden');

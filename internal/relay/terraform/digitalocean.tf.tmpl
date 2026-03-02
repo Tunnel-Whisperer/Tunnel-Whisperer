@@ -25,7 +25,7 @@ provider "digitalocean" {
 }
 
 resource "digitalocean_firewall" "relay" {
-  name = "tw-relay"
+  name = "tw-{{.Name}}"
 
   droplet_ids = [digitalocean_droplet.relay.id]
 
@@ -59,7 +59,7 @@ resource "digitalocean_firewall" "relay" {
 }
 
 resource "digitalocean_droplet" "relay" {
-  name     = "tw-relay"
+  name     = "tw-{{.Name}}"
   image    = "ubuntu-24-04-x64"
   size     = var.size
   region   = var.region
