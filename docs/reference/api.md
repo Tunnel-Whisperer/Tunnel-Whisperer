@@ -147,6 +147,7 @@ with the zip file.
 | `GET` | `/api/users` | List all configured users |
 | `POST` | `/api/users` | Create a new user |
 | `DELETE` | `/api/users/{name}` | Delete a user by name |
+| `PUT` | `/api/users/{name}/mappings` | Update a user's port mappings |
 | `GET` | `/api/users/{name}/download` | Download a user's config bundle as a `.zip` file |
 | `POST` | `/api/users/apply` | Apply user changes (regenerate `authorized_keys`) |
 | `POST` | `/api/users/unregister` | Unregister users from the server |
@@ -164,8 +165,45 @@ with the zip file.
 }
 ```
 
+**Update user mappings request body:**
+
+```json
+{
+  "mappings": [
+    { "client_port": 3389, "server_port": 3389 },
+    { "client_port": 8443, "server_port": 443 }
+  ]
+}
+```
+
+After updating, the user's `authorized_keys` entry is rewritten with new `permitopen` restrictions and a config outdated flag is set. The flag is cleared when the user's config bundle is downloaded.
+
 **Download response:** `application/zip` binary with `Content-Disposition`
 header.
+
+### Application templates
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/apps` | List all application templates |
+| `POST` | `/api/apps` | Create a new application template |
+| `PUT` | `/api/apps/{name}` | Update an application template |
+| `DELETE` | `/api/apps/{name}` | Delete an application template |
+
+**Create/update application request body:**
+
+```json
+{
+  "name": "web-app",
+  "mappings": [
+    { "client_port": 3000, "server_port": 3000 },
+    { "client_port": 5432, "server_port": 5432 }
+  ]
+}
+```
+
+Application templates are reusable port mapping bundles. They are stored in
+`config.yaml` under `server.applications` and are not synced to the relay.
 
 ### Server-Sent Events (SSE)
 

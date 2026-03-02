@@ -13,6 +13,8 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
+var createUserFrom string
+
 var createUserCmd = &cobra.Command{
 	Use:   "user",
 	Short: "Create a client user with tunnel access",
@@ -20,6 +22,7 @@ var createUserCmd = &cobra.Command{
 }
 
 func init() {
+	createUserCmd.Flags().StringVar(&createUserFrom, "from", "", "copy port mappings from an existing user")
 	createCmd.AddCommand(createUserCmd)
 }
 
@@ -49,45 +52,74 @@ func runCreateUser(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// ── Step 2: Port Mappings ──────────────────────────────────────────
-	fmt.Println("[2/5] Port mappings")
-	fmt.Println("      Map client local ports to server ports (localhost only).")
-	fmt.Println("      Enter mappings one at a time. Empty client port to finish.")
-	fmt.Println()
-
 	var mappings []config.PortMapping
 
-	for i := 1; ; i++ {
-		fmt.Printf("      Mapping %d:\n", i)
-		fmt.Printf("        Client local port: ")
-		scanner.Scan()
-		clientPortStr := strings.TrimSpace(scanner.Text())
-		if clientPortStr == "" {
-			if len(mappings) == 0 {
-				return fmt.Errorf("at least one port mapping is required")
+	if createUserFrom != "" {
+		// Copy mappings from an existing user.
+		fmt.Printf("[2/5] Copying port mappings from user %q\n", createUserFrom)
+		users, err := o.ListUsers()
+		if err != nil {
+			return fmt.Errorf("listing users: %w", err)
+		}
+		var found bool
+		for _, u := range users {
+			if u.Name == createUserFrom {
+				for _, t := range u.Tunnels {
+					mappings = append(mappings, config.PortMapping{ClientPort: t.LocalPort, ServerPort: t.RemotePort})
+				}
+				found = true
+				break
 			}
-			break
 		}
-		clientPort, err := strconv.Atoi(clientPortStr)
-		if err != nil || clientPort < 1 || clientPort > 65535 {
-			return fmt.Errorf("invalid port: %s", clientPortStr)
+		if !found {
+			return fmt.Errorf("user %q not found", createUserFrom)
 		}
+		if len(mappings) == 0 {
+			return fmt.Errorf("user %q has no port mappings", createUserFrom)
+		}
+		for _, m := range mappings {
+			fmt.Printf("      → localhost:%d (client) → 127.0.0.1:%d (server)\n", m.ClientPort, m.ServerPort)
+		}
+		fmt.Println()
+	} else {
+		fmt.Println("[2/5] Port mappings")
+		fmt.Println("      Map client local ports to server ports (localhost only).")
+		fmt.Println("      Enter mappings one at a time. Empty client port to finish.")
+		fmt.Println()
 
-		fmt.Printf("        Server port:       ")
-		scanner.Scan()
-		serverPortStr := strings.TrimSpace(scanner.Text())
-		if serverPortStr == "" {
-			return fmt.Errorf("server port is required")
-		}
-		serverPort, err := strconv.Atoi(serverPortStr)
-		if err != nil || serverPort < 1 || serverPort > 65535 {
-			return fmt.Errorf("invalid port: %s", serverPortStr)
-		}
+		for i := 1; ; i++ {
+			fmt.Printf("      Mapping %d:\n", i)
+			fmt.Printf("        Client local port: ")
+			scanner.Scan()
+			clientPortStr := strings.TrimSpace(scanner.Text())
+			if clientPortStr == "" {
+				if len(mappings) == 0 {
+					return fmt.Errorf("at least one port mapping is required")
+				}
+				break
+			}
+			clientPort, err := strconv.Atoi(clientPortStr)
+			if err != nil || clientPort < 1 || clientPort > 65535 {
+				return fmt.Errorf("invalid port: %s", clientPortStr)
+			}
 
-		mappings = append(mappings, config.PortMapping{ClientPort: clientPort, ServerPort: serverPort})
-		fmt.Printf("        → localhost:%d (client) → 127.0.0.1:%d (server)\n", clientPort, serverPort)
+			fmt.Printf("        Server port:       ")
+			scanner.Scan()
+			serverPortStr := strings.TrimSpace(scanner.Text())
+			if serverPortStr == "" {
+				return fmt.Errorf("server port is required")
+			}
+			serverPort, err := strconv.Atoi(serverPortStr)
+			if err != nil || serverPort < 1 || serverPort > 65535 {
+				return fmt.Errorf("invalid port: %s", serverPortStr)
+			}
+
+			mappings = append(mappings, config.PortMapping{ClientPort: clientPort, ServerPort: serverPort})
+			fmt.Printf("        → localhost:%d (client) → 127.0.0.1:%d (server)\n", clientPort, serverPort)
+			fmt.Println()
+		}
 		fmt.Println()
 	}
-	fmt.Println()
 
 	req := ops.CreateUserRequest{
 		Name:     userName,

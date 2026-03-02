@@ -152,6 +152,9 @@ tw/
 │   │   ├── list_users.go              # tw list-users
 │   │   ├── delete_user.go             # tw delete-user
 │   │   ├── export_user.go             # tw export-user
+│   │   ├── edit_user.go               # tw edit user
+│   │   ├── apply_users.go             # tw apply users / tw unregister user
+│   │   ├── app.go                     # tw app list/create/edit/delete
 │   │   ├── destroy_relay.go           # tw destroy-relay
 │   │   └── completion.go              # shell completion
 │   ├── config/                         # YAML config, platform-specific paths
@@ -210,7 +213,11 @@ tw/
 │   │   │       ├── relay_wizard.html   # relay provisioning wizard
 │   │   │       ├── users.html          # user list
 │   │   │       ├── user_new.html       # create user form
-│   │   │       └── user_detail.html    # user detail + download
+│   │   │       ├── user_detail.html    # user detail + download
+│   │   │       ├── user_edit.html      # edit user port mappings
+│   │   │       ├── apps.html           # application template list
+│   │   │       ├── app_new.html        # create application template
+│   │   │       └── app_edit.html       # edit application template
 │   │   └── static/
 │   │       ├── css/
 │   │       │   ├── style.css
@@ -221,6 +228,7 @@ tw/
 │   │           ├── config.js           # config page logic
 │   │           ├── relay.js            # relay page logic
 │   │           ├── users.js            # users page logic
+│   │           ├── apps.js            # apps page logic
 │   │           └── vendor/
 │   │               ├── xterm.min.js
 │   │               └── xterm-addon-fit.min.js

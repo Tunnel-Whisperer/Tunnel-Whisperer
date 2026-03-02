@@ -77,6 +77,14 @@ server:
   # (user creation, user registration). Change if 59000 is in use.
   temp_xray_port: 59000
 
+  # Application templates — reusable port mapping bundles.
+  # Used when creating or editing users to pre-fill port mappings.
+  applications:
+    - name: "web-app"
+      mappings:
+        - { client_port: 3000, server_port: 3000 }
+        - { client_port: 5432, server_port: 5432 }
+
 # Client-only settings (ignored in server mode).
 client:
   # SSH user to authenticate as on the server.
@@ -125,6 +133,21 @@ client:
 | `relay_ssh_user` | string | `ubuntu` | SSH user on the relay server. |
 | `remote_port` | int | `2222` | Remote port on the relay forwarded back to local SSH. |
 | `temp_xray_port` | int | `59000` | Port for the temporary Xray tunnel used during relay config updates (user creation/registration). Change if `59000` is already in use on your system. |
+| `applications` | list | _(empty)_ | Application templates — reusable port mapping bundles for user creation. |
+
+### `applications[]` entry
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | string | Unique name for the application template (alphanumeric, dashes, underscores). |
+| `mappings` | list | Port mapping rules. Each entry has `client_port` and `server_port`. |
+
+### `applications[].mappings[]` entry
+
+| Field | Type | Description |
+|---|---|---|
+| `client_port` | int | Port the client listens on locally (1-65535). |
+| `server_port` | int | Port on the server to forward to (1-65535). |
 
 ### `client` section
 

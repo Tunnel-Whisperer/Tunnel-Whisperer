@@ -1,0 +1,43 @@
+{{define "content"}}
+<h1>Edit Port Mappings: {{.User.Name}}</h1>
+
+<div class="alert alert-warning mb-16">The user will need to re-download their config after changing port mappings.</div>
+
+<div id="user-edit-form">
+  <div class="card">
+    <h3 class="mb-8">Port Mappings</h3>
+    <div class="form-group mb-16">
+      <label for="app-select">Add from Application</label>
+      <select id="app-select" onchange="appendFromApp()">
+        <option value="">(None)</option>
+      </select>
+    </div>
+    <p class="text-dim mb-16">Map client local ports to server ports (127.0.0.1 only).</p>
+
+    <div id="mappings">
+      {{range .User.Tunnels}}
+      <div class="mapping-row">
+        <input type="number" class="client-port" value="{{.LocalPort}}" placeholder="Client port" min="1" max="65535">
+        <span class="arrow">-></span>
+        <input type="number" class="server-port" value="{{.RemotePort}}" placeholder="Server port" min="1" max="65535">
+        <button class="btn btn-sm btn-danger" onclick="removeMapping(this)">x</button>
+      </div>
+      {{end}}
+    </div>
+
+    <button class="btn btn-sm mt-16" onclick="addMapping()">+ Add Mapping</button>
+
+    <div class="mt-24 flex gap-8">
+      <a href="/users/{{.User.Name}}" class="btn">Cancel</a>
+      <button class="btn btn-primary" id="btn-save-mappings" onclick="saveUserMappings('{{.User.Name}}')">Save Changes</button>
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+  var apps = {{.AppsJSON}};
+</script>
+<script src="/static/js/users.js"></script>
+{{end}}

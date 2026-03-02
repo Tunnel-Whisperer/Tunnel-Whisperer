@@ -109,11 +109,26 @@ The SSH terminal connects through a WebSocket to a Go SSH bridge that tunnels th
 ## Users Page
 
 - Sortable user list with online status, registration status, and tunnel count
+- **Config outdated** badge (yellow) when a user's mappings were changed but they haven't re-downloaded their config
 - Search and pagination
-- **Create User** — form-based user creation
+- **Create User** — form-based user creation with optional application template pre-fill
+- **Duplicate** — create a new user with the same port mappings as an existing user (from user detail page)
+- **Edit Mappings** — modify a user's port mappings, with option to add from an application template
 - **Apply/Unregister** — batch operations for relay registration
-- **Download** — export user config as zip
+- **Download** — export user config as zip (clears the config outdated flag)
 - **Delete** — remove user and revoke access
+
+## Apps Page
+
+- List of application templates with name, mapping count, and port mapping preview
+- **Create Application** — define a named set of port mappings
+- **Edit** — modify an application template's name and mappings
+- **Delete** — remove an application template
+
+Application templates are reusable port mapping bundles. When creating or editing a user, select an application template to auto-fill port mappings instead of entering them manually.
+
+!!! note "No retroactive changes"
+    Editing an application template does not affect users that were previously created using it.
 
 ## Running as a System Service
 

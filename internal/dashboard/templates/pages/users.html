@@ -59,6 +59,9 @@
           {{else}}
           <span class="badge badge-dim">not registered</span>
           {{end}}
+          {{if .MappingsDirty}}
+          <span class="badge badge-yellow">config outdated</span>
+          {{end}}
         </td>
         <td class="flex gap-8">
           <a href="/users/{{.Name}}" class="btn btn-sm">View</a>

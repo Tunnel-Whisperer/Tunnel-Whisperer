@@ -446,6 +446,10 @@ func (s *Server) apiUserAction(w http.ResponseWriter, r *http.Request) {
 		s.apiUserDownload(w, r, name)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "mappings" {
+		s.apiUserMappings(w, r, name)
+		return
+	}
 
 	switch r.Method {
 	case http.MethodDelete:
@@ -458,6 +462,27 @@ func (s *Server) apiUserAction(w http.ResponseWriter, r *http.Request) {
 	default:
 		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) apiUserMappings(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodPut {
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Mappings []config.PortMapping `json:"mappings"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.ops.UpdateUserMappings(name, req.Mappings); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	jsonOK(w, map[string]string{"status": "ok"})
 }
 
 func (s *Server) apiApplyUsers(w http.ResponseWriter, r *http.Request) {

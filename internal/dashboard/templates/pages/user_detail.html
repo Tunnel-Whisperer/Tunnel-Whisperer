@@ -15,6 +15,7 @@
       {{else}}
       <span class="badge badge-dim">not registered</span>
       {{end}}
+      <a href="/users/new?from={{.User.Name}}" class="btn btn-sm">Duplicate</a>
       <a href="/api/users/{{.User.Name}}/download" class="btn btn-sm btn-primary">Download Config</a>
       {{if .User.Active}}
       <button class="btn btn-sm btn-danger" onclick="unregisterUser('{{.User.Name}}')">Unregister from Relay</button>
@@ -37,9 +38,18 @@
   </div>
 </div>
 
+{{if .User.MappingsDirty}}
+<div class="alert alert-warning mb-16">Port mappings were changed. The user needs to <a href="/api/users/{{.User.Name}}/download">re-download their config</a> for changes to take effect.</div>
+{{end}}
+
 {{if .User.Tunnels}}
 <div class="card">
-  <h2>Port Mappings</h2>
+  <div class="card-header">
+    <h2>Port Mappings</h2>
+    <div class="card-actions">
+      <a href="/users/{{.User.Name}}/edit" class="btn btn-sm">Edit Mappings</a>
+    </div>
+  </div>
   <table class="mt-16">
     <thead>
       <tr>

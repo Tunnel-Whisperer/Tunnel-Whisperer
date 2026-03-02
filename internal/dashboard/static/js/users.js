@@ -41,11 +41,13 @@ function checkPortWarning(e) {
   }, 600);
 }
 
-// Attach listener to the initial mapping row's client-port input.
+// Attach listeners to all initial mapping rows' client-port inputs.
 // Also populate the app selector dropdown if apps are available.
 document.addEventListener('DOMContentLoaded', () => {
-  const initial = document.querySelector('.mapping-row .client-port');
-  if (initial) initial.addEventListener('input', checkPortWarning);
+  document.querySelectorAll('.mapping-row .client-port').forEach(input => {
+    input.addEventListener('input', checkPortWarning);
+  });
+  updateRemoveButtons();
 
   const sel = document.querySelector('#app-select');
   if (sel && typeof apps !== 'undefined' && apps) {
@@ -55,6 +57,21 @@ document.addEventListener('DOMContentLoaded', () => {
       opt.textContent = `${app.name} (${app.mappings.length} port${app.mappings.length !== 1 ? 's' : ''})`;
       sel.appendChild(opt);
     });
+  }
+
+  // Pre-fill mappings when duplicating from an existing user.
+  if (typeof prefill !== 'undefined' && prefill && prefill.length > 0) {
+    const container = document.querySelector('#mappings');
+    if (container) {
+      container.innerHTML = '';
+      prefill.forEach(m => {
+        addMapping();
+        const rows = container.querySelectorAll('.mapping-row');
+        const row = rows[rows.length - 1];
+        row.querySelector('.client-port').value = m.client_port;
+        row.querySelector('.server-port').value = m.server_port;
+      });
+    }
   }
 });
 
@@ -82,6 +99,28 @@ function loadFromApp() {
     row.querySelector('.client-port').value = m.client_port;
     row.querySelector('.server-port').value = m.server_port;
   });
+}
+
+function appendFromApp() {
+  const sel = $('#app-select');
+  if (!sel) return;
+  const name = sel.value;
+  if (!name) return;
+
+  const app = (typeof apps !== 'undefined' && apps || []).find(a => a.name === name);
+  if (!app) return;
+
+  // Append mappings from the application template (don't clear existing).
+  app.mappings.forEach(m => {
+    addMapping();
+    const rows = $$('.mapping-row');
+    const row = rows[rows.length - 1];
+    row.querySelector('.client-port').value = m.client_port;
+    row.querySelector('.server-port').value = m.server_port;
+  });
+
+  // Reset dropdown.
+  sel.value = '';
 }
 
 // ── Mapping editor ──────────────────────────────────────────────────────────
@@ -159,6 +198,24 @@ async function createUser() {
   } catch (err) {
     $('#create-error-msg').textContent = err.message;
     $('#create-error').classList.remove('hidden');
+  }
+}
+
+// ── Edit user mappings ──────────────────────────────────────────────────────
+
+async function saveUserMappings(name) {
+  const mappings = getMappings();
+  if (mappings.length === 0) { alert('At least one port mapping is required'); return; }
+
+  const btn = $('#btn-save-mappings');
+  btn.disabled = true;
+
+  try {
+    await api.put(`/api/users/${name}/mappings`, { mappings });
+    window.location.href = `/users/${name}`;
+  } catch (err) {
+    alert('Error: ' + err.message);
+    btn.disabled = false;
   }
 }
 

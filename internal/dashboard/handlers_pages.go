@@ -195,25 +195,52 @@ func (s *Server) handleUserNew(w http.ResponseWriter, r *http.Request) {
 	apps := s.ops.ListApplications()
 	appsJSON, _ := json.Marshal(apps)
 
+	// Support ?from=username to pre-fill mappings from an existing user.
+	var prefillJSON template.JS = "null"
+	if fromName := r.URL.Query().Get("from"); fromName != "" {
+		users, _ := s.ops.ListUsers()
+		for _, u := range users {
+			if u.Name == fromName {
+				mappings := make([]config.PortMapping, len(u.Tunnels))
+				for i, t := range u.Tunnels {
+					mappings[i] = config.PortMapping{ClientPort: t.LocalPort, ServerPort: t.RemotePort}
+				}
+				data, _ := json.Marshal(mappings)
+				prefillJSON = template.JS(data)
+				break
+			}
+		}
+	}
+
 	data := struct {
 		pageData
 		RelayReady    bool
 		ServerRunning bool
 		AppsJSON      template.JS
+		PrefillJSON   template.JS
 	}{
 		pageData:      pageData{Title: "Create User", Active: "users", Mode: mode},
 		RelayReady:    relay.Provisioned,
 		ServerRunning: string(srvStatus.State) == "running",
 		AppsJSON:      template.JS(appsJSON),
+		PrefillJSON:   prefillJSON,
 	}
 	s.renderPage(w, "user_new", data)
 }
 
 func (s *Server) handleUserDetail(w http.ResponseWriter, r *http.Request) {
-	name := strings.TrimPrefix(r.URL.Path, "/users/")
-	if name == "" || name == "new" {
+	path := strings.TrimPrefix(r.URL.Path, "/users/")
+	if path == "" || path == "new" {
 		http.NotFound(w, r)
 		return
+	}
+
+	// Check for /users/{name}/edit pattern.
+	var editing bool
+	name := path
+	if parts := strings.SplitN(path, "/", 2); len(parts) == 2 && parts[1] == "edit" {
+		name = parts[0]
+		editing = true
 	}
 
 	users, _ := s.ops.ListUsers()
@@ -230,13 +257,30 @@ func (s *Server) handleUserDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	mode := s.ops.Mode()
+
+	if editing {
+		apps := s.ops.ListApplications()
+		appsJSON, _ := json.Marshal(apps)
+		data := struct {
+			pageData
+			User     ops.UserInfo
+			AppsJSON template.JS
+		}{
+			pageData: pageData{Title: "Edit: " + name, Active: "users", Mode: mode},
+			User:     *found,
+			AppsJSON: template.JS(appsJSON),
+		}
+		s.renderPage(w, "user_edit", data)
+		return
+	}
+
 	// Populate online status.
 	if found.UUID != "" {
 		online := s.ops.GetOnlineUsers()
 		found.Online = online[found.UUID]
 	}
 
-	mode := s.ops.Mode()
 	data := struct {
 		pageData
 		User ops.UserInfo

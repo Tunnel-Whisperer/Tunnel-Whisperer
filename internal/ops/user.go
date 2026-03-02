@@ -31,13 +31,14 @@ import (
 
 // UserInfo describes one user.
 type UserInfo struct {
-	Name    string          `json:"name"`
-	UUID    string          `json:"uuid,omitempty"`
-	Tunnels []config.Tunnel `json:"tunnels,omitempty"`
-	HasKey  bool            `json:"has_key"`
-	Active  bool            `json:"active"`
-	Online  bool            `json:"online"`
-	DirPath string          `json:"-"`
+	Name          string          `json:"name"`
+	UUID          string          `json:"uuid,omitempty"`
+	Tunnels       []config.Tunnel `json:"tunnels,omitempty"`
+	HasKey        bool            `json:"has_key"`
+	Active        bool            `json:"active"`
+	Online        bool            `json:"online"`
+	MappingsDirty bool            `json:"mappings_dirty"`
+	DirPath       string          `json:"-"`
 }
 
 // CreateUserRequest holds the parameters for creating a new user.
@@ -169,6 +170,9 @@ func (o *Ops) ListUsers() ([]UserInfo, error) {
 		}
 		if _, err := os.Stat(filepath.Join(ui.DirPath, ".applied")); err == nil {
 			ui.Active = true
+		}
+		if _, err := os.Stat(filepath.Join(ui.DirPath, ".mappings-dirty")); err == nil {
+			ui.MappingsDirty = true
 		}
 
 		users = append(users, ui)
@@ -340,6 +344,78 @@ func (o *Ops) DeleteUser(name string) error {
 			slog.Warn("could not remove authorized_keys entry", "user", name, "error", err)
 		}
 	}
+
+	return nil
+}
+
+// UpdateUserMappings replaces a user's port mappings. It rewrites their
+// config.yaml and updates their authorized_keys entry.
+func (o *Ops) UpdateUserMappings(name string, mappings []config.PortMapping) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	if len(mappings) == 0 {
+		return fmt.Errorf("at least one port mapping is required")
+	}
+	for _, m := range mappings {
+		if m.ClientPort < 1 || m.ClientPort > 65535 || m.ServerPort < 1 || m.ServerPort > 65535 {
+			return fmt.Errorf("port numbers must be between 1 and 65535")
+		}
+	}
+
+	userDir := filepath.Join(config.UsersDir(), name)
+	cfgPath := filepath.Join(userDir, "config.yaml")
+
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return fmt.Errorf("user %q not found", name)
+	}
+
+	var clientCfg struct {
+		Xray   config.XrayConfig   `yaml:"xray"`
+		Client config.ClientConfig `yaml:"client"`
+	}
+	if err := yaml.Unmarshal(data, &clientCfg); err != nil {
+		return fmt.Errorf("parsing user config: %w", err)
+	}
+
+	// Build new tunnels.
+	tunnels := make([]config.Tunnel, len(mappings))
+	serverPorts := make([]int, len(mappings))
+	for i, m := range mappings {
+		tunnels[i] = config.Tunnel{
+			LocalPort:  m.ClientPort,
+			RemoteHost: "127.0.0.1",
+			RemotePort: m.ServerPort,
+		}
+		serverPorts[i] = m.ServerPort
+	}
+	clientCfg.Client.Tunnels = tunnels
+
+	// Rewrite config.yaml.
+	cfgData, err := yaml.Marshal(clientCfg)
+	if err != nil {
+		return fmt.Errorf("marshaling user config: %w", err)
+	}
+	if err := os.WriteFile(cfgPath, cfgData, 0644); err != nil {
+		return fmt.Errorf("writing user config: %w", err)
+	}
+
+	// Update authorized_keys: remove old entry, add new one.
+	pubPath := filepath.Join(userDir, "id_ed25519.pub")
+	pubData, err := os.ReadFile(pubPath)
+	if err != nil {
+		return nil // no key — nothing to update in authorized_keys
+	}
+	if err := removeAuthorizedKey(pubData); err != nil {
+		slog.Warn("could not remove old authorized_keys entry", "user", name, "error", err)
+	}
+	if err := appendAuthorizedKey(pubData, name, serverPorts); err != nil {
+		return fmt.Errorf("updating authorized_keys: %w", err)
+	}
+
+	// Mark config as needing re-download.
+	_ = os.WriteFile(filepath.Join(userDir, ".mappings-dirty"), nil, 0644)
 
 	return nil
 }
@@ -652,6 +728,10 @@ func (o *Ops) GetUserConfigBundle(name string) ([]byte, error) {
 	if err := zw.Close(); err != nil {
 		return nil, err
 	}
+
+	// Clear the mappings-dirty flag on download.
+	_ = os.Remove(filepath.Join(userDir, ".mappings-dirty"))
+
 	return buf.Bytes(), nil
 }
 

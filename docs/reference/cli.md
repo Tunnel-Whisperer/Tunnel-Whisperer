@@ -14,9 +14,17 @@ config is set to `client`, and vice versa.
 | `tw status` | any | Show current server/client status (connects to daemon via gRPC, falls back to local) |
 | `tw create relay-server` | server | Interactively provision a relay server on a cloud provider |
 | `tw create user` | server | Create a client user with tunnel access (interactive port mapping) |
+| `tw create user --from <name>` | server | Create a user by copying port mappings from an existing user |
+| `tw edit user <name>` | server | Edit a user's port mappings (interactive) |
 | `tw list users` | server | List all configured users and their tunnel mappings |
 | `tw delete user <name>` | server | Delete a user (with confirmation prompt) |
 | `tw export user <name>` | server | Export a user's config bundle as a `.zip` file |
+| `tw apply users [name...]` | server | Register users on the relay (all if no names specified) |
+| `tw unregister user <name>` | server | Unregister a user from the relay (revoke access without deleting) |
+| `tw app list` | server | List all application templates |
+| `tw app create` | server | Create an application template (interactive) |
+| `tw app edit <name>` | server | Edit an application template |
+| `tw app delete <name>` | server | Delete an application template |
 | `tw test relay` | any | Test connectivity to the relay server (DNS, HTTPS, WebSocket, SSH) |
 | `tw relay ssh` | server | Open an interactive SSH shell on the relay server |
 | `tw destroy relay-server` | server | Destroy the provisioned relay server via Terraform |
