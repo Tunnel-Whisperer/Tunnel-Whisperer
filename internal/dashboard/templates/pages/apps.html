@@ -1,0 +1,41 @@
+{{define "content"}}
+<h1>Applications</h1>
+
+<div class="flex justify-between items-center mb-16">
+  <p class="text-dim">{{len .Apps}} application{{if ne (len .Apps) 1}}s{{end}} configured</p>
+  <a href="/apps/new" class="btn btn-primary">Create Application</a>
+</div>
+
+{{if .Apps}}
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Mappings</th>
+        <th>Ports</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Apps}}
+      <tr>
+        <td><strong>{{.Name}}</strong></td>
+        <td>{{len .Mappings}}</td>
+        <td class="text-dim">{{range $i, $m := .Mappings}}{{if $i}}, {{end}}{{$m.ClientPort}}&rarr;{{$m.ServerPort}}{{end}}</td>
+        <td class="flex gap-8"><a href="/apps/edit/{{.Name}}" class="btn btn-sm">Edit</a><button class="btn btn-sm btn-danger" onclick="deleteApp('{{.Name}}')">Delete</button></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<div class="card">
+  <p class="text-dim">No applications yet. Create one to reuse port mappings across users.</p>
+</div>
+{{end}}
+{{end}}
+
+{{define "scripts"}}
+<script src="/static/js/apps.js"></script>
+{{end}}

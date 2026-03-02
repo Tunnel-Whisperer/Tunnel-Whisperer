@@ -16,6 +16,12 @@
     </div>
 
     <h3 class="mt-24 mb-8">Port Mappings</h3>
+    <div class="form-group mb-16">
+      <label for="app-select">Load from Application</label>
+      <select id="app-select" onchange="loadFromApp()">
+        <option value="">(None)</option>
+      </select>
+    </div>
     <p class="text-dim mb-16">Map client local ports to server ports (127.0.0.1 only).</p>
 
     <div id="mappings">
@@ -56,5 +62,8 @@
 {{end}}
 
 {{define "scripts"}}
+<script>
+  var apps = {{.AppsJSON}};
+</script>
 <script src="/static/js/users.js"></script>
 {{end}}

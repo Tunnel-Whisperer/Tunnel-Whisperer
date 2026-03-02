@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/ops"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -154,9 +155,9 @@ func (h *handler) ListUsers(ctx context.Context, req *Empty) (*ListUsersResponse
 }
 
 func (h *handler) CreateUser(ctx context.Context, req *CreateUserRequest) (*Empty, error) {
-	mappings := make([]ops.PortMapping, len(req.Mappings))
+	mappings := make([]config.PortMapping, len(req.Mappings))
 	for i, m := range req.Mappings {
-		mappings[i] = ops.PortMapping{ClientPort: m.ClientPort, ServerPort: m.ServerPort}
+		mappings[i] = config.PortMapping{ClientPort: m.ClientPort, ServerPort: m.ServerPort}
 	}
 	opsReq := ops.CreateUserRequest{
 		Name:     req.Name,

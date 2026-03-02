@@ -31,13 +31,26 @@ type XrayConfig struct {
 
 // ServerConfig holds settings only used by `tw serve`.
 type ServerConfig struct {
-	SSHPort       int    `yaml:"ssh_port"`
-	APIPort       int    `yaml:"api_port"`
-	DashboardPort int    `yaml:"dashboard_port"`
-	RelaySSHPort  int    `yaml:"relay_ssh_port"`
-	RelaySSHUser  string `yaml:"relay_ssh_user"`
-	RemotePort    int    `yaml:"remote_port"`
-	TempXrayPort  int    `yaml:"temp_xray_port,omitempty"`
+	SSHPort       int           `yaml:"ssh_port"`
+	APIPort       int           `yaml:"api_port"`
+	DashboardPort int           `yaml:"dashboard_port"`
+	RelaySSHPort  int           `yaml:"relay_ssh_port"`
+	RelaySSHUser  string        `yaml:"relay_ssh_user"`
+	RemotePort    int           `yaml:"remote_port"`
+	TempXrayPort  int           `yaml:"temp_xray_port,omitempty"`
+	Applications  []Application `yaml:"applications,omitempty" json:"applications,omitempty"`
+}
+
+// PortMapping defines a client-port → server-port pair.
+type PortMapping struct {
+	ClientPort int `yaml:"client_port" json:"client_port"`
+	ServerPort int `yaml:"server_port" json:"server_port"`
+}
+
+// Application is a named bundle of port mappings that can be assigned to users.
+type Application struct {
+	Name     string        `yaml:"name"     json:"name"`
+	Mappings []PortMapping `yaml:"mappings" json:"mappings"`
 }
 
 // ClientConfig holds settings only used by `tw connect`.

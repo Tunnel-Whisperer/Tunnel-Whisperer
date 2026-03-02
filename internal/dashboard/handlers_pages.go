@@ -192,15 +192,19 @@ func (s *Server) handleUserNew(w http.ResponseWriter, r *http.Request) {
 	mode := s.ops.Mode()
 	relay := s.ops.GetRelayStatus()
 	srvStatus := s.ops.ServerStatus()
+	apps := s.ops.ListApplications()
+	appsJSON, _ := json.Marshal(apps)
 
 	data := struct {
 		pageData
 		RelayReady    bool
 		ServerRunning bool
+		AppsJSON      template.JS
 	}{
 		pageData:      pageData{Title: "Create User", Active: "users", Mode: mode},
 		RelayReady:    relay.Provisioned,
 		ServerRunning: string(srvStatus.State) == "running",
+		AppsJSON:      template.JS(appsJSON),
 	}
 	s.renderPage(w, "user_new", data)
 }
@@ -285,4 +289,60 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		Version:    version.Version,
 	}
 	s.renderPage(w, "config", data)
+}
+
+func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
+	mode := s.ops.Mode()
+	apps := s.ops.ListApplications()
+
+	data := struct {
+		pageData
+		Apps []config.Application
+	}{
+		pageData: pageData{Title: "Applications", Active: "apps", Mode: mode},
+		Apps:     apps,
+	}
+	s.renderPage(w, "apps", data)
+}
+
+func (s *Server) handleAppNew(w http.ResponseWriter, r *http.Request) {
+	mode := s.ops.Mode()
+
+	data := struct {
+		pageData
+	}{
+		pageData: pageData{Title: "Create Application", Active: "apps", Mode: mode},
+	}
+	s.renderPage(w, "app_new", data)
+}
+
+func (s *Server) handleAppEdit(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/apps/edit/")
+	if name == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	apps := s.ops.ListApplications()
+	var found *config.Application
+	for i, a := range apps {
+		if a.Name == name {
+			found = &apps[i]
+			break
+		}
+	}
+	if found == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	mode := s.ops.Mode()
+	data := struct {
+		pageData
+		App config.Application
+	}{
+		pageData: pageData{Title: "Edit Application", Active: "apps", Mode: mode},
+		App:      *found,
+	}
+	s.renderPage(w, "app_edit", data)
 }

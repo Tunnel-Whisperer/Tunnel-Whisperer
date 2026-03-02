@@ -88,6 +88,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/users", s.handleUsers)
 	s.mux.HandleFunc("/users/new", s.handleUserNew)
 	s.mux.HandleFunc("/users/", s.handleUserDetail) // /users/{name}
+	s.mux.HandleFunc("/apps", s.handleApps)
+	s.mux.HandleFunc("/apps/new", s.handleAppNew)
+	s.mux.HandleFunc("/apps/edit/", s.handleAppEdit)
 	s.mux.HandleFunc("/config", s.handleConfig)
 
 	// REST API — read-only.
@@ -118,6 +121,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/client/stop", s.apiClientStop)
 	s.mux.HandleFunc("/api/client/reconnect", s.apiClientReconnect)
 	s.mux.HandleFunc("/api/client/upload", s.apiClientUpload)
+	s.mux.HandleFunc("/api/apps", s.apiApps)
+	s.mux.HandleFunc("/api/apps/", s.apiAppAction)
 	s.mux.HandleFunc("/api/users", s.apiUsers)
 	s.mux.HandleFunc("/api/users/apply", s.apiApplyUsers)
 	s.mux.HandleFunc("/api/users/unregister", s.apiUnregisterUsers)

@@ -719,3 +719,55 @@ func (s *Server) apiLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
+// ── Applications ────────────────────────────────────────────────────────────
+
+func (s *Server) apiApps(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		jsonOK(w, s.ops.ListApplications())
+	case http.MethodPost:
+		var app config.Application
+		if err := json.NewDecoder(r.Body).Decode(&app); err != nil {
+			jsonError(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		if err := s.ops.CreateApplication(app); err != nil {
+			jsonError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		jsonOK(w, map[string]string{"status": "ok"})
+	default:
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) apiAppAction(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/api/apps/")
+	if name == "" {
+		jsonError(w, "app name required", http.StatusBadRequest)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPut:
+		var app config.Application
+		if err := json.NewDecoder(r.Body).Decode(&app); err != nil {
+			jsonError(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		if err := s.ops.UpdateApplication(name, app); err != nil {
+			jsonError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		jsonOK(w, map[string]string{"status": "ok"})
+	case http.MethodDelete:
+		if err := s.ops.DeleteApplication(name); err != nil {
+			jsonError(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		jsonOK(w, map[string]string{"status": "ok"})
+	default:
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}

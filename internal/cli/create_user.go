@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
@@ -53,7 +54,7 @@ func runCreateUser(cmd *cobra.Command, args []string) error {
 	fmt.Println("      Enter mappings one at a time. Empty client port to finish.")
 	fmt.Println()
 
-	var mappings []ops.PortMapping
+	var mappings []config.PortMapping
 
 	for i := 1; ; i++ {
 		fmt.Printf("      Mapping %d:\n", i)
@@ -82,7 +83,7 @@ func runCreateUser(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("invalid port: %s", serverPortStr)
 		}
 
-		mappings = append(mappings, ops.PortMapping{ClientPort: clientPort, ServerPort: serverPort})
+		mappings = append(mappings, config.PortMapping{ClientPort: clientPort, ServerPort: serverPort})
 		fmt.Printf("        → localhost:%d (client) → 127.0.0.1:%d (server)\n", clientPort, serverPort)
 		fmt.Println()
 	}

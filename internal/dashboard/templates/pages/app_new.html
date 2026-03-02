@@ -1,0 +1,37 @@
+{{define "content"}}
+<h1>Create Application</h1>
+
+<div id="app-form">
+  <div class="card">
+    <h2>Application Details</h2>
+
+    <div class="form-group">
+      <label for="app-name">Name</label>
+      <input type="text" id="app-name" placeholder="web-app" pattern="[a-zA-Z0-9_-]+">
+    </div>
+
+    <h3 class="mt-24 mb-8">Port Mappings</h3>
+    <p class="text-dim mb-16">Define the client-to-server port mappings for this application.</p>
+
+    <div id="mappings">
+      <div class="mapping-row">
+        <input type="number" class="client-port" placeholder="Client port" min="1" max="65535">
+        <span class="arrow">-></span>
+        <input type="number" class="server-port" placeholder="Server port" min="1" max="65535">
+        <button class="btn btn-sm btn-danger" onclick="removeMapping(this)" style="visibility:hidden">x</button>
+      </div>
+    </div>
+
+    <button class="btn btn-sm mt-16" onclick="addMapping()">+ Add Mapping</button>
+
+    <div class="mt-24 flex gap-8">
+      <a href="/apps" class="btn">Cancel</a>
+      <button class="btn btn-primary" id="btn-create-app" onclick="createApp()">Create Application</button>
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script src="/static/js/apps.js"></script>
+{{end}}

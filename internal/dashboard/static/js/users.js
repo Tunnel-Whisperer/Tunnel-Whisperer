@@ -1,3 +1,89 @@
+// ── Port warnings ──────────────────────────────────────────────────────────
+
+const KNOWN_PORTS = {
+  21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP', 53: 'DNS',
+  80: 'HTTP', 110: 'POP3', 143: 'IMAP', 443: 'HTTPS', 445: 'SMB',
+  993: 'IMAPS', 995: 'POP3S', 3306: 'MySQL', 5432: 'PostgreSQL',
+};
+
+let portWarnTimer = null;
+
+function checkPortWarning(e) {
+  const input = e.target;
+  const row = input.closest('.mapping-row');
+  const existing = row.nextElementSibling;
+  const warn = existing && existing.classList.contains('port-warning') ? existing : null;
+
+  const port = parseInt(input.value);
+
+  // Clear immediately when port is empty or above 1023.
+  if (!port || port > 1023) {
+    clearTimeout(portWarnTimer);
+    if (warn) warn.remove();
+    return;
+  }
+
+  // Debounce: wait for user to stop typing before showing warning.
+  clearTimeout(portWarnTimer);
+  portWarnTimer = setTimeout(() => {
+    const service = KNOWN_PORTS[port] || null;
+    let msg = `Port ${port} is a privileged port (below 1024) — it may require root/admin privileges on the client.`;
+    if (service) msg = `Port ${port} is commonly used by ${service}. ` + msg;
+
+    let el = row.nextElementSibling;
+    if (!el || !el.classList.contains('port-warning')) {
+      el = document.createElement('div');
+      el.className = 'port-warning alert alert-warning mt-8';
+      el.style.fontSize = '13px';
+      row.after(el);
+    }
+    el.textContent = msg;
+  }, 600);
+}
+
+// Attach listener to the initial mapping row's client-port input.
+// Also populate the app selector dropdown if apps are available.
+document.addEventListener('DOMContentLoaded', () => {
+  const initial = document.querySelector('.mapping-row .client-port');
+  if (initial) initial.addEventListener('input', checkPortWarning);
+
+  const sel = document.querySelector('#app-select');
+  if (sel && typeof apps !== 'undefined' && apps) {
+    apps.forEach(app => {
+      const opt = document.createElement('option');
+      opt.value = app.name;
+      opt.textContent = `${app.name} (${app.mappings.length} port${app.mappings.length !== 1 ? 's' : ''})`;
+      sel.appendChild(opt);
+    });
+  }
+});
+
+// ── Application loader ─────────────────────────────────────────────────────
+
+function loadFromApp() {
+  const sel = $('#app-select');
+  if (!sel) return;
+  const name = sel.value;
+  if (!name) return; // Manual — leave mappings as-is.
+
+  const app = (typeof apps !== 'undefined' && apps || []).find(a => a.name === name);
+  if (!app) return;
+
+  // Clear existing mappings and warnings.
+  const container = $('#mappings');
+  container.innerHTML = '';
+  $$('.port-warning').forEach(w => w.remove());
+
+  // Populate from the application template.
+  app.mappings.forEach(m => {
+    addMapping();
+    const rows = $$('.mapping-row');
+    const row = rows[rows.length - 1];
+    row.querySelector('.client-port').value = m.client_port;
+    row.querySelector('.server-port').value = m.server_port;
+  });
+}
+
 // ── Mapping editor ──────────────────────────────────────────────────────────
 
 function addMapping() {
@@ -11,11 +97,15 @@ function addMapping() {
     <button class="btn btn-sm btn-danger" onclick="removeMapping(this)">x</button>
   `;
   container.appendChild(row);
+  row.querySelector('.client-port').addEventListener('input', checkPortWarning);
   updateRemoveButtons();
 }
 
 function removeMapping(btn) {
-  btn.closest('.mapping-row').remove();
+  const row = btn.closest('.mapping-row');
+  const warn = row.nextElementSibling;
+  if (warn && warn.classList.contains('port-warning')) warn.remove();
+  row.remove();
   updateRemoveButtons();
 }
 

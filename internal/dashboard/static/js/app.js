@@ -20,6 +20,19 @@ const api = {
     return resp.json();
   },
 
+  async put(url, body) {
+    const resp = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(text || `PUT ${url}: ${resp.status}`);
+    }
+    return resp.json();
+  },
+
   async del(url) {
     const resp = await fetch(url, { method: 'DELETE' });
     if (!resp.ok) {

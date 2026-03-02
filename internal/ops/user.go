@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"regexp"
 	"path/filepath"
 	"strings"
 	"time"
@@ -39,16 +40,94 @@ type UserInfo struct {
 	DirPath string          `json:"-"`
 }
 
-// PortMapping defines one client-port → server-port pair.
-type PortMapping struct {
-	ClientPort int `json:"client_port"`
-	ServerPort int `json:"server_port"`
-}
-
 // CreateUserRequest holds the parameters for creating a new user.
 type CreateUserRequest struct {
-	Name     string        `json:"name"`
-	Mappings []PortMapping `json:"mappings"`
+	Name     string               `json:"name"`
+	Mappings []config.PortMapping `json:"mappings"`
+}
+
+// ListApplications returns all configured application templates.
+func (o *Ops) ListApplications() []config.Application {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.cfg.Server.Applications
+}
+
+// CreateApplication adds a new application template to the config.
+func (o *Ops) CreateApplication(app config.Application) error {
+	if !regexp.MustCompile(`^[a-zA-Z0-9_-]+$`).MatchString(app.Name) {
+		return fmt.Errorf("invalid application name: must contain only letters, numbers, dashes, and underscores")
+	}
+	if len(app.Mappings) == 0 {
+		return fmt.Errorf("at least one port mapping is required")
+	}
+	for _, m := range app.Mappings {
+		if m.ClientPort < 1 || m.ClientPort > 65535 || m.ServerPort < 1 || m.ServerPort > 65535 {
+			return fmt.Errorf("port numbers must be between 1 and 65535")
+		}
+	}
+
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	for _, existing := range o.cfg.Server.Applications {
+		if strings.EqualFold(existing.Name, app.Name) {
+			return fmt.Errorf("application %q already exists", app.Name)
+		}
+	}
+
+	o.cfg.Server.Applications = append(o.cfg.Server.Applications, app)
+	return config.Save(o.cfg)
+}
+
+// UpdateApplication replaces an existing application template in the config.
+func (o *Ops) UpdateApplication(name string, app config.Application) error {
+	if !regexp.MustCompile(`^[a-zA-Z0-9_-]+$`).MatchString(app.Name) {
+		return fmt.Errorf("invalid application name: must contain only letters, numbers, dashes, and underscores")
+	}
+	if len(app.Mappings) == 0 {
+		return fmt.Errorf("at least one port mapping is required")
+	}
+	for _, m := range app.Mappings {
+		if m.ClientPort < 1 || m.ClientPort > 65535 || m.ServerPort < 1 || m.ServerPort > 65535 {
+			return fmt.Errorf("port numbers must be between 1 and 65535")
+		}
+	}
+
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	// If renaming, check that the new name doesn't conflict.
+	if !strings.EqualFold(name, app.Name) {
+		for _, existing := range o.cfg.Server.Applications {
+			if strings.EqualFold(existing.Name, app.Name) {
+				return fmt.Errorf("application %q already exists", app.Name)
+			}
+		}
+	}
+
+	for i, a := range o.cfg.Server.Applications {
+		if a.Name == name {
+			o.cfg.Server.Applications[i] = app
+			return config.Save(o.cfg)
+		}
+	}
+	return fmt.Errorf("application %q not found", name)
+}
+
+// DeleteApplication removes an application template from the config.
+func (o *Ops) DeleteApplication(name string) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	apps := o.cfg.Server.Applications
+	for i, a := range apps {
+		if a.Name == name {
+			o.cfg.Server.Applications = append(apps[:i], apps[i+1:]...)
+			return config.Save(o.cfg)
+		}
+	}
+	return fmt.Errorf("application %q not found", name)
 }
 
 // ListUsers returns all users found in the users directory.
