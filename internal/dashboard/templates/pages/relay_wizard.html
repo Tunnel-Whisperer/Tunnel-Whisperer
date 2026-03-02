@@ -53,7 +53,13 @@
   <div class="card">
     <h2>Confirm</h2>
     <div class="kv mb-16" id="confirm-details"></div>
-    <div class="alert alert-info">
+    <div class="form-group mt-16">
+      <label class="checkbox-label">
+        <input type="checkbox" id="ssh-open" onchange="updateConfirmInfo()">
+        Leave SSH port 22 open (direct access for debugging)
+      </label>
+    </div>
+    <div class="alert alert-info" id="confirm-info">
       This will create a VM with Ubuntu 24.04, Caddy, Xray, and SSH (localhost-only). Firewall allows ports 80 and 443 only.
     </div>
     <div class="mt-16 flex gap-8">
@@ -107,7 +113,7 @@
     <div id="manual-result" class="hidden">
       <h3>Install Script</h3>
       <p class="text-dim mb-16">Copy this script and run it as root on your Linux machine (Ubuntu/Debian):</p>
-      <div class="alert alert-warning mb-16">This script will disable public SSH access on the relay server (port 22 will be blocked by the firewall). After running it, use <strong>tw relay ssh</strong> to connect to the relay.</div>
+      <div class="alert alert-warning mb-16" id="manual-ssh-warning">This script will disable public SSH access on the relay server (port 22 will be blocked by the firewall). After running it, use <strong>tw relay ssh</strong> to connect to the relay.</div>
       <pre id="manual-script" style="max-height:400px; overflow-y:auto; font-size:13px;"></pre>
       <div class="mt-16 flex gap-8">
         <button class="btn btn-primary" onclick="copyScript()">Copy to Clipboard</button>

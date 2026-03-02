@@ -104,19 +104,25 @@ cat > /usr/local/etc/xray/config.json <<'XRAYEOF'
 XRAYEOF
 
 # ── Configure SSH ────────────────────────────────────────────
-echo "[5/7] Configuring SSH (localhost-only)..."
+{{if .SSHOpen}}echo "[5/7] Configuring SSH (public access, key-only)..."
+cat > /etc/ssh/sshd_config.d/99-tw-localhost.conf <<'SSHEOF'
+ListenAddress 0.0.0.0
+PasswordAuthentication no
+SSHEOF
+{{else}}echo "[5/7] Configuring SSH (localhost-only)..."
 cat > /etc/ssh/sshd_config.d/99-tw-localhost.conf <<'SSHEOF'
 ListenAddress 127.0.0.1
 PasswordAuthentication no
 SSHEOF
-
+{{end}}
 # ── Firewall ─────────────────────────────────────────────────
 echo "[6/7] Configuring firewall..."
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow 80/tcp
 ufw allow 443/tcp
-ufw --force enable
+{{if .SSHOpen}}ufw allow 22/tcp
+{{end}}ufw --force enable
 
 # ── Start services ───────────────────────────────────────────
 echo "[7/7] Starting services..."

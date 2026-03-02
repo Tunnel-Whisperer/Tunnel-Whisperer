@@ -9,7 +9,6 @@ users:
       - {{.PublicKey}}
 
 package_update: true
-package_upgrade: true
 
 packages:
   - debian-keyring
@@ -73,8 +72,9 @@ write_files:
   - path: /etc/ssh/sshd_config.d/99-tw-localhost.conf
     permissions: "0644"
     content: |
-      ListenAddress 127.0.0.1
-      PasswordAuthentication no
+{{if .SSHOpen}}      ListenAddress 0.0.0.0
+{{else}}      ListenAddress 127.0.0.1
+{{end}}      PasswordAuthentication no
 {{if .CaddyCertsB64}}
   - path: /tmp/caddy-certs.tar.gz
     permissions: "0600"
@@ -99,12 +99,13 @@ runcmd:
   # Install Xray (pinned version for reproducibility)
   - bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --version {{.XrayVersion}}
 
-  # Firewall — only 80 and 443
+  # Firewall
   - ufw default deny incoming
   - ufw default allow outgoing
   - ufw allow 80/tcp
   - ufw allow 443/tcp
-  - ufw --force enable
+{{if .SSHOpen}}  - ufw allow 22/tcp
+{{end}}  - ufw --force enable
 
   # Restart services (Ubuntu 24.04 uses 'ssh' not 'sshd')
   - systemctl restart ssh
@@ -117,3 +118,16 @@ runcmd:
   - rm -f /tmp/caddy-certs.tar.gz
 {{end}}
   - systemctl restart caddy
+
+  # Retry Caddy in background: if DNS isn't set when Caddy first starts, ACME
+  # fails and Caddy enters exponential backoff. This loop forces a fresh ACME
+  # attempt every 2 minutes (respects Let's Encrypt rate limit of 5 failures/hr).
+  # Stops early once the cert is obtained.
+  - |
+    nohup bash -c '
+      for i in $(seq 1 8); do
+        sleep 120
+        if curl -sSo /dev/null --max-time 5 https://localhost 2>/dev/null; then exit 0; fi
+        systemctl restart caddy 2>/dev/null || true
+      done
+    ' &>/dev/null &

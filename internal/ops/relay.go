@@ -26,7 +26,8 @@ type RelayProvisionRequest struct {
 	ProviderName string `json:"provider_name"` // display name
 	Token        string `json:"token"`
 	AWSSecretKey string `json:"aws_secret_key"`
-	Region       string `json:"region"` // provider region/location
+	Region       string `json:"region"`   // provider region/location
+	SSHOpen      bool   `json:"ssh_open"` // leave SSH port 22 open on relay
 }
 
 // RelayStatus describes the current state of the relay.
@@ -35,6 +36,7 @@ type RelayStatus struct {
 	Domain      string `json:"domain"`
 	IP          string `json:"ip,omitempty"`
 	Provider    string `json:"provider,omitempty"`
+	SSHOpen     bool   `json:"ssh_open"`
 }
 
 // ManualRelayMarker is written to the relay directory when the user sets up
@@ -43,6 +45,7 @@ type ManualRelayMarker struct {
 	Domain    string `json:"domain"`
 	IP        string `json:"ip"`
 	CreatedAt string `json:"created_at"`
+	SSHOpen   bool   `json:"ssh_open"`
 }
 
 // GetRelayStatus checks if a relay has been provisioned.
@@ -74,6 +77,15 @@ func (o *Ops) GetRelayStatus() RelayStatus {
 				status.Provider = "AWS"
 			}
 		}
+		// Read relay metadata (SSHOpen, etc.).
+		if data, err := os.ReadFile(filepath.Join(relayDir, "relay-meta.json")); err == nil {
+			var meta struct {
+				SSHOpen bool `json:"ssh_open"`
+			}
+			if json.Unmarshal(data, &meta) == nil {
+				status.SSHOpen = meta.SSHOpen
+			}
+		}
 		return status
 	}
 
@@ -84,6 +96,7 @@ func (o *Ops) GetRelayStatus() RelayStatus {
 			status.Provisioned = true
 			status.IP = marker.IP
 			status.Provider = "Manual"
+			status.SSHOpen = marker.SSHOpen
 		}
 	}
 
@@ -173,6 +186,7 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 		SSHUser:   cfg.Server.RelaySSHUser,
 		PublicKey: strings.TrimSpace(string(pubKeyBytes)),
 		Provider:  req.ProviderKey,
+		SSHOpen:   req.SSHOpen,
 	}
 
 	// Load saved TLS certificates for reuse (avoids Let's Encrypt rate limits).
@@ -185,6 +199,10 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 		progress(ProgressEvent{Step: 7, Total: 9, Label: "Provisioning", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("generating terraform files: %w", err)
 	}
+
+	// Persist relay metadata (SSHOpen flag) alongside terraform state.
+	relayMeta, _ := json.MarshalIndent(map[string]interface{}{"ssh_open": req.SSHOpen}, "", "  ")
+	_ = os.WriteFile(filepath.Join(relayDir, "relay-meta.json"), relayMeta, 0644)
 
 	// Write credentials and region.
 	tfEnv := map[string]string{}
@@ -243,11 +261,11 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 		progress(ProgressEvent{Step: 8, Total: 9, Label: "DNS & readiness", Status: "completed",
 			Message: "DNS not verified — set your A record and run Test Connectivity from the relay page"})
 	} else {
-		// DNS resolved — now wait for HTTPS (Caddy + TLS cert).
-		progress(ProgressEvent{Step: 8, Total: 9, Label: "DNS & readiness", Status: "running",
-			Message: "DNS verified — waiting for Caddy to obtain TLS certificate..."})
+		// DNS resolved — wait for HTTPS (cloud-init + ACME cert).
+		progress(ProgressEvent{Step: 8, Total: 9, Label: "TLS", Status: "running",
+			Message: "DNS verified — waiting for cloud-init and TLS certificate (up to 15 min)..."})
 
-		if err := o.WaitForRelay(ctx, cfg.Xray.RelayHost, 5*time.Minute, progress); err != nil {
+		if err := o.WaitForRelay(ctx, cfg.Xray.RelayHost, 15*time.Minute, progress); err != nil {
 			slog.Warn("relay readiness timed out", "error", err)
 			progress(ProgressEvent{Step: 8, Total: 9, Label: "DNS & readiness", Status: "completed",
 				Message: "TLS not ready yet — Caddy will keep retrying. Check relay page in a few minutes."})
@@ -267,7 +285,7 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 
 // GenerateManualInstallScript prepares SSH keys, UUID, and config, then
 // returns a bash script for manual relay installation.
-func (o *Ops) GenerateManualInstallScript(domain string) (string, error) {
+func (o *Ops) GenerateManualInstallScript(domain string, sshOpen bool) (string, error) {
 	if err := o.EnsureKeys(); err != nil {
 		return "", fmt.Errorf("ensuring keys: %w", err)
 	}
@@ -302,13 +320,14 @@ func (o *Ops) GenerateManualInstallScript(domain string) (string, error) {
 		XrayPath:  cfg.Xray.Path,
 		SSHUser:   cfg.Server.RelaySSHUser,
 		PublicKey: strings.TrimSpace(string(pubKeyBytes)),
+		SSHOpen:   sshOpen,
 	}
 
 	return terraform.GenerateInstallScript(tfCfg)
 }
 
 // SaveManualRelay writes the manual relay marker file, marking the relay as provisioned.
-func (o *Ops) SaveManualRelay(domain, ip string) error {
+func (o *Ops) SaveManualRelay(domain, ip string, sshOpen bool) error {
 	relayDir := config.RelayDir()
 	if err := os.MkdirAll(relayDir, 0755); err != nil {
 		return fmt.Errorf("creating relay directory: %w", err)
@@ -318,6 +337,7 @@ func (o *Ops) SaveManualRelay(domain, ip string) error {
 		Domain:    domain,
 		IP:        ip,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		SSHOpen:   sshOpen,
 	}
 	data, err := json.MarshalIndent(marker, "", "  ")
 	if err != nil {
@@ -342,7 +362,8 @@ func (o *Ops) saveCaddyCerts(ctx context.Context, progress ProgressFunc) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	const timeout = 30 * time.Second
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	done := make(chan error, 1)
@@ -370,18 +391,32 @@ func (o *Ops) saveCaddyCerts(ctx context.Context, progress ProgressFunc) {
 		})
 	}()
 
-	select {
-	case err := <-done:
-		if err != nil {
-			slog.Warn("could not save TLS certificates", "error", err)
-			progress(ProgressEvent{Message: "Could not save TLS certificates (non-fatal): " + err.Error()})
-		} else {
-			slog.Info("TLS certificates saved", "domain", domain)
-			progress(ProgressEvent{Message: "TLS certificates saved for reuse"})
+	// Show countdown so the user knows this won't hang forever.
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	deadline := time.Now().Add(timeout)
+
+	for {
+		select {
+		case err := <-done:
+			if err != nil {
+				slog.Warn("could not save TLS certificates", "error", err)
+				progress(ProgressEvent{Message: "Could not save TLS certificates (non-fatal): " + err.Error()})
+			} else {
+				slog.Info("TLS certificates saved", "domain", domain)
+				progress(ProgressEvent{Message: "TLS certificates saved for reuse"})
+			}
+			return
+		case <-ticker.C:
+			remaining := time.Until(deadline).Truncate(time.Second)
+			if remaining > 0 {
+				progress(ProgressEvent{Message: fmt.Sprintf("Connecting to relay to save TLS certs... (%s remaining, will skip on timeout)", remaining)})
+			}
+		case <-ctx.Done():
+			slog.Warn("cert saving timed out or cancelled")
+			progress(ProgressEvent{Message: "TLS certificate saving skipped (relay unreachable, continuing with destroy)"})
+			return
 		}
-	case <-ctx.Done():
-		slog.Warn("cert saving timed out or cancelled")
-		progress(ProgressEvent{Message: "TLS certificate saving skipped (timeout/cancelled)"})
 	}
 }
 
@@ -412,8 +447,8 @@ func (o *Ops) DestroyRelay(ctx context.Context, creds map[string]string, progres
 		return fmt.Errorf("no relay to destroy (no tfstate or manual marker found)")
 	}
 
-	// Step 1: Save TLS certificates for reuse (best-effort).
-	progress(ProgressEvent{Step: 1, Total: 3, Label: "Saving TLS certificates", Status: "running"})
+	// Step 1: Save TLS certificates for reuse (best-effort, 30s timeout).
+	progress(ProgressEvent{Step: 1, Total: 3, Label: "Saving TLS certificates", Status: "running", Message: "Connecting to relay (30s timeout, will skip if unreachable)"})
 	o.saveCaddyCerts(ctx, progress)
 	progress(ProgressEvent{Step: 1, Total: 3, Label: "Saving TLS certificates", Status: "completed"})
 
@@ -493,6 +528,122 @@ func (o *Ops) TestRelay(progress ProgressFunc) {
 func (o *Ops) RelaySSH(fn func(client *gossh.Client) error) error {
 	cfg := o.Config()
 	return withRelaySSH(cfg, fn)
+}
+
+// DirectRelaySSH connects to the relay over plain SSH (port 22) without an
+// Xray tunnel. Only works when the relay was provisioned with SSHOpen=true.
+func (o *Ops) DirectRelaySSH(fn func(client *gossh.Client) error) error {
+	cfg := o.Config()
+	status := o.GetRelayStatus()
+	if status.IP == "" {
+		return fmt.Errorf("relay IP not available")
+	}
+
+	privPath := filepath.Join(config.Dir(), "id_ed25519")
+	keyData, err := os.ReadFile(privPath)
+	if err != nil {
+		return fmt.Errorf("reading server key: %w", err)
+	}
+	signer, err := gossh.ParsePrivateKey(keyData)
+	if err != nil {
+		return fmt.Errorf("parsing server key: %w", err)
+	}
+
+	sshCfg := &gossh.ClientConfig{
+		User:            cfg.Server.RelaySSHUser,
+		Auth:            []gossh.AuthMethod{gossh.PublicKeys(signer)},
+		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+		Timeout:         15 * time.Second,
+	}
+
+	addr := fmt.Sprintf("%s:22", status.IP)
+	client, err := gossh.Dial("tcp", addr, sshCfg)
+	if err != nil {
+		return fmt.Errorf("direct SSH to relay: %w", err)
+	}
+	defer client.Close()
+
+	return fn(client)
+}
+
+// CloseRelaySSH connects to the relay, closes SSH port 22 (UFW + sshd),
+// and updates local metadata. Uses direct SSH first, falls back to Xray tunnel.
+func (o *Ops) CloseRelaySSH(progress ProgressFunc) error {
+	if progress == nil {
+		progress = func(ProgressEvent) {}
+	}
+
+	// Step 1: Connect.
+	progress(ProgressEvent{Step: 1, Total: 3, Label: "Connecting to relay", Status: "running"})
+
+	sshFn := o.DirectRelaySSH
+	err := sshFn(func(*gossh.Client) error { return nil })
+	if err != nil {
+		// Direct SSH failed, fall back to Xray tunnel.
+		progress(ProgressEvent{Step: 1, Total: 3, Label: "Connecting to relay", Status: "running", Message: "Direct SSH failed, trying Xray tunnel"})
+		sshFn = o.RelaySSH
+	}
+
+	// Step 2: Close port 22.
+	progress(ProgressEvent{Step: 1, Total: 3, Label: "Connecting to relay", Status: "completed"})
+	progress(ProgressEvent{Step: 2, Total: 3, Label: "Closing SSH port 22", Status: "running"})
+
+	err = sshFn(func(client *gossh.Client) error {
+		cmds := []string{
+			"sudo ufw deny 22/tcp",
+			"sudo sed -i 's/^ListenAddress 0.0.0.0/ListenAddress 127.0.0.1/' /etc/ssh/sshd_config.d/99-tw-localhost.conf",
+			"sudo systemctl restart ssh 2>/dev/null || sudo systemctl restart sshd 2>/dev/null || true",
+		}
+		for _, cmd := range cmds {
+			session, err := client.NewSession()
+			if err != nil {
+				return fmt.Errorf("creating session: %w", err)
+			}
+			if out, err := session.CombinedOutput(cmd); err != nil {
+				session.Close()
+				return fmt.Errorf("running %q: %s: %w", cmd, string(out), err)
+			}
+			session.Close()
+		}
+		return nil
+	})
+	if err != nil {
+		progress(ProgressEvent{Step: 2, Total: 3, Label: "Closing SSH port 22", Status: "failed", Error: err.Error()})
+		return err
+	}
+	progress(ProgressEvent{Step: 2, Total: 3, Label: "Closing SSH port 22", Status: "completed"})
+
+	// Step 3: Update local metadata.
+	progress(ProgressEvent{Step: 3, Total: 3, Label: "Updating configuration", Status: "running"})
+
+	relayDir := config.RelayDir()
+
+	// Update relay-meta.json (cloud relays).
+	metaPath := filepath.Join(relayDir, "relay-meta.json")
+	if data, err := os.ReadFile(metaPath); err == nil {
+		var meta map[string]interface{}
+		if json.Unmarshal(data, &meta) == nil {
+			meta["ssh_open"] = false
+			if updated, err := json.MarshalIndent(meta, "", "  "); err == nil {
+				os.WriteFile(metaPath, updated, 0644)
+			}
+		}
+	}
+
+	// Update manual-relay.json (manual relays).
+	manualPath := filepath.Join(relayDir, "manual-relay.json")
+	if data, err := os.ReadFile(manualPath); err == nil {
+		var marker ManualRelayMarker
+		if json.Unmarshal(data, &marker) == nil {
+			marker.SSHOpen = false
+			if updated, err := json.MarshalIndent(marker, "", "  "); err == nil {
+				os.WriteFile(manualPath, updated, 0644)
+			}
+		}
+	}
+
+	progress(ProgressEvent{Step: 3, Total: 3, Label: "Updating configuration", Status: "completed"})
+	return nil
 }
 
 // ReadCloudInitLog connects to the relay via the Xray tunnel and reads
@@ -611,6 +762,8 @@ func (o *Ops) WaitForRelay(ctx context.Context, domain string, timeout time.Dura
 			reason = "Caddy not listening yet"
 		case strings.Contains(errStr, "tls:") || strings.Contains(errStr, "certificate"):
 			reason = "TLS cert not ready (Let's Encrypt in progress)"
+		case strings.Contains(errStr, "EOF"):
+			reason = "Caddy is up but TLS cert not ready yet"
 		case strings.Contains(errStr, "timeout") || strings.Contains(errStr, "deadline"):
 			reason = "connection timed out (server booting)"
 		default:

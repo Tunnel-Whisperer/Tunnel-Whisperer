@@ -19,6 +19,7 @@ let wizardState = {
   awsSecretKey: '',
   region: '',
   regionName: '',
+  sshOpen: false,
 };
 
 function wizardNext(step) {
@@ -37,8 +38,6 @@ function wizardNext(step) {
       details.innerHTML = `
         <span class="kv-label">Domain</span><span class="kv-value">${wizardState.domain}</span>
         <span class="kv-label">Provider</span><span class="kv-value">Manual Install</span>
-        <span class="kv-label">Firewall</span><span class="kv-value">ports 80, 443 only</span>
-        <span class="kv-label">Software</span><span class="kv-value">Caddy + Xray + SSH (localhost-only)</span>
       `;
       btn.textContent = 'Generate Script';
       btn.onclick = generateManualScript;
@@ -48,12 +47,14 @@ function wizardNext(step) {
         <span class="kv-label">Provider</span><span class="kv-value">${wizardState.providerName}</span>
         <span class="kv-label">Region</span><span class="kv-value">${wizardState.regionName || wizardState.region || '(default)'}</span>
         <span class="kv-label">Instance</span><span class="kv-value">Ubuntu 24.04 (smallest tier)</span>
-        <span class="kv-label">Firewall</span><span class="kv-value">ports 80, 443 only</span>
-        <span class="kv-label">Software</span><span class="kv-value">Caddy + Xray + SSH (localhost-only)</span>
       `;
       btn.textContent = 'Provision';
       btn.onclick = startProvision;
     }
+    // Reset checkbox to match current state and update info text.
+    const cb = $('#ssh-open');
+    if (cb) cb.checked = wizardState.sshOpen;
+    updateConfirmInfo();
   }
   showStep(step);
 }
@@ -73,6 +74,28 @@ function showStep(step) {
     if (n < step) s.classList.add('done');
     if (n === step) s.classList.add('active');
   });
+}
+
+function updateConfirmInfo() {
+  const cb = $('#ssh-open');
+  const info = $('#confirm-info');
+  const warning = $('#manual-ssh-warning');
+  wizardState.sshOpen = cb ? cb.checked : false;
+
+  if (info) {
+    if (wizardState.sshOpen) {
+      info.textContent = 'This will create a VM with Ubuntu 24.04, Caddy, Xray, and SSH (public, key-only). Firewall allows ports 22, 80, and 443.';
+    } else {
+      info.textContent = 'This will create a VM with Ubuntu 24.04, Caddy, Xray, and SSH (localhost-only). Firewall allows ports 80 and 443 only.';
+    }
+  }
+  if (warning) {
+    if (wizardState.sshOpen) {
+      warning.innerHTML = 'SSH port 22 will be <strong>open to the public</strong> (key-only authentication). Only this server\'s key is authorized.';
+    } else {
+      warning.innerHTML = 'This script will disable public SSH access on the relay server (port 22 will be blocked by the firewall). After running it, use <strong>tw relay ssh</strong> to connect to the relay.';
+    }
+  }
 }
 
 // ── Provider selection ──────────────────────────────────────────────────────
@@ -203,6 +226,7 @@ async function startProvision() {
       token: wizardState.token,
       aws_secret_key: wizardState.awsSecretKey,
       region: wizardState.region,
+      ssh_open: wizardState.sshOpen,
     });
 
     const log = $('#provision-progress');
@@ -362,6 +386,40 @@ async function testRelay() {
   }
 }
 
+// ── Close relay SSH ──────────────────────────────────────────────────────────
+
+async function closeRelaySSH() {
+  if (!confirm('Close SSH port 22? You will only be able to SSH through the Xray tunnel after this.')) return;
+
+  const btn = $('#btn-close-ssh');
+  const log = $('#close-ssh-progress');
+  if (!btn || !log) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Closing...';
+  log.classList.remove('hidden');
+  log.innerHTML = '';
+
+  try {
+    const { session_id } = await api.post('/api/relay/close-ssh', {});
+    connectSSE(session_id, (ev) => {
+      renderProgressEvent(log, ev);
+    }, (err) => {
+      if (err) {
+        log.innerHTML += `<div class="progress-step failed"><span class="step-label">${err.message}</span></div>`;
+        btn.disabled = false;
+        btn.textContent = 'Close Port 22';
+      } else {
+        setTimeout(() => { window.location.reload(); }, 1500);
+      }
+    });
+  } catch (err) {
+    log.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+    btn.disabled = false;
+    btn.textContent = 'Close Port 22';
+  }
+}
+
 // ── Manual install ──────────────────────────────────────────────────────────
 
 async function generateManualScript() {
@@ -372,6 +430,7 @@ async function generateManualScript() {
   try {
     const resp = await api.post('/api/relay/generate-script', {
       domain: wizardState.domain,
+      ssh_open: wizardState.sshOpen,
     });
 
     $('#provision-progress').classList.add('hidden');
@@ -420,6 +479,7 @@ async function saveManualRelay() {
     await api.post('/api/relay/save-manual', {
       domain: wizardState.domain,
       ip: ip,
+      ssh_open: wizardState.sshOpen,
     });
     window.location.href = '/relay';
   } catch (err) {
@@ -447,6 +507,9 @@ function sshConnect() {
   badge.textContent = 'connecting';
   badge.className = 'badge badge-yellow';
 
+  const modeSelect = $('#ssh-mode');
+  if (modeSelect) modeSelect.disabled = true;
+
   // Initialize xterm.js terminal.
   sshTerm = new Terminal({
     cursorBlink: true,
@@ -468,7 +531,8 @@ function sshConnect() {
 
   // WebSocket URL — same host, ws:// or wss:// matching current protocol.
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  sshSocket = new WebSocket(`${proto}//${location.host}/api/relay/ssh`);
+  const mode = modeSelect && modeSelect.value === 'direct' ? '?mode=direct' : '';
+  sshSocket = new WebSocket(`${proto}//${location.host}/api/relay/ssh${mode}`);
   sshSocket.binaryType = 'arraybuffer';
 
   sshSocket.onopen = () => {
@@ -536,6 +600,16 @@ function sshConnect() {
 }
 
 function sshDisconnect() {
+  const badge = $('#ssh-badge');
+  const btnDisconnect = $('#btn-ssh-disconnect');
+  if (badge) {
+    badge.textContent = 'disconnecting';
+    badge.className = 'badge badge-yellow';
+  }
+  if (btnDisconnect) {
+    btnDisconnect.disabled = true;
+    btnDisconnect.textContent = 'Disconnecting...';
+  }
   if (sshSocket) {
     sshSocket.close();
     sshSocket = null;
@@ -546,6 +620,9 @@ function sshCleanup() {
   const badge = $('#ssh-badge');
   const btnConnect = $('#btn-ssh-connect');
   const btnDisconnect = $('#btn-ssh-disconnect');
+
+  const modeSelect = $('#ssh-mode');
+  if (modeSelect) modeSelect.disabled = false;
 
   if (badge) {
     badge.textContent = 'disconnected';
@@ -558,6 +635,8 @@ function sshCleanup() {
   }
   if (btnDisconnect) {
     btnDisconnect.classList.add('hidden');
+    btnDisconnect.disabled = false;
+    btnDisconnect.textContent = 'Disconnect';
   }
 
   if (sshResizeObserver) {

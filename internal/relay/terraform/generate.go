@@ -39,6 +39,7 @@ type Config struct {
 	Provider      string // "aws", "hetzner", or "digitalocean"
 	CaddyCertsB64 string // base64-encoded tar.gz of saved Caddy TLS certs (optional)
 	XrayVersion   string // populated automatically from the pinned constant
+	SSHOpen       bool   // when true, SSH listens on 0.0.0.0 and port 22 is allowed in firewall
 }
 
 var providerTemplates = map[string]string{
@@ -63,12 +64,16 @@ func Generate(dir string, cfg Config) error {
 		return fmt.Errorf("writing cloud-init.yaml: %w", err)
 	}
 
-	// main.tf — only the selected provider.
-	tmpl, ok := providerTemplates[cfg.Provider]
+	// main.tf — only the selected provider (rendered through template for SSHOpen conditionals).
+	tmplStr, ok := providerTemplates[cfg.Provider]
 	if !ok {
 		return fmt.Errorf("unknown provider: %s", cfg.Provider)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "main.tf"), []byte(tmpl), 0644); err != nil {
+	mainTf, err := render("main.tf", tmplStr, cfg)
+	if err != nil {
+		return fmt.Errorf("rendering main.tf: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.tf"), []byte(mainTf), 0644); err != nil {
 		return fmt.Errorf("writing main.tf: %w", err)
 	}
 

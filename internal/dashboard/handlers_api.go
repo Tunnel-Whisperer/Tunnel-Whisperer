@@ -327,6 +327,23 @@ func (s *Server) apiTestRelay(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]string{"session_id": sessionID})
 }
 
+func (s *Server) apiCloseRelaySSH(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	sessionID, progress := s.sse.create()
+
+	go func() {
+		if err := s.ops.CloseRelaySSH(progress); err != nil {
+			slog.Error("close relay SSH failed", "error", err)
+		}
+	}()
+
+	jsonOK(w, map[string]string{"session_id": sessionID})
+}
+
 func (s *Server) apiGenerateScript(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -334,14 +351,15 @@ func (s *Server) apiGenerateScript(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Domain string `json:"domain"`
+		Domain  string `json:"domain"`
+		SSHOpen bool   `json:"ssh_open"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	script, err := s.ops.GenerateManualInstallScript(req.Domain)
+	script, err := s.ops.GenerateManualInstallScript(req.Domain, req.SSHOpen)
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -357,8 +375,9 @@ func (s *Server) apiSaveManualRelay(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Domain string `json:"domain"`
-		IP     string `json:"ip"`
+		Domain  string `json:"domain"`
+		IP      string `json:"ip"`
+		SSHOpen bool   `json:"ssh_open"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -370,7 +389,7 @@ func (s *Server) apiSaveManualRelay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.ops.SaveManualRelay(req.Domain, req.IP); err != nil {
+	if err := s.ops.SaveManualRelay(req.Domain, req.IP, req.SSHOpen); err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

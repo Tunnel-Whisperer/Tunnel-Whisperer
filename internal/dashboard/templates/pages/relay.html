@@ -47,11 +47,24 @@
     <h2>SSH Terminal</h2>
     <span class="badge badge-dim" id="ssh-badge">disconnected</span>
   </div>
+  {{if .Relay.SSHOpen}}
+  <div class="form-group mt-12">
+    <label for="ssh-mode">Connection Mode</label>
+    <select id="ssh-mode">
+      <option value="tunnel">Xray Tunnel</option>
+      <option value="direct">Direct SSH (port 22)</option>
+    </select>
+  </div>
+  {{end}}
   <div id="ssh-terminal" class="ssh-terminal hidden"></div>
   <div class="mt-12 flex gap-8">
     <button class="btn" id="btn-ssh-connect" onclick="sshConnect()">Connect</button>
     <button class="btn btn-danger hidden" id="btn-ssh-disconnect" onclick="sshDisconnect()">Disconnect</button>
+    {{if .Relay.SSHOpen}}
+    <button class="btn" id="btn-close-ssh" onclick="closeRelaySSH()">Close Port 22</button>
+    {{end}}
   </div>
+  <div id="close-ssh-progress" class="progress-log hidden mt-12"></div>
 </div>
 {{else}}
 <div class="card">
@@ -73,6 +86,7 @@
 <script>
   var relayProvider = "{{.Relay.Provider}}";
   var relayProvisioned = {{.Relay.Provisioned}};
+  var relaySSHOpen = {{.Relay.SSHOpen}};
 </script>
 <script src="/static/js/relay.js"></script>
 {{end}}

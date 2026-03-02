@@ -39,6 +39,14 @@ resource "hcloud_firewall" "relay" {
     port      = "443"
     source_ips = ["0.0.0.0/0", "::/0"]
   }
+{{if .SSHOpen}}
+  rule {
+    direction = "in"
+    protocol  = "tcp"
+    port      = "22"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+{{end}}
 }
 
 resource "hcloud_server" "relay" {

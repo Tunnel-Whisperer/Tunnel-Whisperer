@@ -35,7 +35,12 @@ func (s *Server) apiRelaySSH(w http.ResponseWriter, r *http.Request) {
 	// Send a connecting status so the frontend can show feedback.
 	conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"status","msg":"connecting to relay..."}`))
 
-	err = s.ops.RelaySSH(func(client *gossh.Client) error {
+	sshFn := s.ops.RelaySSH
+	if r.URL.Query().Get("mode") == "direct" {
+		sshFn = s.ops.DirectRelaySSH
+	}
+
+	err = sshFn(func(client *gossh.Client) error {
 		session, err := client.NewSession()
 		if err != nil {
 			return err
