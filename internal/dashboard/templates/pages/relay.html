@@ -19,9 +19,13 @@
   </div>
   <div class="mt-16 flex gap-8">
     <button class="btn" onclick="testRelay()" id="btn-test-relay">Test Connectivity</button>
+    {{if .Relay.SSHOpen}}
+    <button class="btn" id="btn-close-ssh" onclick="closeRelaySSH()">Close Port 22</button>
+    {{end}}
     <button class="btn btn-danger" id="btn-destroy" onclick="showDestroyPrompt()">Destroy Relay</button>
   </div>
   <div id="test-result" class="hidden mt-16"></div>
+  <div id="close-ssh-progress" class="progress-log hidden mt-16"></div>
 </div>
 
 <!-- AWS credential prompt (hidden by default) -->
@@ -62,11 +66,7 @@
   <div class="mt-12 flex gap-8">
     <button class="btn" id="btn-ssh-connect" onclick="sshConnect()">Connect</button>
     <button class="btn btn-danger hidden" id="btn-ssh-disconnect" onclick="sshDisconnect()">Disconnect</button>
-    {{if .Relay.SSHOpen}}
-    <button class="btn" id="btn-close-ssh" onclick="closeRelaySSH()">Close Port 22</button>
-    {{end}}
   </div>
-  <div id="close-ssh-progress" class="progress-log hidden mt-12"></div>
 </div>
 {{else}}
 <div class="card">
