@@ -75,6 +75,8 @@ write_files:
 {{if .SSHOpen}}      ListenAddress 0.0.0.0
 {{else}}      ListenAddress 127.0.0.1
 {{end}}      PasswordAuthentication no
+      ClientAliveInterval 60
+      ClientAliveCountMax 5
 {{if .CaddyCertsB64}}
   - path: /tmp/caddy-certs.tar.gz
     permissions: "0600"
@@ -92,7 +94,13 @@ runcmd:
   - |
     cat > /etc/caddy/Caddyfile <<'CADDYEOF'
     {{.Domain}} {
-        reverse_proxy {{.XrayPath}}* 127.0.0.1:10000
+        reverse_proxy {{.XrayPath}}* 127.0.0.1:10000 {
+            flush_interval -1
+            transport http {
+                keepalive 30s
+                keepalive_idle_conns 16
+            }
+        }
     }
     CADDYEOF
 

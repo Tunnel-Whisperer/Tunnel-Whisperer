@@ -75,6 +75,14 @@ Client Network                   Public Cloud                    Server Network
 
 ---
 
+## Video Tutorial
+
+New to Tunnel Whisperer? Watch the step-by-step video walkthrough:
+
+[![Video Tutorial](https://img.youtube.com/vi/cIe0-C1IMe4/maxresdefault.jpg)](https://www.youtube.com/watch?v=cIe0-C1IMe4)
+
+---
+
 ## Quick Start
 
 Requires **Go 1.22+** and **Terraform** (for relay provisioning).

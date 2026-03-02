@@ -45,7 +45,13 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq caddy
 
 cat > /etc/caddy/Caddyfile <<'CADDYEOF'
 {{.Domain}} {
-    reverse_proxy {{.XrayPath}}* 127.0.0.1:10000
+    reverse_proxy {{.XrayPath}}* 127.0.0.1:10000 {
+        flush_interval -1
+        transport http {
+            keepalive 30s
+            keepalive_idle_conns 16
+        }
+    }
 }
 CADDYEOF
 
@@ -108,11 +114,15 @@ XRAYEOF
 cat > /etc/ssh/sshd_config.d/99-tw-localhost.conf <<'SSHEOF'
 ListenAddress 0.0.0.0
 PasswordAuthentication no
+ClientAliveInterval 60
+ClientAliveCountMax 5
 SSHEOF
 {{else}}echo "[5/7] Configuring SSH (localhost-only)..."
 cat > /etc/ssh/sshd_config.d/99-tw-localhost.conf <<'SSHEOF'
 ListenAddress 127.0.0.1
 PasswordAuthentication no
+ClientAliveInterval 60
+ClientAliveCountMax 5
 SSHEOF
 {{end}}
 # ── Firewall ─────────────────────────────────────────────────
