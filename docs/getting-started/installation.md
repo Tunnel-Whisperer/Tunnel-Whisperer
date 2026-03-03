@@ -76,6 +76,15 @@ After building, you can register `tw` as a system service so it starts on boot a
 
 === "Linux (systemd)"
 
+    **1. Copy the binary to a system path:**
+
+    ```bash
+    sudo cp bin/tw /usr/local/bin/tw
+    sudo chmod +x /usr/local/bin/tw
+    ```
+
+    **2. Install and start the service:**
+
     ```bash
     sudo tw service install
     sudo tw service start
@@ -83,14 +92,84 @@ After building, you can register `tw` as a system service so it starts on boot a
 
     This creates a systemd unit at `/etc/systemd/system/tw.service` that runs `tw dashboard` with automatic restart on failure.
 
-=== "Windows (SCM)"
+    **3. Manage the service:**
 
-    ```powershell
-    tw.exe service install
-    tw.exe service start
+    ```bash
+    sudo tw service stop        # stop the service
+    sudo tw service uninstall   # remove the service
+    sudo systemctl status tw    # check service status
+    sudo journalctl -u tw -f   # follow service logs
     ```
 
-    This registers a Windows service that starts automatically on boot. Manage it from `services.msc` or with `tw.exe service stop` / `tw.exe service uninstall`.
+=== "Windows (SCM)"
+
+    **1. Place the binary in a permanent location:**
+
+    ```powershell
+    mkdir C:\tw
+    copy bin\tw.exe C:\tw\tw.exe
+    ```
+
+    **2. Install and start the service (run as Administrator):**
+
+    ```powershell
+    C:\tw\tw.exe service install
+    C:\tw\tw.exe service start
+    ```
+
+    This registers a Windows service that starts automatically on boot.
+
+    **3. Manage the service:**
+
+    ```powershell
+    tw.exe service stop         # stop the service
+    tw.exe service uninstall    # remove the service
+    ```
+
+    You can also manage it from the Services console (`services.msc`) — look for **Tunnel Whisperer**.
+
+=== "macOS (launchd)"
+
+    **1. Copy the binary to a system path:**
+
+    ```bash
+    sudo cp bin/tw-darwin /usr/local/bin/tw
+    sudo chmod +x /usr/local/bin/tw
+    ```
+
+    **2. Allow the binary in macOS security settings:**
+
+    On first run, macOS Gatekeeper will block the unsigned binary. To allow it:
+
+    1. Open **System Settings > Privacy & Security**
+    2. Scroll to the **Security** section — you will see a message about `tw` being blocked
+    3. Click **Allow Anyway**
+    4. Run `tw` again and click **Open** in the confirmation dialog
+
+    Alternatively, remove the quarantine attribute directly:
+
+    ```bash
+    sudo xattr -d com.apple.quarantine /usr/local/bin/tw
+    ```
+
+    **3. Install and start the service:**
+
+    ```bash
+    sudo tw service install
+    sudo tw service start
+    ```
+
+    This creates a launchd plist at `/Library/LaunchDaemons/com.tunnelwhisperer.tw.plist` that keeps the service running and starts it on boot.
+
+    **4. Manage the service:**
+
+    ```bash
+    sudo tw service stop        # stop the service
+    sudo tw service uninstall   # remove the service
+    sudo launchctl list | grep tw   # check if service is loaded
+    cat /var/log/tw.log         # view service logs
+    cat /var/log/tw.err.log     # view error logs
+    ```
 
 The service runs `tw dashboard`, which auto-starts the server or client based on your config mode. See [CLI Reference — Running as a Service](../reference/cli.md#running-as-a-service) for details.
 
