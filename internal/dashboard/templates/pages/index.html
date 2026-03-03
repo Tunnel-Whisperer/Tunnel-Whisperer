@@ -100,10 +100,10 @@
     {{if .Users}}
     <div class="user-list user-list-scroll" id="user-list">
       {{range .Users}}
-      <div class="user-row" data-uuid="{{.UUID}}">
+      <div class="user-row" data-uuid="{{.UUID}}" data-user="{{.Name}}">
         <a href="/users/{{.Name}}">{{.Name}}</a>
         <span>
-          <span class="badge {{if .Online}}badge-green{{else}}badge-dim hidden{{end}} user-online-badge">online</span>
+          <span class="badge {{if .Online}}badge-green{{else}}badge-dim hidden{{end}} user-online-badge">{{if gt .Sessions 1}}online ({{.Sessions}}){{else}}online{{end}}</span>
           <span class="text-dim text-mono">{{len .Tunnels}} tunnel{{if ne (len .Tunnels) 1}}s{{end}}</span>
         </span>
       </div>

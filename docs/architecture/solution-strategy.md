@@ -8,7 +8,7 @@ The system layers multiple protocols to achieve secure, firewall-transparent tun
 graph TB
     subgraph "Protocol Stack (outside → inside)"
         TLS["TLS 1.3<br/><small>Caddy terminates on relay :443</small>"]
-        HTTP["splitHTTP Transport<br/><small>Traffic split into standard HTTP requests</small>"]
+        HTTP["XHTTP Transport<br/><small>Traffic split into standard HTTP requests</small>"]
         VLESS["VLESS Protocol<br/><small>UUID-authenticated proxy layer</small>"]
         SSH["SSH Session<br/><small>End-to-end encrypted, key-based auth</small>"]
         FWD["Port Forwarding<br/><small>direct-tcpip channels with permitopen</small>"]
@@ -77,7 +77,7 @@ graph LR
 
 | Challenge | Solution | Technology |
 | --------- | -------- | ---------- |
-| Firewalls block non-HTTPS traffic | Encapsulate all traffic in TLS on port 443 | Xray (VLESS + splitHTTP) |
+| Firewalls block non-HTTPS traffic | Encapsulate all traffic in TLS on port 443 | Xray (VLESS + XHTTP) |
 | Server and client are behind NAT | All connections are outbound-only; relay is the rendezvous point | SSH reverse port forwarding |
 | Relay must never see plaintext | End-to-end encryption between client and server | SSH session layer |
 | TLS certificates for the relay | Automatic issuance and renewal | Caddy (ACME / Let's Encrypt) |

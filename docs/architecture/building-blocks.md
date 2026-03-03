@@ -30,8 +30,8 @@ graph TB
         CL --- FWD
     end
 
-    XS ==>|"VLESS+splitHTTP<br/>TLS :443"| CADDY
-    XC ==>|"VLESS+splitHTTP<br/>TLS :443"| CADDY
+    XS ==>|"VLESS+XHTTP<br/>TLS :443"| CADDY
+    XC ==>|"VLESS+XHTTP<br/>TLS :443"| CADDY
     SSHD -.->|"reverse tunnel<br/>-R 2222"| OSSH
     FWD -.->|"forward tunnel<br/>-L ports"| SSHD
 
@@ -52,7 +52,7 @@ graph TB
 The server brings up four internal services:
 
 - **SSH Server** -- an embedded SSH server (Go `golang.org/x/crypto/ssh`) that listens on a configurable port (default `:2222`), supports `direct-tcpip` port forwarding, reads `authorized_keys` dynamically, and enforces `permitopen` restrictions per client key
-- **Xray Instance** -- in-process xray-core creating a VLESS+splitHTTP+TLS tunnel to the relay; dokodemo-door inbound on `sshPort+1` forwards to the relay's SSH port
+- **Xray Instance** -- in-process xray-core creating a VLESS+XHTTP+TLS tunnel to the relay; dokodemo-door inbound on `sshPort+1` forwards to the relay's SSH port
 - **Reverse Tunnel** -- SSH reverse port forward (`-R`) through Xray, exposing the server's SSH on the relay
 - **API Server** -- a gRPC service exposing status and management operations
 
@@ -61,7 +61,7 @@ The server brings up four internal services:
 The relay is a lightweight cloud VM provisioned via `tw create relay-server` or the dashboard wizard. It runs:
 
 - **Caddy** -- reverse proxy on `:443`, automatic TLS via Let's Encrypt, forwards `/tw*` to Xray
-- **Xray** -- VLESS inbound on `127.0.0.1:10000` with splitHTTP transport and freedom outbound, accepts multiple client UUIDs
+- **Xray** -- VLESS inbound on `127.0.0.1:10000` with XHTTP transport and freedom outbound, accepts multiple client UUIDs
 - **SSH** -- OpenSSH on `127.0.0.1:22` only, accessible exclusively through the Xray tunnel; password authentication disabled
 - **Firewall (ufw)** -- only ports 80 and 443 open
 

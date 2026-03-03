@@ -20,8 +20,8 @@ graph LR
         CL[Client - tw connect]
     end
 
-    S -- "TLS :443 (Xray VLESS+splitHTTP)" --> C_
-    CL -- "TLS :443 (Xray VLESS+splitHTTP)" --> C_
+    S -- "TLS :443 (Xray VLESS+XHTTP)" --> C_
+    CL -- "TLS :443 (Xray VLESS+XHTTP)" --> C_
     C_ -- "reverse proxy /tw*" --> X
     X -- "freedom outbound" --> R
 ```

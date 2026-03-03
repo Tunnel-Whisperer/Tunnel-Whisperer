@@ -47,7 +47,7 @@ The cloud-init script on the relay:
 
 1. Creates the SSH user with the server's public key and passwordless sudo
 2. Installs Caddy from official apt repo, Xray via official install script
-3. Writes Xray config (VLESS inbound on `127.0.0.1:10000`, splitHTTP transport, freedom outbound)
+3. Writes Xray config (VLESS inbound on `127.0.0.1:10000`, XHTTP transport, freedom outbound)
 4. Writes Caddyfile (`<domain> { reverse_proxy /tw* 127.0.0.1:10000 }`)
 5. Locks down SSH to `127.0.0.1` only, disables password authentication
 6. Configures firewall: deny all incoming, allow 80/tcp + 443/tcp
@@ -120,7 +120,7 @@ sequenceDiagram
 
 **Key generation:** On first run, `ensureKeys` generates an ed25519 SSH key pair (`id_ed25519` / `id_ed25519.pub`), an SSH host key (`ssh_host_ed25519_key`), and seeds `authorized_keys` with the server's own public key.
 
-**Xray configuration:** The server-side Xray creates a dokodemo-door inbound on `sshPort+1` (default 2223) that forwards to the relay's SSH port (default 22) via VLESS+splitHTTP+TLS outbound.
+**Xray configuration:** The server-side Xray creates a dokodemo-door inbound on `sshPort+1` (default 2223) that forwards to the relay's SSH port (default 22) via VLESS+XHTTP+TLS outbound.
 
 **UUID auto-generation:** If `xray.uuid` is empty when `tw serve` starts with `relay_host` configured, a UUID is generated and saved to config automatically.
 
@@ -179,7 +179,7 @@ Client app                                                            Server ser
 localhost:5432 --> SSH channel (direct-tcpip) --> 127.0.0.1:5432
     |                        |                            ^
     v                        v                            |
-Xray dokodemo    VLESS+splitHTTP+TLS     Xray freedom    SSH reverse tunnel
+Xray dokodemo    VLESS+XHTTP+TLS     Xray freedom    SSH reverse tunnel
 (:54001)         ----------------->      (:10000)        (:2222 on relay)
                       Relay                                     |
                   Caddy :443                                    |

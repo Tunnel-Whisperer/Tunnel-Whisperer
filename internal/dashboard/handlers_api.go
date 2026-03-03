@@ -57,6 +57,12 @@ func (s *Server) apiStatus(w http.ResponseWriter, r *http.Request) {
 			onlineUUIDs = append(onlineUUIDs, uuid)
 		}
 		resp["online"] = onlineUUIDs
+
+		sessions := s.ops.GetSessionCounts()
+		if sessions == nil {
+			sessions = map[string]int{}
+		}
+		resp["sessions"] = sessions
 	}
 	if mode == "client" {
 		resp["client"] = s.ops.ClientStatus()
@@ -450,6 +456,10 @@ func (s *Server) apiUserAction(w http.ResponseWriter, r *http.Request) {
 		s.apiUserMappings(w, r, name)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "single-session" {
+		s.apiUserSingleSession(w, r, name)
+		return
+	}
 
 	switch r.Method {
 	case http.MethodDelete:
@@ -546,7 +556,38 @@ func (s *Server) apiOnlineUsers(w http.ResponseWriter, r *http.Request) {
 	for uuid := range online {
 		uuids = append(uuids, uuid)
 	}
-	jsonOK(w, map[string]interface{}{"online": uuids})
+
+	sessions := s.ops.GetSessionCounts()
+	if sessions == nil {
+		sessions = map[string]int{}
+	}
+
+	jsonOK(w, map[string]interface{}{
+		"online":   uuids,
+		"sessions": sessions,
+	})
+}
+
+func (s *Server) apiUserSingleSession(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodPut {
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.ops.SetUserSingleSession(name, req.Enabled); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	jsonOK(w, map[string]string{"status": "ok"})
 }
 
 func (s *Server) apiUserDownload(w http.ResponseWriter, r *http.Request, name string) {

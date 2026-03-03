@@ -18,12 +18,12 @@ The outermost encryption layer is **TLS 1.3** — the same standard used by onli
 
 ---
 
-## Tunnel Protocol (VLESS + SplitHTTP)
+## Tunnel Protocol (VLESS + XHTTP)
 
-Inside the TLS envelope, **Xray** runs the VLESS protocol with splitHTTP transport.
+Inside the TLS envelope, **Xray** runs the VLESS protocol with XHTTP transport.
 
 - **VLESS** is a lightweight proxy protocol that authenticates each user with a unique **UUID token**. There are no shared credentials — each user has an individually issued UUID registered on the relay.
-- **SplitHTTP** splits data across multiple standard HTTP requests, making the traffic pattern resilient in environments where long-lived connections are interrupted or throttled. This is critical for networks with aggressive connection timeouts or session limits.
+- **XHTTP** splits data across multiple standard HTTP requests, making the traffic pattern resilient in environments where long-lived connections are interrupted or throttled. This is critical for networks with aggressive connection timeouts or session limits.
 - The relay **cannot read application data**. It receives opaque encrypted streams and forwards them to their destination. The VLESS layer handles routing; decryption happens only at the endpoints.
 
 !!! warning "UUID is not a secret key"

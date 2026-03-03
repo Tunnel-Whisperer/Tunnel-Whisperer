@@ -39,6 +39,7 @@
         <th>UUID</th>
         <th class="sortable" data-sort="tunnels">Tunnels</th>
         <th class="sortable active" data-sort="status" data-dir="asc">Status</th>
+        <th>Single Session</th>
         <th></th>
       </tr>
     </thead>
@@ -52,7 +53,7 @@
           {{if .Active}}
           <span class="badge badge-green">registered</span>
           {{if .Online}}
-          <span class="badge badge-green user-online-badge">online</span>
+          <span class="badge badge-green user-online-badge">{{if gt .Sessions 1}}online ({{.Sessions}}){{else}}online{{end}}</span>
           {{else}}
           <span class="badge badge-dim user-online-badge">offline</span>
           {{end}}
@@ -62,6 +63,9 @@
           {{if .MappingsDirty}}
           <span class="badge badge-yellow">config outdated</span>
           {{end}}
+        </td>
+        <td>
+          <label class="toggle-label"><input type="checkbox" {{if .SingleSession}}checked{{end}} onchange="toggleSingleSession('{{.Name}}', this.checked)"></label>
         </td>
         <td class="flex gap-8">
           <a href="/users/{{.Name}}" class="btn btn-sm">View</a>

@@ -57,13 +57,16 @@ func vlessOutbound(cfg config.XrayConfig, proxyURL string) map[string]interface{
 			},
 		},
 		"streamSettings": map[string]interface{}{
-			"network":  "splithttp",
+			"network":  "xhttp",
 			"security": "tls",
 			"tlsSettings": map[string]interface{}{
 				"serverName": cfg.RelayHost,
 			},
-			"splithttpSettings": map[string]interface{}{
+			"xhttpSettings": map[string]interface{}{
 				"path": cfg.Path,
+				// Limit concurrent upload POSTs to avoid overwhelming
+				// the Caddy→Xray connection pool on the relay.
+				"scMaxConcurrentPosts": 10,
 			},
 		},
 	}

@@ -33,8 +33,8 @@ The relay VM (Ubuntu 24.04) is configured via cloud-init to:
 
 - Create an SSH user with the server's public key
 - Install **Caddy** from the official apt repository (TLS termination)
-- Install **Xray** at a pinned version (`v1.8.24`) for reproducibility
-- Write Xray config: VLESS inbound on `127.0.0.1:10000` with splitHTTP transport
+- Install **Xray** at a pinned version (`v26.2.6`) for reproducibility
+- Write Xray config: VLESS inbound on `127.0.0.1:10000` with XHTTP transport
 - Write Caddyfile: reverse proxy `<domain>/tw*` to Xray
 - Lock SSH to `127.0.0.1` only, disable password auth
 - Configure firewall: deny all incoming, allow 80/tcp + 443/tcp only

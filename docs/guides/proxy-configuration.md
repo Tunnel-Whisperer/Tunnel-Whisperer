@@ -43,4 +43,4 @@ Proxy changes are saved to `config.yaml` and take effect on the next server star
 
 ## How It Works
 
-The proxy is applied to Xray's outbound transport settings. All VLESS+splitHTTP+TLS traffic to the relay is routed through the specified proxy. The proxy sees only encrypted TLS traffic to your relay domain on port 443.
+The proxy is applied to Xray's outbound transport settings. All VLESS+XHTTP+TLS traffic to the relay is routed through the specified proxy. The proxy sees only encrypted TLS traffic to your relay domain on port 443.

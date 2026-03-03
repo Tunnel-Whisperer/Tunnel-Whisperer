@@ -25,7 +25,7 @@ In modern enterprise environments (Healthcare, Manufacturing, Finance), connecti
 2. **Legacy Devices:** MRI scanners, industrial PLCs, and old servers cannot install modern VPN clients.
 3. **DPI Interference:** "Next-Gen" firewalls detect and kill non-web traffic even on Port 443.
 
-**Tunnel Whisperer bridges this gap.** It wraps TCP traffic inside a genuine TLS-encrypted HTTPS stream using Xray's VLESS+splitHTTP protocol. To the network, it looks exactly like standard web traffic.
+**Tunnel Whisperer bridges this gap.** It wraps TCP traffic inside a genuine TLS-encrypted HTTPS stream using Xray's VLESS+XHTTP protocol. To the network, it looks exactly like standard web traffic.
 
 ---
 
@@ -53,7 +53,7 @@ Client Network                   Public Cloud                    Server Network
 |  tw connect  |-- HTTPS --> |     Relay VM      |<-- HTTPS --|   tw serve   |
 |              |   (Xray     |                  |   (Xray     |              |
 | local ports  |   VLESS +   |  Caddy :443      |   VLESS +   | SSH server   |
-| :5432 :3389  |   splitHTTP)|  reverse proxy   |   splitHTTP)| :2222        |
+| :5432 :3389  |   XHTTP)|  reverse proxy   |   XHTTP)| :2222        |
 |              |             |  Xray :10000     |             |              |
 |  SSH --------+-------------+------------------+-------------+> port fwd    |
 |  (over Xray) |             |  SSH :22 (local) |             | -> services  |
@@ -61,7 +61,7 @@ Client Network                   Public Cloud                    Server Network
                              +------------------+
 ```
 
-1. **Transport:** Xray VLESS + splitHTTP + TLS on port 443 — indistinguishable from regular HTTPS
+1. **Transport:** Xray VLESS + XHTTP + TLS on port 443 — indistinguishable from regular HTTPS
 2. **Relay:** Lightweight cloud VM (Hetzner, DigitalOcean, or AWS) with Caddy (TLS/ACME) and Xray. SSH on localhost only.
 3. **Tunnel:** Embedded SSH server (Go `x/crypto/ssh`) handles port forwarding, encryption, and per-user auth
 
@@ -85,7 +85,7 @@ New to Tunnel Whisperer? Watch the step-by-step video walkthrough:
 
 ## Quick Start
 
-Requires **Go 1.22+** and **Terraform** (for relay provisioning).
+Requires **Go 1.25+** and **Terraform** (for relay provisioning).
 
 ```bash
 # Build
@@ -142,7 +142,7 @@ sudo tw service start     # start the service
 | Layer | Standard | Purpose |
 | ----- | -------- | ------- |
 | TLS 1.3 | Industry standard | Encrypts all data in transit |
-| VLESS + SplitHTTP | Tunnel protocol | Authenticates users, obfuscates traffic patterns |
+| VLESS + XHTTP | Tunnel protocol | Authenticates users, obfuscates traffic patterns |
 | Ed25519 SSH | Elliptic curve cryptography | Authenticates endpoints, restricts per-user access |
 
 - **Zero plaintext** leaves the local network

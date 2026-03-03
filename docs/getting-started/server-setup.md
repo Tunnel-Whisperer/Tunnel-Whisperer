@@ -62,7 +62,7 @@ tw serve
 This starts:
 
 1. **Embedded SSH server** on `:2222` with dynamic `authorized_keys` and per-user `permitopen` restrictions
-2. **Xray tunnel** to the relay (VLESS + splitHTTP + TLS on port 443)
+2. **Xray tunnel** to the relay (VLESS + XHTTP + TLS on port 443)
 3. **SSH reverse tunnel** through Xray, exposing the server's SSH on the relay
 4. **gRPC API** on `:50051`
 

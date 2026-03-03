@@ -14,7 +14,7 @@ The system connects a **server** behind a private network to **clients** behind 
 | -------- | ---- | ----------- |
 | 1 | Firewall traversal | Only port 443 (HTTPS) is exposed; compatible with strict corporate firewalls and DPI |
 | 2 | Zero inbound ports | Neither client nor server requires any inbound connectivity |
-| 3 | Transport resilience | Xray provides robust tunneling over TLS/splitHTTP, surviving network disruptions |
+| 3 | Transport resilience | Xray provides robust tunneling over TLS/XHTTP, surviving network disruptions |
 | 4 | Session security | SSH handles authentication, encryption, and port-level access control |
 | 5 | Per-user lockdown | Each client is restricted to specific localhost ports via `permitopen` |
 
@@ -40,8 +40,8 @@ graph LR
         CL[Client - tw connect]
     end
 
-    S -- "TLS :443 (Xray VLESS+splitHTTP)" --> C_
-    CL -- "TLS :443 (Xray VLESS+splitHTTP)" --> C_
+    S -- "TLS :443 (Xray VLESS+XHTTP)" --> C_
+    CL -- "TLS :443 (Xray VLESS+XHTTP)" --> C_
     C_ -- "reverse proxy /tw*" --> X
     X -- "freedom outbound" --> R
 ```
@@ -50,8 +50,8 @@ graph LR
 
 | Protocol | Port | Direction | Purpose |
 | -------- | ---- | --------- | ------- |
-| TLS (Xray VLESS+splitHTTP) | 443 | Server -> Relay | Transport tunnel for SSH reverse forwarding |
-| TLS (Xray VLESS+splitHTTP) | 443 | Client -> Relay | Transport tunnel for SSH local forwarding |
+| TLS (Xray VLESS+XHTTP) | 443 | Server -> Relay | Transport tunnel for SSH reverse forwarding |
+| TLS (Xray VLESS+XHTTP) | 443 | Client -> Relay | Transport tunnel for SSH local forwarding |
 | HTTPS (Caddy) | 443 | External -> Relay | TLS termination, reverse proxy to Xray |
 | HTTP | 80 | External -> Relay | ACME challenge for Let's Encrypt certificate issuance |
 | SSH (over Xray) | -- | End-to-end | Reverse/local port forwarding and session security |

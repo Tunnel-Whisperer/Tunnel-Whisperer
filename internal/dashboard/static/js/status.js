@@ -199,6 +199,7 @@ async function clientReconnect() {
 
       // Update Clients card online status.
       const onlineSet = new Set(s.online || []);
+      const sessions = s.sessions || {};
       const onlineCount = onlineSet.size;
 
       const countEl = document.querySelector('[data-bind="online-count"]');
@@ -217,12 +218,16 @@ async function clientReconnect() {
         const rows = Array.from(userList.querySelectorAll('.user-row[data-uuid]'));
         rows.forEach(row => {
           const uuid = row.dataset.uuid;
+          const userName = row.dataset.user;
           const badge = row.querySelector('.user-online-badge');
           if (!badge) return;
-          if (onlineSet.has(uuid)) {
+          const count = userName ? (sessions[userName] || 0) : 0;
+          if (onlineSet.has(uuid) || count > 0) {
+            badge.textContent = count > 1 ? 'online (' + count + ')' : 'online';
             badge.className = 'badge badge-green user-online-badge';
             badge.classList.remove('hidden');
           } else {
+            badge.textContent = 'online';
             badge.className = 'badge badge-dim user-online-badge hidden';
           }
         });

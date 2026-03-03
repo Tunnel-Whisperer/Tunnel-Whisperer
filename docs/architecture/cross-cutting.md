@@ -88,10 +88,10 @@ sequenceDiagram
 
 ## Transport Protocol
 
-Xray VLESS + splitHTTP over TLS:
+Xray VLESS + XHTTP over TLS:
 
 - **VLESS:** Lightweight proxy protocol with UUID-based authentication
-- **splitHTTP:** HTTP-based transport that splits data into standard HTTP requests/responses
+- **XHTTP:** HTTP-based transport that splits data into standard HTTP requests/responses
 - **TLS:** Terminated by Caddy on the relay; SNI matches the relay domain
 - **Result:** Traffic is indistinguishable from normal HTTPS browsing to firewalls and DPI
 
@@ -201,7 +201,7 @@ The server tracks which client users are currently connected by polling the rela
 The dashboard's users page calls `/api/users/online` which returns the online map. Online users are shown with a badge in the UI.
 
 !!! warning "Relay compatibility"
-    The `statsUserOnline` feature requires Xray v1.8.24+. Older relays fall back to traffic-based detection, which has lower granularity (a user appears online only while actively transferring data).
+    The `statsUserOnline` feature requires Xray v26.2.6+. Older relays fall back to traffic-based detection, which has lower granularity (a user appears online only while actively transferring data).
 
 ---
 
@@ -333,7 +333,7 @@ The Xray version installed on the relay is controlled by a single constant:
 
 ```go
 // internal/relay/terraform/generate.go
-const XrayVersion = "v1.8.24"
+const XrayVersion = "v26.2.6"
 ```
 
 This constant is injected into both:
@@ -352,7 +352,7 @@ Both templates pass `--version {{ .XrayVersion }}` to the official Xray install 
 
 | Dependency | Version | Purpose |
 | ---------- | ------- | ------- |
-| `github.com/xtls/xray-core` | v1.8.24 | In-process VLESS + splitHTTP transport |
+| `github.com/xtls/xray-core` | v26.2.6 | In-process VLESS + XHTTP transport |
 | `golang.org/x/crypto/ssh` | v0.31.0 | Embedded SSH server + client tunnels |
 | `github.com/spf13/cobra` | v1.8.1 | CLI framework |
 | `github.com/google/uuid` | v1.6.0 | UUID generation for Xray clients |

@@ -48,7 +48,7 @@ tw connect
 
 This starts:
 
-1. **Xray client tunnel** to the relay (VLESS + splitHTTP + TLS)
+1. **Xray client tunnel** to the relay (VLESS + XHTTP + TLS)
 2. **SSH connection** through Xray to the server (public key auth)
 3. **Local port listeners** for all configured tunnel mappings
 

@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -70,7 +71,16 @@ func (rt *ReverseTunnel) Run() error {
 			rt.connected = false
 			rt.lastErr = err.Error()
 			rt.mu.Unlock()
-			attempt++
+
+			// If the session was established before it dropped, reset
+			// backoff so we reconnect quickly instead of waiting 16-30s.
+			var ce *connectedError
+			if errors.As(err, &ce) {
+				backoff = time.Second * 2
+				attempt = 0
+			} else {
+				attempt++
+			}
 		} else {
 			// Successful connection resets backoff.
 			backoff = time.Second * 2
@@ -184,7 +194,9 @@ func (rt *ReverseTunnel) connect() error {
 				return nil
 			default:
 			}
-			return fmt.Errorf("accepting reverse connection: %w", err)
+			// Return a connectedError so Run() knows the session was
+			// established before it failed (backoff should reset).
+			return &connectedError{err: fmt.Errorf("accepting reverse connection: %w", err)}
 		}
 
 		go rt.forward(remote)

@@ -54,7 +54,7 @@
   <div class="card-header">
     <h2>Xray Transport</h2>
   </div>
-  <p class="text-dim mb-16">Xray VLESS + splitHTTP transport settings. Changes take effect on {{if eq .Mode "client"}}reconnect{{else}}restart{{end}}.</p>
+  <p class="text-dim mb-16">Xray VLESS + XHTTP transport settings. Changes take effect on {{if eq .Mode "client"}}reconnect{{else}}restart{{end}}.</p>
   <div class="form-group">
     <label>Relay Host</label>
     <input type="text" id="xray-relay-host" placeholder="relay.example.com" value="{{.Xray.RelayHost}}" autocomplete="off">

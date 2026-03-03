@@ -45,11 +45,12 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq caddy
 
 cat > /etc/caddy/Caddyfile <<'CADDYEOF'
 {{.Domain}} {
-    reverse_proxy {{.XrayPath}}* 127.0.0.1:10000 {
+    reverse_proxy {{.XrayPath}}* h2c://127.0.0.1:10000 {
         flush_interval -1
         transport http {
-            keepalive 30s
-            keepalive_idle_conns 16
+            versions h2c 1.1
+            keepalive 120s
+            keepalive_idle_conns 32
         }
     }
 }
@@ -86,8 +87,11 @@ cat > /usr/local/etc/xray/config.json <<'XRAYEOF'
         "decryption": "none"
       },
       "streamSettings": {
-        "network": "splithttp",
-        "splithttpSettings": { "path": "{{.XrayPath}}" }
+        "network": "xhttp",
+        "xhttpSettings": {
+          "path": "{{.XrayPath}}",
+          "scMaxConcurrentPosts": 10
+        }
       }
     },
     {

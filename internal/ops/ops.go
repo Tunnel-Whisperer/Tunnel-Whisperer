@@ -209,6 +209,18 @@ func (o *Ops) SetClientSettings(c config.ClientConfig) error {
 	return config.Save(cfg)
 }
 
+// GetSessionCounts returns a map of tw_user → active SSH session count.
+// Returns an empty map if the server is not running.
+func (o *Ops) GetSessionCounts() map[string]int {
+	o.srv.mu.Lock()
+	srv := o.srv.sshSrv
+	o.srv.mu.Unlock()
+	if srv == nil {
+		return nil
+	}
+	return srv.ConnectedUsers()
+}
+
 // StartServer starts all server components.
 func (o *Ops) StartServer(progress ProgressFunc) error {
 	return o.srv.Start(o, progress)

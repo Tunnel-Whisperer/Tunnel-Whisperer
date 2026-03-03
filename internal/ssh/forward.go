@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +12,15 @@ import (
 
 	gossh "golang.org/x/crypto/ssh"
 )
+
+// connectedError wraps an error that occurred after a tunnel session was
+// successfully established.  Run() uses this to distinguish "failed to
+// connect" (backoff should increase) from "was connected but dropped"
+// (backoff should reset).
+type connectedError struct{ err error }
+
+func (e *connectedError) Error() string { return e.err.Error() }
+func (e *connectedError) Unwrap() error { return e.err }
 
 // Mapping defines a single local-port → remote-host:port forwarding rule.
 type Mapping struct {
@@ -75,7 +85,16 @@ func (ft *ForwardTunnel) Run() error {
 			ft.connected = false
 			ft.lastErr = err.Error()
 			ft.mu.Unlock()
-			attempt++
+
+			// If the session was established before it dropped, reset
+			// backoff so we reconnect quickly instead of waiting 16-30s.
+			var ce *connectedError
+			if errors.As(err, &ce) {
+				backoff = time.Second * 2
+				attempt = 0
+			} else {
+				attempt++
+			}
 		} else {
 			backoff = time.Second * 2
 			attempt = 0
@@ -210,7 +229,7 @@ func (ft *ForwardTunnel) connect() error {
 	case <-ft.done:
 		return nil
 	default:
-		return fmt.Errorf("all listeners closed")
+		return &connectedError{err: fmt.Errorf("all listeners closed")}
 	}
 }
 
@@ -280,7 +299,21 @@ func (ft *ForwardTunnel) forward(local net.Conn, m Mapping) {
 	remoteAddr := fmt.Sprintf("%s:%d", m.RemoteHost, m.RemotePort)
 	remote, err := client.Dial("tcp", remoteAddr)
 	if err != nil {
-		slog.Error("forward tunnel dial failed", "remote", remoteAddr, "error", err)
+		// A proper channel rejection ("ssh: rejected: ...") means the SSH
+		// connection is healthy but the destination is unreachable — just
+		// log it. Any other error means the SSH connection is likely dead,
+		// so close all listeners to trigger an immediate reconnect.
+		var chanErr *gossh.OpenChannelError
+		if errors.As(err, &chanErr) {
+			slog.Warn("forward tunnel dial rejected", "remote", remoteAddr, "reason", chanErr.Message)
+		} else {
+			slog.Error("forward tunnel dial failed", "remote", remoteAddr, "error", err)
+			ft.mu.Lock()
+			for _, l := range ft.listeners {
+				l.Close()
+			}
+			ft.mu.Unlock()
+		}
 		return
 	}
 	defer remote.Close()

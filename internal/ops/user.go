@@ -37,6 +37,8 @@ type UserInfo struct {
 	HasKey        bool            `json:"has_key"`
 	Active        bool            `json:"active"`
 	Online        bool            `json:"online"`
+	SingleSession bool            `json:"single_session"`
+	Sessions      int             `json:"sessions"`
 	MappingsDirty bool            `json:"mappings_dirty"`
 	DirPath       string          `json:"-"`
 }
@@ -174,9 +176,21 @@ func (o *Ops) ListUsers() ([]UserInfo, error) {
 		if _, err := os.Stat(filepath.Join(ui.DirPath, ".mappings-dirty")); err == nil {
 			ui.MappingsDirty = true
 		}
+		if _, err := os.Stat(filepath.Join(ui.DirPath, ".single-session")); err == nil {
+			ui.SingleSession = true
+		}
 
 		users = append(users, ui)
 	}
+
+	// Populate session counts from the SSH server's connection tracker.
+	sessionCounts := o.GetSessionCounts()
+	for i := range users {
+		if count, ok := sessionCounts[users[i].Name]; ok {
+			users[i].Sessions = count
+		}
+	}
+
 	return users, nil
 }
 
@@ -293,7 +307,7 @@ func (o *Ops) CreateUser(ctx context.Context, req CreateUserRequest, progress Pr
 
 	// Step 4: Update authorized_keys.
 	progress(ProgressEvent{Step: 4, Total: 4, Label: "Updating authorized_keys", Status: "running"})
-	if err := appendAuthorizedKey(pubAuthorized, req.Name, serverPorts); err != nil {
+	if err := appendAuthorizedKey(pubAuthorized, req.Name, serverPorts, false); err != nil {
 		progress(ProgressEvent{Step: 4, Total: 4, Label: "Updating authorized_keys", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("updating authorized_keys: %w", err)
 	}
@@ -410,12 +424,66 @@ func (o *Ops) UpdateUserMappings(name string, mappings []config.PortMapping) err
 	if err := removeAuthorizedKey(pubData); err != nil {
 		slog.Warn("could not remove old authorized_keys entry", "user", name, "error", err)
 	}
-	if err := appendAuthorizedKey(pubData, name, serverPorts); err != nil {
+	// Preserve single-session flag when rebuilding authorized_keys entry.
+	_, singleErr := os.Stat(filepath.Join(userDir, ".single-session"))
+	if err := appendAuthorizedKey(pubData, name, serverPorts, singleErr == nil); err != nil {
 		return fmt.Errorf("updating authorized_keys: %w", err)
 	}
 
 	// Mark config as needing re-download.
 	_ = os.WriteFile(filepath.Join(userDir, ".mappings-dirty"), nil, 0644)
+
+	return nil
+}
+
+// SetUserSingleSession enables or disables the single-session flag for a user.
+// When enabled, the SSH server rejects a second connection with the same key.
+func (o *Ops) SetUserSingleSession(name string, enabled bool) error {
+	userDir := filepath.Join(config.UsersDir(), name)
+	if _, err := os.Stat(userDir); err != nil {
+		return fmt.Errorf("user %q not found", name)
+	}
+
+	markerPath := filepath.Join(userDir, ".single-session")
+	if enabled {
+		if err := os.WriteFile(markerPath, nil, 0644); err != nil {
+			return fmt.Errorf("writing single-session marker: %w", err)
+		}
+	} else {
+		_ = os.Remove(markerPath)
+	}
+
+	// Rebuild authorized_keys entry with updated options.
+	pubPath := filepath.Join(userDir, "id_ed25519.pub")
+	pubData, err := os.ReadFile(pubPath)
+	if err != nil {
+		return nil // no key — nothing to update
+	}
+
+	// Read user config to get current port mappings.
+	cfgPath := filepath.Join(userDir, "config.yaml")
+	cfgData, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return nil
+	}
+	var clientCfg struct {
+		Client config.ClientConfig `yaml:"client"`
+	}
+	if err := yaml.Unmarshal(cfgData, &clientCfg); err != nil {
+		return nil
+	}
+
+	var serverPorts []int
+	for _, t := range clientCfg.Client.Tunnels {
+		serverPorts = append(serverPorts, t.RemotePort)
+	}
+
+	if err := removeAuthorizedKey(pubData); err != nil {
+		slog.Warn("could not remove old authorized_keys entry", "user", name, "error", err)
+	}
+	if err := appendAuthorizedKey(pubData, name, serverPorts, enabled); err != nil {
+		return fmt.Errorf("updating authorized_keys: %w", err)
+	}
 
 	return nil
 }
@@ -736,11 +804,14 @@ func (o *Ops) GetUserConfigBundle(name string) ([]byte, error) {
 }
 
 // appendAuthorizedKey adds a public key to the server's authorized_keys
-// with permitopen restrictions.
-func appendAuthorizedKey(pubKey []byte, comment string, ports []int) error {
+// with permitopen restrictions and optional single-session enforcement.
+func appendAuthorizedKey(pubKey []byte, comment string, ports []int, singleSession bool) error {
 	akPath := config.AuthorizedKeysPath()
 
 	var options []string
+	if singleSession {
+		options = append(options, "single-session")
+	}
 	for _, port := range ports {
 		options = append(options, fmt.Sprintf(`permitopen="127.0.0.1:%d"`, port))
 	}

@@ -410,15 +410,19 @@ async function pollOnlineStatus() {
   try {
     const resp = await api.get('/api/users/online');
     const onlineSet = new Set(resp.online || []);
+    const sessions = resp.sessions || {};
 
     $$('[data-uuid]').forEach(el => {
       const uuid = el.dataset.uuid;
+      const userName = el.dataset.user;
       if (!uuid) return;
       const badge = el.querySelector('.user-online-badge');
       if (!badge) return;
 
-      if (onlineSet.has(uuid)) {
-        badge.textContent = 'online';
+      const count = userName ? (sessions[userName] || 0) : 0;
+
+      if (onlineSet.has(uuid) || count > 0) {
+        badge.textContent = count > 1 ? 'online (' + count + ')' : 'online';
         badge.className = 'badge badge-green user-online-badge';
       } else {
         badge.textContent = 'offline';
@@ -427,6 +431,14 @@ async function pollOnlineStatus() {
     });
   } catch (err) {
     // Silently ignore — relay may be unreachable.
+  }
+}
+
+async function toggleSingleSession(name, enabled) {
+  try {
+    await api.put('/api/users/' + name + '/single-session', { enabled });
+  } catch (err) {
+    alert('Error: ' + err.message);
   }
 }
 

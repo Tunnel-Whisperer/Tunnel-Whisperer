@@ -87,13 +87,13 @@ Provider-specific Terraform files are embedded in the Go binary via `go:embed` a
 All templates use `user_data = file("${path.module}/cloud-init.yaml")` and output `relay_ip`.
 
 !!! warning "Xray version pinning"
-    The Xray version installed on the relay is pinned to `v1.8.24` via the `terraform.XrayVersion` constant in `generate.go`. This version is baked into both the cloud-init template and the manual install script via the `--version` flag on the official Xray installer. Keeping this in sync with the `xray-core` dependency in `go.mod` ensures protocol compatibility between the in-process Xray (server/client) and the relay's Xray.
+    The Xray version installed on the relay is pinned to `v26.2.6` via the `terraform.XrayVersion` constant in `generate.go`. This version is baked into both the cloud-init template and the manual install script via the `--version` flag on the official Xray installer. Keeping this in sync with the `xray-core` dependency in `go.mod` ensures protocol compatibility between the in-process Xray (server/client) and the relay's Xray.
 
 ---
 
 ## Building
 
-Requires **Go 1.22+**.
+Requires **Go 1.25+**.
 
 ### Version Injection
 
@@ -165,7 +165,7 @@ flowchart TD
     - `permitopen` enforcement -- restricts port forwarding per client key
 8. If `xray.relay_host` is set:
     - Generates UUID if missing and saves to config
-    - Starts **Xray** in-process (dokodemo-door on `sshPort+1` -> VLESS/splitHTTP/TLS to relay)
+    - Starts **Xray** in-process (dokodemo-door on `sshPort+1` -> VLESS/XHTTP/TLS to relay)
     - Opens an **SSH reverse tunnel** through Xray to the relay (`-R remote_port:localhost:ssh_port`)
 9. Starts the **gRPC API server** on the configured port (default `:50051`)
 
@@ -196,7 +196,7 @@ flowchart TD
 2. Validates that `relay_host` and at least one tunnel mapping are configured
 3. Generates UUID if missing
 4. Saves `config.FileHash()` as `cfgHash` for change detection
-5. Starts **Xray** in client mode (dokodemo-door on `:54001` -> VLESS/splitHTTP/TLS to relay, targeting `server_ssh_port`)
+5. Starts **Xray** in client mode (dokodemo-door on `:54001` -> VLESS/XHTTP/TLS to relay, targeting `server_ssh_port`)
 6. Opens a **single SSH session** through Xray to the server's embedded SSH (public key auth)
 7. Starts **local port listeners** for all configured tunnel mappings, forwarding through the SSH session
 8. Blocks until stopped (Ctrl-C), with automatic reconnection on failure

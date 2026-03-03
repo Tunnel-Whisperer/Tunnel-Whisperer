@@ -25,6 +25,9 @@ type Server struct {
 	OnDisconnect   func(user string) // called when an SSH connection closes
 	config         *gossh.ServerConfig
 	listener       net.Listener
+
+	connMu       sync.Mutex
+	connectedMap map[string]int // tw_user → active session count
 }
 
 func NewServer(port int, hostKeyDir, authorizedKeys string) (*Server, error) {
@@ -33,6 +36,7 @@ func NewServer(port int, hostKeyDir, authorizedKeys string) (*Server, error) {
 		HostKeyDir:     hostKeyDir,
 		AuthorizedKeys: authorizedKeys,
 		config:         &gossh.ServerConfig{},
+		connectedMap:   make(map[string]int),
 	}
 
 	if err := s.loadAuthorizedKeys(); err != nil {
@@ -75,7 +79,7 @@ func (s *Server) checkAuthorizedKey(conn gossh.ConnMetadata, key gossh.PublicKey
 	keyBytes := key.Marshal()
 	rest := data
 	for len(rest) > 0 {
-		pub, _, options, r, parseErr := gossh.ParseAuthorizedKey(rest)
+		pub, comment, options, r, parseErr := gossh.ParseAuthorizedKey(rest)
 		if parseErr != nil {
 			break
 		}
@@ -85,14 +89,22 @@ func (s *Server) checkAuthorizedKey(conn gossh.ConnMetadata, key gossh.PublicKey
 			continue
 		}
 
-		slog.Info("client authenticated", "user", conn.User(), "remote", conn.RemoteAddr())
+		// Extract TW username from comment (format: "username@tw").
+		twUser := strings.TrimSuffix(comment, "@tw")
+
+		slog.Info("client authenticated", "user", conn.User(), "tw_user", twUser, "remote", conn.RemoteAddr())
 
 		perms := &gossh.Permissions{
 			Extensions: map[string]string{},
 		}
 
-		// Parse permitopen options for port forwarding restrictions.
+		if twUser != "" {
+			perms.Extensions["tw_user"] = twUser
+		}
+
+		// Parse permitopen and single-session options.
 		var permitOpens []string
+		singleSession := false
 		for _, opt := range options {
 			if strings.HasPrefix(opt, `permitopen="`) {
 				val := opt[len(`permitopen="`):]
@@ -101,9 +113,23 @@ func (s *Server) checkAuthorizedKey(conn gossh.ConnMetadata, key gossh.PublicKey
 				}
 				permitOpens = append(permitOpens, val)
 			}
+			if opt == "single-session" {
+				singleSession = true
+			}
 		}
 		if len(permitOpens) > 0 {
 			perms.Extensions["permitopen"] = strings.Join(permitOpens, ",")
+		}
+
+		// Enforce single-session: reject if user already has an active connection.
+		if singleSession && twUser != "" {
+			s.connMu.Lock()
+			count := s.connectedMap[twUser]
+			s.connMu.Unlock()
+			if count > 0 {
+				slog.Warn("single-session: rejecting duplicate connection", "tw_user", twUser)
+				return nil, fmt.Errorf("user %q already has an active session (single-session enabled)", twUser)
+			}
 		}
 
 		return perms, nil
@@ -196,15 +222,44 @@ func (s *Server) handleConnection(conn net.Conn) {
 	}
 	defer sshConn.Close()
 
-	user := sshConn.User()
-	slog.Debug("SSH connection established", "remote", sshConn.RemoteAddr(), "client_version", sshConn.ClientVersion(), "user", user)
+	// Use TW username from auth if available, otherwise fall back to SSH user.
+	twUser := ""
+	if sshConn.Permissions != nil {
+		twUser = sshConn.Permissions.Extensions["tw_user"]
+	}
+	displayUser := twUser
+	if displayUser == "" {
+		displayUser = sshConn.User()
+	}
+
+	slog.Debug("SSH connection established", "remote", sshConn.RemoteAddr(), "client_version", sshConn.ClientVersion(), "user", displayUser)
+
+	// Track active sessions per TW user.
+	if twUser != "" {
+		s.connMu.Lock()
+		s.connectedMap[twUser]++
+		count := s.connectedMap[twUser]
+		s.connMu.Unlock()
+		slog.Debug("session tracked", "tw_user", twUser, "sessions", count, "remote", sshConn.RemoteAddr())
+		defer func() {
+			s.connMu.Lock()
+			s.connectedMap[twUser]--
+			remaining := s.connectedMap[twUser]
+			if remaining <= 0 {
+				delete(s.connectedMap, twUser)
+				remaining = 0
+			}
+			s.connMu.Unlock()
+			slog.Debug("session untracked", "tw_user", twUser, "sessions", remaining, "remote", sshConn.RemoteAddr())
+		}()
+	}
 
 	if s.OnConnect != nil {
-		s.OnConnect(user)
+		s.OnConnect(displayUser)
 	}
 	defer func() {
 		if s.OnDisconnect != nil {
-			s.OnDisconnect(user)
+			s.OnDisconnect(displayUser)
 		}
 	}()
 
@@ -340,6 +395,17 @@ func isPortAllowed(perms *gossh.Permissions, host string, port uint32) bool {
 		}
 	}
 	return false
+}
+
+// ConnectedUsers returns a snapshot of tw_user → active session count.
+func (s *Server) ConnectedUsers() map[string]int {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	out := make(map[string]int, len(s.connectedMap))
+	for k, v := range s.connectedMap {
+		out[k] = v
+	}
+	return out
 }
 
 // Stop gracefully stops the SSH server.

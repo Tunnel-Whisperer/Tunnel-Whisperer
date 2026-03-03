@@ -10,7 +10,7 @@ New to Tunnel Whisperer? Watch the step-by-step video walkthrough:
 
 ## Prerequisites
 
-- **Go 1.22+** — to build from source
+- **Go 1.25+** — to build from source
 - **Terraform** — for automated relay provisioning (optional if using manual setup)
 - **A domain name** — pointed at your relay VM (e.g. `relay.example.com`)
 - **A cloud account** — Hetzner, DigitalOcean, or AWS (for automated provisioning)

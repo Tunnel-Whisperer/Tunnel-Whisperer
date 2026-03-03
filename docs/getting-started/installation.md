@@ -2,7 +2,7 @@
 
 ## Build from Source
 
-Requires **Go 1.22+**.
+Requires **Go 1.25+**.
 
 ```bash
 go build -o bin/tw ./cmd/tw

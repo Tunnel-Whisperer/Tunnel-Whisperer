@@ -8,7 +8,7 @@
       {{if .User.Active}}
       <span class="badge badge-green">registered</span>
       {{if .User.Online}}
-      <span class="badge badge-green user-online-badge">online</span>
+      <span class="badge badge-green user-online-badge">{{if gt .User.Sessions 1}}online ({{.User.Sessions}}){{else}}online{{end}}</span>
       {{else}}
       <span class="badge badge-dim user-online-badge">offline</span>
       {{end}}
@@ -35,6 +35,8 @@
     <span class="kv-value">{{or .User.UUID "—"}}</span>
     <span class="kv-label">SSH Key</span>
     <span class="kv-value">{{if .User.HasKey}}present{{else}}missing{{end}}</span>
+    <span class="kv-label">Single Session</span>
+    <span class="kv-value"><label class="toggle-label"><input type="checkbox" {{if .User.SingleSession}}checked{{end}} onchange="toggleSingleSession('{{.User.Name}}', this.checked)"></label></span>
   </div>
 </div>
 
