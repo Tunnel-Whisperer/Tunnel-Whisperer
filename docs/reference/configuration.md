@@ -9,6 +9,7 @@ read depending on the configured `mode`.
 | Platform | Path |
 |---|---|
 | Linux | `/etc/tw/config/config.yaml` |
+| macOS | `/etc/tw/config/config.yaml` |
 | Windows | `C:\ProgramData\tw\config\config.yaml` |
 
 !!! tip "Override with environment variable"

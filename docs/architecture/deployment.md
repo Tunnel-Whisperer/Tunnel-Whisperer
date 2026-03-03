@@ -117,7 +117,8 @@ The version is used in:
 | `make build` | `go build -ldflags "..." -o bin/tw ./cmd/tw` | Build for current platform (version auto-detected) |
 | `make build-linux` | `GOOS=linux GOARCH=amd64 go build -ldflags "..." ...` | Cross-compile for Linux amd64 |
 | `make build-windows` | `GOOS=windows GOARCH=amd64 go build -ldflags "..." ...` | Cross-compile for Windows amd64 |
-| `make build-all` | | Build both Linux and Windows |
+| `make build-darwin` | `GOOS=darwin GOARCH=amd64 go build -ldflags "..." ...` | Cross-compile for macOS amd64 |
+| `make build-all` | | Build Linux, Windows, and macOS |
 | `make run` | Build + execute `./bin/tw` | Build and run |
 | `make clean` | `rm -rf bin/` | Remove build artifacts |
 | `make proto` | `protoc --go_out=... --go-grpc_out=...` | Regenerate gRPC stubs from `.proto` |

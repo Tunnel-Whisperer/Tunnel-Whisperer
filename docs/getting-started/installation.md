@@ -26,7 +26,15 @@ go build -o bin/tw ./cmd/tw
     GOOS=windows GOARCH=amd64 go build -o bin/tw.exe ./cmd/tw
     ```
 
-=== "Both"
+=== "macOS"
+
+    ```bash
+    make build-darwin
+    # or manually:
+    GOOS=darwin GOARCH=amd64 go build -o bin/tw-darwin ./cmd/tw
+    ```
+
+=== "All"
 
     ```bash
     make build-all
@@ -39,7 +47,8 @@ go build -o bin/tw ./cmd/tw
 | `make build` | Build for current OS |
 | `make build-linux` | Cross-compile for Linux amd64 |
 | `make build-windows` | Cross-compile for Windows amd64 |
-| `make build-all` | Build both Linux and Windows |
+| `make build-darwin` | Cross-compile for macOS amd64 |
+| `make build-all` | Build Linux, Windows, and macOS |
 | `make run` | Build and run locally |
 | `make clean` | Remove build artifacts |
 
@@ -92,6 +101,7 @@ Tunnel Whisperer stores configuration in a platform-specific directory:
 | Platform | Path |
 | -------- | ---- |
 | Linux | `/etc/tw/config/` |
+| macOS | `/etc/tw/config/` |
 | Windows | `C:\ProgramData\tw\config\` |
 
 Override with the `TW_CONFIG_DIR` environment variable.

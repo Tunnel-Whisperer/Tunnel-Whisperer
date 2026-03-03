@@ -6,6 +6,7 @@ state under a single platform-specific directory.
 | Platform | Base directory |
 |---|---|
 | Linux | `/etc/tw/config/` |
+| macOS | `/etc/tw/config/` |
 | Windows | `C:\ProgramData\tw\config\` |
 | Override | `TW_CONFIG_DIR` environment variable |
 

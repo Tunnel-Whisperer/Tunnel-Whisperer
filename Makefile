@@ -6,7 +6,7 @@ LDFLAGS := -X github.com/tunnelwhisperer/tw/internal/version.Version=$(VERSION)
 
 export GOTOOLCHAIN := local
 
-.PHONY: build build-linux build-windows build-all run clean proto
+.PHONY: build build-linux build-windows build-darwin build-all run clean proto
 
 build:
 	@mkdir -p $(BIN_DIR)
@@ -20,7 +20,11 @@ build-windows:
 	@mkdir -p $(BIN_DIR)
 	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY).exe $(CMD)
 
-build-all: build-linux build-windows
+build-darwin:
+	@mkdir -p $(BIN_DIR)
+	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY)-darwin $(CMD)
+
+build-all: build-linux build-windows build-darwin
 
 run: build
 	./$(BIN_DIR)/$(BINARY)
