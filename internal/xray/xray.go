@@ -13,9 +13,6 @@ import (
 	_ "github.com/xtls/xray-core/main/distro/all"
 )
 
-// ClientListenPort is the fixed local port for the client-side Xray dokodemo-door.
-const ClientListenPort = 54001
-
 // Instance wraps a running xray-core instance.
 type Instance struct {
 	instance *core.Instance
@@ -129,9 +126,8 @@ func proxyOutbound(proxyURL string) (map[string]interface{}, error) {
 }
 
 // buildServerConfig generates the server-side Xray JSON config.
-// dokodemo-door listens on sshPort+1 and forwards to the relay's SSH port.
-func buildServerConfig(cfg config.XrayConfig, sshPort, relaySSHPort int, proxyURL string) ([]byte, error) {
-	listenPort := sshPort + 1
+// dokodemo-door listens on listenPort and forwards to the relay's SSH port.
+func buildServerConfig(cfg config.XrayConfig, listenPort, relaySSHPort int, proxyURL string) ([]byte, error) {
 
 	outbounds := []interface{}{vlessOutbound(cfg, proxyURL)}
 	if proxyURL != "" {
@@ -164,9 +160,9 @@ func buildServerConfig(cfg config.XrayConfig, sshPort, relaySSHPort int, proxyUR
 }
 
 // buildClientConfig generates the client-side Xray JSON config.
-// dokodemo-door listens on ClientListenPort and forwards to the server's SSH
+// dokodemo-door listens on listenPort and forwards to the server's SSH
 // port on the relay (exposed via reverse tunnel).
-func buildClientConfig(cfg config.XrayConfig, clientCfg config.ClientConfig, proxyURL string) ([]byte, error) {
+func buildClientConfig(cfg config.XrayConfig, clientCfg config.ClientConfig, listenPort int, proxyURL string) ([]byte, error) {
 	outbounds := []interface{}{vlessOutbound(cfg, proxyURL)}
 	if proxyURL != "" {
 		po, err := proxyOutbound(proxyURL)
@@ -182,7 +178,7 @@ func buildClientConfig(cfg config.XrayConfig, clientCfg config.ClientConfig, pro
 			map[string]interface{}{
 				"tag":      "ssh-local",
 				"listen":   "127.0.0.1",
-				"port":     ClientListenPort,
+				"port":     listenPort,
 				"protocol": "dokodemo-door",
 				"settings": map[string]interface{}{
 					"network": "tcp",
@@ -219,8 +215,9 @@ func New(cfg config.XrayConfig) (*Instance, error) {
 }
 
 // Start builds the server JSON config and starts the xray-core instance.
-func (x *Instance) Start(sshPort, relaySSHPort int, proxyURL string) error {
-	configBytes, err := buildServerConfig(x.cfg, sshPort, relaySSHPort, proxyURL)
+// listenPort is the local port for the dokodemo-door inbound.
+func (x *Instance) Start(listenPort, relaySSHPort int, proxyURL string) error {
+	configBytes, err := buildServerConfig(x.cfg, listenPort, relaySSHPort, proxyURL)
 	if err != nil {
 		return fmt.Errorf("xray: building config: %w", err)
 	}
@@ -250,8 +247,9 @@ func NewClient(cfg config.XrayConfig) (*Instance, error) {
 }
 
 // StartClient builds the client JSON config and starts the xray-core instance.
-func (x *Instance) StartClient(clientCfg config.ClientConfig, proxyURL string) error {
-	configBytes, err := buildClientConfig(x.cfg, clientCfg, proxyURL)
+// listenPort is the local port for the dokodemo-door inbound.
+func (x *Instance) StartClient(clientCfg config.ClientConfig, listenPort int, proxyURL string) error {
+	configBytes, err := buildClientConfig(x.cfg, clientCfg, listenPort, proxyURL)
 	if err != nil {
 		return fmt.Errorf("xray: building client config: %w", err)
 	}

@@ -90,7 +90,11 @@ func (m *clientManager) Start(o *Ops, progress ProgressFunc) error {
 	if err != nil {
 		return fail(2, "Xray tunnel", err)
 	}
-	if err := xrayInstance.StartClient(cfg.Client, cfg.Proxy); err != nil {
+	xrayPort := cfg.Client.XrayPort
+	if xrayPort == 0 {
+		xrayPort = 54001
+	}
+	if err := xrayInstance.StartClient(cfg.Client, xrayPort, cfg.Proxy); err != nil {
 		return fail(2, "Xray tunnel", err)
 	}
 	m.mu.Lock()
@@ -111,7 +115,7 @@ func (m *clientManager) Start(o *Ops, progress ProgressFunc) error {
 
 	privPath := filepath.Join(config.Dir(), "id_ed25519")
 	ft := &twssh.ForwardTunnel{
-		RemoteAddr: fmt.Sprintf("127.0.0.1:%d", twxray.ClientListenPort),
+		RemoteAddr: fmt.Sprintf("127.0.0.1:%d", xrayPort),
 		User:       cfg.Client.SSHUser,
 		KeyPath:    privPath,
 		Mappings:   mappings,

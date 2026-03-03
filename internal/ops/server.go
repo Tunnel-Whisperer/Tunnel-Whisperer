@@ -115,7 +115,11 @@ func (m *serverManager) Start(o *Ops, progress ProgressFunc) error {
 		if err != nil {
 			return fail(step, total, "Xray tunnel", err)
 		}
-		if err := xrayInstance.Start(cfg.Server.SSHPort, cfg.Server.RelaySSHPort, cfg.Proxy); err != nil {
+		xrayListenPort := cfg.Server.SSHPort + 1
+		if cfg.Server.XrayPort > 0 {
+			xrayListenPort = cfg.Server.XrayPort
+		}
+		if err := xrayInstance.Start(xrayListenPort, cfg.Server.RelaySSHPort, cfg.Proxy); err != nil {
 			return fail(step, total, "Xray tunnel", err)
 		}
 		m.mu.Lock()
@@ -124,7 +128,6 @@ func (m *serverManager) Start(o *Ops, progress ProgressFunc) error {
 		progress(ProgressEvent{Step: step, Total: total, Label: "Xray tunnel", Status: "completed", Message: fmt.Sprintf("%s:%d%s", cfg.Xray.RelayHost, cfg.Xray.RelayPort, cfg.Xray.Path)})
 
 		step++
-		xrayListenPort := cfg.Server.SSHPort + 1
 		progress(ProgressEvent{Step: step, Total: total, Label: "Reverse tunnel", Status: "running"})
 		privPath := filepath.Join(config.Dir(), "id_ed25519")
 		rt := &twssh.ReverseTunnel{

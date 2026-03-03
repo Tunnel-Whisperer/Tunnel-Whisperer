@@ -103,6 +103,10 @@
     <input type="number" id="srv-remote-port" value="{{.Server.RemotePort}}" min="1" max="65535">
   </div>
   <div class="form-group">
+    <label>Xray Port <span class="text-dim">(0 = SSH port + 1)</span></label>
+    <input type="number" id="srv-xray-port" value="{{.Server.XrayPort}}" min="0" max="65535">
+  </div>
+  <div class="form-group">
     <label>Temp Xray Port (relay config updates)</label>
     <input type="number" id="srv-temp-xray-port" value="{{.Server.TempXrayPort}}" min="1" max="65535">
   </div>
@@ -125,6 +129,10 @@
   <div class="form-group">
     <label>Server SSH Port (on relay)</label>
     <input type="number" id="cli-server-ssh-port" value="{{.Client.ServerSSHPort}}" min="1" max="65535">
+  </div>
+  <div class="form-group">
+    <label>Local Xray Port</label>
+    <input type="number" id="cli-xray-port" value="{{.Client.XrayPort}}" min="1" max="65535">
   </div>
   <button class="btn btn-primary" id="btn-client-save" onclick="saveClientSettings()">Save</button>
   <div id="client-error" class="alert alert-error mt-16 hidden"></div>

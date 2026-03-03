@@ -97,7 +97,7 @@ func (h *teeHandler) Handle(ctx context.Context, r slog.Record) error {
 	})
 
 	h.buf.add(LogEntry{
-		Time:    r.Time.Format(time.TimeOnly),
+		Time:    r.Time.Format(time.DateTime),
 		Level:   r.Level.String(),
 		Message: msg,
 	})

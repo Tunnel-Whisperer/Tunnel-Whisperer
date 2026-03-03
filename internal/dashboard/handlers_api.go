@@ -624,6 +624,7 @@ func (s *Server) apiSetServerSettings(w http.ResponseWriter, r *http.Request) {
 		RelaySSHPort  int    `json:"relay_ssh_port"`
 		RelaySSHUser  string `json:"relay_ssh_user"`
 		RemotePort    int    `json:"remote_port"`
+		XrayPort      int    `json:"xray_port"`
 		TempXrayPort  int    `json:"temp_xray_port"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -638,6 +639,7 @@ func (s *Server) apiSetServerSettings(w http.ResponseWriter, r *http.Request) {
 		RelaySSHPort:  req.RelaySSHPort,
 		RelaySSHUser:  req.RelaySSHUser,
 		RemotePort:    req.RemotePort,
+		XrayPort:      req.XrayPort,
 		TempXrayPort:  req.TempXrayPort,
 	}); err != nil {
 		jsonError(w, err.Error(), http.StatusBadRequest)
@@ -688,6 +690,7 @@ func (s *Server) apiSetClientSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		SSHUser       string `json:"ssh_user"`
 		ServerSSHPort int    `json:"server_ssh_port"`
+		XrayPort      int    `json:"xray_port"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -697,6 +700,7 @@ func (s *Server) apiSetClientSettings(w http.ResponseWriter, r *http.Request) {
 	if err := s.ops.SetClientSettings(config.ClientConfig{
 		SSHUser:       req.SSHUser,
 		ServerSSHPort: req.ServerSSHPort,
+		XrayPort:      req.XrayPort,
 	}); err != nil {
 		jsonError(w, err.Error(), http.StatusBadRequest)
 		return

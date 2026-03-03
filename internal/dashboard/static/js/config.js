@@ -164,6 +164,7 @@ async function saveServerSettings() {
       relay_ssh_port: parseInt($('#srv-relay-ssh-port').value) || 0,
       relay_ssh_user: $('#srv-relay-ssh-user').value.trim(),
       remote_port: parseInt($('#srv-remote-port').value) || 0,
+      xray_port: parseInt($('#srv-xray-port').value) || 0,
       temp_xray_port: parseInt($('#srv-temp-xray-port').value) || 0,
     });
     showResult('server', true, 'Server settings saved.' + restartMsg());
@@ -185,6 +186,7 @@ async function saveClientSettings() {
     await api.post('/api/settings/client', {
       ssh_user: $('#cli-ssh-user').value.trim(),
       server_ssh_port: parseInt($('#cli-server-ssh-port').value) || 0,
+      xray_port: parseInt($('#cli-xray-port').value) || 0,
     });
     showResult('client', true, 'Client settings saved. Reconnect to apply.');
     reloadConfigYAML();

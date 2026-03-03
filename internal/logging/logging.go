@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 )
 
 // XrayLevel holds the Xray-compatible log level string (e.g. "debug", "warning").
@@ -19,7 +20,15 @@ var level slog.LevelVar
 // Valid levels: "debug", "info", "warn", "error". Defaults to "info".
 func Setup(lvl string) {
 	applyLevel(lvl)
-	h := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: &level})
+	h := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: &level,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.TimeKey {
+				a.Value = slog.StringValue(a.Value.Time().Format(time.DateTime))
+			}
+			return a
+		},
+	})
 	slog.SetDefault(slog.New(h))
 }
 

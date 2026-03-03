@@ -37,6 +37,7 @@ type ServerConfig struct {
 	RelaySSHPort  int           `yaml:"relay_ssh_port"`
 	RelaySSHUser  string        `yaml:"relay_ssh_user"`
 	RemotePort    int           `yaml:"remote_port"`
+	XrayPort      int           `yaml:"xray_port,omitempty"`
 	TempXrayPort  int           `yaml:"temp_xray_port,omitempty"`
 	Applications  []Application `yaml:"applications,omitempty" json:"applications,omitempty"`
 }
@@ -57,6 +58,7 @@ type Application struct {
 type ClientConfig struct {
 	SSHUser       string   `yaml:"ssh_user"`
 	ServerSSHPort int      `yaml:"server_ssh_port"`
+	XrayPort      int      `yaml:"xray_port,omitempty"`
 	Tunnels       []Tunnel `yaml:"tunnels"`
 }
 
@@ -109,6 +111,7 @@ func Default() *Config {
 		Client: ClientConfig{
 			SSHUser:       "tunnel",
 			ServerSSHPort: 2222,
+			XrayPort:      54001,
 		},
 	}
 }

@@ -165,6 +165,7 @@ func (o *Ops) SetServerSettings(s config.ServerConfig) error {
 	if s.TempXrayPort > 0 {
 		o.cfg.Server.TempXrayPort = s.TempXrayPort
 	}
+	o.cfg.Server.XrayPort = s.XrayPort
 	cfg := o.cfg
 	o.mu.Unlock()
 	return config.Save(cfg)
@@ -198,6 +199,9 @@ func (o *Ops) SetClientSettings(c config.ClientConfig) error {
 	}
 	if c.ServerSSHPort > 0 {
 		o.cfg.Client.ServerSSHPort = c.ServerSSHPort
+	}
+	if c.XrayPort > 0 {
+		o.cfg.Client.XrayPort = c.XrayPort
 	}
 	// Tunnels are managed separately (user creation), not updated here.
 	cfg := o.cfg
