@@ -96,6 +96,7 @@ nav:
     - Configuration: reference/configuration.md
     - API: reference/api.md
     - File Layout: reference/file-layout.md
+    - Performance: reference/performance.md
   - Architecture:
     - architecture/index.md
     - System Context: architecture/system-context.md
