@@ -44,6 +44,24 @@
 <div class="alert alert-warning mb-16">Port mappings were changed. The user needs to <a href="/api/users/{{.User.Name}}/download">re-download their config</a> for changes to take effect.</div>
 {{end}}
 
+{{if .StatsEnabled}}
+<div class="card" id="user-stats-card">
+  <div class="card-header">
+    <h2>Bandwidth</h2>
+  </div>
+  <div class="kv" id="user-stats-kv">
+    <span class="kv-label">Sent</span>
+    <span class="kv-value" data-bind="user-sent">—</span>
+    <span class="kv-label">Received</span>
+    <span class="kv-value" data-bind="user-recv">—</span>
+    <span class="kv-label">Active Connections</span>
+    <span class="kv-value" data-bind="user-active">—</span>
+    <span class="kv-label">Total Connections</span>
+    <span class="kv-value" data-bind="user-total">—</span>
+  </div>
+</div>
+{{end}}
+
 {{if .User.Tunnels}}
 <div class="card">
   <div class="card-header">

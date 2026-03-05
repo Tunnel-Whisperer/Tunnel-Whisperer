@@ -119,6 +119,7 @@ func (m *clientManager) Start(o *Ops, progress ProgressFunc) error {
 		User:       cfg.Client.SSHUser,
 		KeyPath:    privPath,
 		Mappings:   mappings,
+		Stats:      o.stats,
 	}
 	go func() {
 		if err := ft.Run(); err != nil {

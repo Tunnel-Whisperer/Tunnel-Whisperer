@@ -81,6 +81,7 @@ func (m *serverManager) Start(o *Ops, progress ProgressFunc) error {
 	if err != nil {
 		return fail(2, total, "SSH server", err)
 	}
+	sshServer.Stats = o.stats
 	sshServer.OnConnect = func(user string) {
 		slog.Info("client connected, refreshing online status", "user", user)
 		o.InvalidateOnlineCache()

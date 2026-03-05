@@ -52,6 +52,28 @@
 
 <div class="card mb-16">
   <div class="card-header">
+    <h2>Analytics</h2>
+    {{if .AnalyticsEnabled}}
+    <span class="badge badge-green" id="analytics-badge">enabled</span>
+    {{else}}
+    <span class="badge badge-dim" id="analytics-badge">disabled</span>
+    {{end}}
+  </div>
+  <p class="text-dim mb-16">Per-tunnel bandwidth statistics and Prometheus metrics endpoint. Takes effect on {{if eq .Mode "client"}}reconnect{{else}}restart{{end}}.</p>
+  <div class="form-group">
+    <label><input type="checkbox" id="analytics-enabled" {{if .AnalyticsEnabled}}checked{{end}}> Enable bandwidth tracking</label>
+  </div>
+  <div class="form-group">
+    <label>History Size <span class="text-dim">(snapshots kept, 1 every 5s)</span></label>
+    <input type="number" id="analytics-history-size" value="{{.HistorySize}}" min="0" max="100000">
+  </div>
+  <button class="btn btn-primary" id="btn-analytics-save" onclick="saveAnalyticsSettings()">Save</button>
+  <div id="analytics-error" class="alert alert-error mt-16 hidden"></div>
+  <div id="analytics-success" class="alert alert-success mt-16 hidden"></div>
+</div>
+
+<div class="card mb-16">
+  <div class="card-header">
     <h2>Xray Transport</h2>
   </div>
   <p class="text-dim mb-16">Xray VLESS + XHTTP transport settings. Changes take effect on {{if eq .Mode "client"}}reconnect{{else}}restart{{end}}.</p>

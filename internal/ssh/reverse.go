@@ -27,12 +27,13 @@ type ReverseTunnel struct {
 	// Local address to forward to (e.g. "127.0.0.1:2222").
 	LocalAddr string
 
-	mu        sync.Mutex
-	client    *gossh.Client
-	listener  net.Listener
-	done      chan struct{}
-	connected bool
-	lastErr   string
+	mu            sync.Mutex
+	client        *gossh.Client
+	listener      net.Listener
+	done          chan struct{}
+	keepaliveStop chan struct{}
+	connected     bool
+	lastErr       string
 }
 
 // Connected reports whether the tunnel currently has an active SSH connection.
@@ -111,11 +112,20 @@ func (rt *ReverseTunnel) Run() error {
 	}
 }
 
-// cleanup closes the listener and SSH client so the next reconnect starts
-// fresh.
+// cleanup stops the keepalive goroutine, closes the listener and SSH client
+// so the next reconnect starts fresh.
 func (rt *ReverseTunnel) cleanup() {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
+
+	if rt.keepaliveStop != nil {
+		select {
+		case <-rt.keepaliveStop:
+		default:
+			close(rt.keepaliveStop)
+		}
+		rt.keepaliveStop = nil
+	}
 
 	if rt.listener != nil {
 		rt.listener.Close()
@@ -166,10 +176,15 @@ func (rt *ReverseTunnel) connect() error {
 		return fmt.Errorf("SSH handshake: %w", err)
 	}
 
+	kaStop := make(chan struct{})
+
+	rt.mu.Lock()
 	rt.client = gossh.NewClient(sshConn, chans, reqs)
+	rt.keepaliveStop = kaStop
+	rt.mu.Unlock()
 
 	// Start SSH keepalive in background.
-	go rt.keepalive(sshConn)
+	go rt.keepalive(sshConn, kaStop)
 
 	// Request reverse port forward.
 	listener, err := rt.client.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", rt.RemotePort))
@@ -206,13 +221,15 @@ func (rt *ReverseTunnel) connect() error {
 // keepalive sends periodic SSH keepalive requests to detect dead connections.
 // On failure, it closes the listener and SSH connection so that connect()
 // unblocks and the reconnect loop fires.
-func (rt *ReverseTunnel) keepalive(conn gossh.Conn) {
+func (rt *ReverseTunnel) keepalive(conn gossh.Conn, stop <-chan struct{}) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-rt.done:
+			return
+		case <-stop:
 			return
 		case <-ticker.C:
 			_, _, err := conn.SendRequest("keepalive@tw", true, nil)

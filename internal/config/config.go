@@ -17,9 +17,16 @@ type Config struct {
 	LogLevel  string       `yaml:"log_level,omitempty"`  // debug, info, warn, error
 	LogFormat string       `yaml:"log_format,omitempty"` // "text" (default) or "json"
 	Proxy    string       `yaml:"proxy,omitempty"`     // e.g. "socks5://user:pass@host:port" or "http://host:port"
-	Xray     XrayConfig   `yaml:"xray"`
-	Server   ServerConfig `yaml:"server"`
-	Client   ClientConfig `yaml:"client"`
+	Xray      XrayConfig      `yaml:"xray"`
+	Server    ServerConfig    `yaml:"server"`
+	Client    ClientConfig    `yaml:"client"`
+	Analytics AnalyticsConfig `yaml:"analytics,omitempty"`
+}
+
+// AnalyticsConfig controls bandwidth statistics collection.
+type AnalyticsConfig struct {
+	Enabled     bool `yaml:"enabled"`                // false by default (opt-in)
+	HistorySize int  `yaml:"history_size,omitempty"` // ring buffer size (default 720 = 1h at 5s intervals)
 }
 
 // XrayConfig is the shared transport layer (both server and client).

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tunnelwhisperer/tw/internal/stats"
 	gossh "golang.org/x/crypto/ssh"
 )
 
@@ -23,6 +24,7 @@ type Server struct {
 	AuthorizedKeys string
 	OnConnect      func(user string) // called after successful SSH authentication
 	OnDisconnect   func(user string) // called when an SSH connection closes
+	Stats          *stats.Collector  // nil = disabled, no overhead
 	config         *gossh.ServerConfig
 	listener       net.Listener
 
@@ -92,7 +94,7 @@ func (s *Server) checkAuthorizedKey(conn gossh.ConnMetadata, key gossh.PublicKey
 		// Extract TW username from comment (format: "username@tw").
 		twUser := strings.TrimSuffix(comment, "@tw")
 
-		slog.Info("client authenticated", "user", conn.User(), "tw_user", twUser, "remote", conn.RemoteAddr())
+		slog.Info("client authenticated", "user", twUser, "ssh_user", conn.User(), "remote", conn.RemoteAddr().String())
 
 		perms := &gossh.Permissions{
 			Extensions: map[string]string{},
@@ -232,7 +234,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		displayUser = sshConn.User()
 	}
 
-	slog.Debug("SSH connection established", "remote", sshConn.RemoteAddr(), "client_version", sshConn.ClientVersion(), "user", displayUser)
+	slog.Debug("SSH connection established", "remote", sshConn.RemoteAddr().String(), "client_version", string(sshConn.ClientVersion()), "user", displayUser)
 
 	// Track active sessions per TW user.
 	if twUser != "" {
@@ -240,7 +242,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		s.connectedMap[twUser]++
 		count := s.connectedMap[twUser]
 		s.connMu.Unlock()
-		slog.Debug("session tracked", "tw_user", twUser, "sessions", count, "remote", sshConn.RemoteAddr())
+		slog.Debug("session tracked", "user", twUser, "sessions", count, "remote", sshConn.RemoteAddr().String())
 		defer func() {
 			s.connMu.Lock()
 			s.connectedMap[twUser]--
@@ -250,7 +252,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 				remaining = 0
 			}
 			s.connMu.Unlock()
-			slog.Debug("session untracked", "tw_user", twUser, "sessions", remaining, "remote", sshConn.RemoteAddr())
+			slog.Debug("session untracked", "user", twUser, "sessions", remaining, "remote", sshConn.RemoteAddr().String())
 		}()
 	}
 
@@ -274,7 +276,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		}
 	}
 
-	slog.Debug("SSH connection closed", "remote", sshConn.RemoteAddr())
+	slog.Debug("SSH connection closed", "remote", sshConn.RemoteAddr().String())
 }
 
 // directTCPIPData matches the RFC 4254 §7.2 payload for direct-tcpip channels.
@@ -356,12 +358,27 @@ func (s *Server) handleDirectTCPIP(newChan gossh.NewChannel, perms *gossh.Permis
 	}
 	defer ch.Close()
 
+	// Track connection and bandwidth if stats are enabled.
+	var sentW, recvW io.Writer = conn, ch
+	if s.Stats != nil {
+		twUser := ""
+		if perms != nil {
+			twUser = perms.Extensions["tw_user"]
+		}
+		key := stats.TunnelKey{User: twUser, Port: int(d.DestPort)}
+		closeConn := s.Stats.TrackConn(key)
+		defer closeConn()
+		ts := s.Stats.Get(key)
+		sentW = stats.NewCountingWriter(conn, &ts.BytesSent)
+		recvW = stats.NewCountingWriter(ch, &ts.BytesRecv)
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
-		io.Copy(conn, ch)
+		io.Copy(sentW, ch)
 		// Half-close: signal the TCP side we're done writing.
 		if tc, ok := conn.(*net.TCPConn); ok {
 			tc.CloseWrite()
@@ -370,7 +387,7 @@ func (s *Server) handleDirectTCPIP(newChan gossh.NewChannel, perms *gossh.Permis
 
 	go func() {
 		defer wg.Done()
-		io.Copy(ch, conn)
+		io.Copy(recvW, conn)
 		ch.CloseWrite()
 	}()
 

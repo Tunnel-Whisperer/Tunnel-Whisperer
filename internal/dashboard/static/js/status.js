@@ -363,3 +363,104 @@ function copyText(text, el) {
     }
   });
 })();
+
+// ── Bandwidth stats polling ──────────────────────────────────────────────────
+
+(function() {
+  const card = document.getElementById('stats-card');
+  if (!card) return;
+
+  const list = document.getElementById('stats-list');
+  const statusBadge = document.querySelector('[data-bind="stats-status"]');
+  const mode = card.dataset.mode; // "server" or "client"
+
+  // Aggregate snapshots by user (sum all ports) — server mode.
+  function aggregateByUser(snaps) {
+    const map = {};
+    snaps.forEach(s => {
+      if (!map[s.user]) {
+        map[s.user] = { user: s.user, bytes_sent: 0, bytes_recv: 0, active: 0, total: 0 };
+      }
+      map[s.user].bytes_sent += s.bytes_sent;
+      map[s.user].bytes_recv += s.bytes_recv;
+      map[s.user].active += s.active_connections;
+      map[s.user].total += s.total_connections;
+    });
+    return Object.values(map);
+  }
+
+  function renderServer(snaps) {
+    const users = aggregateByUser(snaps);
+    users.sort((a, b) => (b.bytes_sent + b.bytes_recv) - (a.bytes_sent + a.bytes_recv));
+    const top = users.slice(0, 3);
+
+    let totalActive = 0;
+    users.forEach(u => { totalActive += u.active; });
+
+    let html = '';
+    top.forEach(u => {
+      const total = formatBytes(u.bytes_sent + u.bytes_recv);
+      const activeBadge = u.active > 0
+        ? '<span class="badge badge-green">' + u.active + ' active</span>'
+        : '';
+      html += '<div class="user-row">' +
+        '<a href="/users/' + u.user + '">' + u.user + '</a>' +
+        '<span>' + activeBadge +
+        ' <span class="text-dim text-mono">' + total + '</span></span>' +
+        '</div>';
+    });
+    list.innerHTML = html;
+    return totalActive;
+  }
+
+  function renderClient(snaps) {
+    // Sort by total traffic desc.
+    snaps.sort((a, b) => (b.bytes_sent + b.bytes_recv) - (a.bytes_sent + a.bytes_recv));
+
+    let totalActive = 0;
+    let html = '<div class="kv">';
+    snaps.forEach(s => {
+      totalActive += s.active_connections;
+      const sent = formatBytes(s.bytes_sent);
+      const recv = formatBytes(s.bytes_recv);
+      const activeBadge = s.active_connections > 0
+        ? ' <span class="badge badge-green">' + s.active_connections + '</span>'
+        : '';
+      html += '<span class="kv-label">:' + s.port + activeBadge + '</span>' +
+        '<span class="kv-value text-mono">' + sent + ' / ' + recv + '</span>';
+    });
+    html += '</div>';
+    list.innerHTML = html;
+    return totalActive;
+  }
+
+  async function pollStats() {
+    try {
+      const data = await api.get('/api/stats');
+      if (!data.enabled) {
+        if (statusBadge) { statusBadge.textContent = 'disabled'; }
+        return;
+      }
+
+      const snaps = data.snapshots || [];
+      if (snaps.length === 0) {
+        list.innerHTML = '<p class="text-dim">No data yet</p>';
+        if (statusBadge) {
+          statusBadge.textContent = 'no traffic';
+          statusBadge.className = 'badge badge-dim';
+        }
+        return;
+      }
+
+      const totalActive = mode === 'client' ? renderClient(snaps) : renderServer(snaps);
+
+      if (statusBadge) {
+        statusBadge.textContent = totalActive + ' active';
+        statusBadge.className = 'badge ' + (totalActive > 0 ? 'badge-green' : 'badge-dim');
+      }
+    } catch (_) {}
+  }
+
+  setInterval(pollStats, 3000);
+  pollStats();
+})();

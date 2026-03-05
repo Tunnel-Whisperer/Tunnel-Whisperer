@@ -91,6 +91,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/apps", s.handleApps)
 	s.mux.HandleFunc("/apps/new", s.handleAppNew)
 	s.mux.HandleFunc("/apps/edit/", s.handleAppEdit)
+	s.mux.HandleFunc("/bandwidth", s.handleBandwidth)
 	s.mux.HandleFunc("/config", s.handleConfig)
 
 	// REST API — read-only.
@@ -98,6 +99,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/config", s.apiConfig)
 	s.mux.HandleFunc("/api/providers", s.apiProviders)
 	s.mux.HandleFunc("/api/relay", s.apiRelay)
+	s.mux.HandleFunc("/api/stats", s.apiStats)
+	s.mux.HandleFunc("/metrics", s.apiMetrics)
 
 	// REST API — write.
 	s.mux.HandleFunc("/api/mode", s.apiSetMode)
@@ -106,6 +109,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/settings/server", s.apiSetServerSettings)
 	s.mux.HandleFunc("/api/settings/xray", s.apiSetXraySettings)
 	s.mux.HandleFunc("/api/settings/client", s.apiSetClientSettings)
+	s.mux.HandleFunc("/api/settings/analytics", s.apiSetAnalyticsSettings)
 	s.mux.HandleFunc("/api/relay/test-creds", s.apiTestCreds)
 	s.mux.HandleFunc("/api/relay/provision", s.apiProvisionRelay)
 	s.mux.HandleFunc("/api/relay/destroy", s.apiDestroyRelay)

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tunnelwhisperer/tw/internal/stats"
 	gossh "golang.org/x/crypto/ssh"
 )
 
@@ -40,13 +41,16 @@ type ForwardTunnel struct {
 	KeyPath string
 	// Port mappings to forward.
 	Mappings []Mapping
+	// Stats collector for bandwidth tracking (nil = disabled).
+	Stats *stats.Collector
 
-	mu        sync.Mutex
-	client    *gossh.Client
-	listeners []net.Listener
-	done      chan struct{}
-	connected bool
-	lastErr   string
+	mu            sync.Mutex
+	client        *gossh.Client
+	listeners     []net.Listener
+	done          chan struct{}
+	keepaliveStop chan struct{} // closed by cleanup() to stop the keepalive goroutine
+	connected     bool
+	lastErr       string
 }
 
 // Connected reports whether the tunnel currently has an active SSH connection.
@@ -124,11 +128,22 @@ func (ft *ForwardTunnel) Run() error {
 	}
 }
 
-// cleanup closes all listeners and the SSH client so ports are freed
-// for the next reconnection attempt.
+// cleanup stops the keepalive goroutine, closes all listeners and the SSH
+// client so ports are freed for the next reconnection attempt.
 func (ft *ForwardTunnel) cleanup() {
 	ft.mu.Lock()
 	defer ft.mu.Unlock()
+
+	// Stop the keepalive goroutine first so it doesn't close the next
+	// connection's listeners after we return.
+	if ft.keepaliveStop != nil {
+		select {
+		case <-ft.keepaliveStop:
+		default:
+			close(ft.keepaliveStop)
+		}
+		ft.keepaliveStop = nil
+	}
 
 	for _, l := range ft.listeners {
 		l.Close()
@@ -181,13 +196,16 @@ func (ft *ForwardTunnel) connect() error {
 		return fmt.Errorf("SSH handshake: %w", err)
 	}
 
+	kaStop := make(chan struct{})
+
 	ft.mu.Lock()
 	ft.client = gossh.NewClient(sshConn, chans, reqs)
+	ft.keepaliveStop = kaStop
 	ft.mu.Unlock()
 
 	// Start SSH keepalive — on failure it closes all listeners and the SSH
 	// connection so connect() returns and the reconnect loop fires.
-	go ft.keepalive(sshConn)
+	go ft.keepalive(sshConn, kaStop)
 
 	// Start a local listener for each mapping.
 	// All listeners share the same SSH client.
@@ -253,14 +271,18 @@ func (ft *ForwardTunnel) acceptLoop(listener net.Listener, m Mapping, done <-cha
 
 // keepalive sends periodic SSH keepalive requests to detect dead connections.
 // On failure, it closes all listeners and the SSH connection so that
-// connect() unblocks and the reconnect loop fires.
-func (ft *ForwardTunnel) keepalive(conn gossh.Conn) {
+// connect() unblocks and the reconnect loop fires.  The stop channel is
+// closed by cleanup() to prevent a stale goroutine from killing a newer
+// connection's listeners.
+func (ft *ForwardTunnel) keepalive(conn gossh.Conn, stop <-chan struct{}) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ft.done:
+			return
+		case <-stop:
 			return
 		case <-ticker.C:
 			_, _, err := conn.SendRequest("keepalive@tw", true, nil)
@@ -318,20 +340,31 @@ func (ft *ForwardTunnel) forward(local net.Conn, m Mapping) {
 	}
 	defer remote.Close()
 
+	// Track connection and bandwidth if stats are enabled.
+	var sentW, recvW io.Writer = remote, local
+	if ft.Stats != nil {
+		key := stats.TunnelKey{User: ft.User, Port: m.LocalPort}
+		closeConn := ft.Stats.TrackConn(key)
+		defer closeConn()
+		ts := ft.Stats.Get(key)
+		sentW = stats.NewCountingWriter(remote, &ts.BytesSent)
+		recvW = stats.NewCountingWriter(local, &ts.BytesRecv)
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
-		io.Copy(remote, local)
-		if tc, ok := remote.(*net.TCPConn); ok {
-			tc.CloseWrite()
-		}
+		io.Copy(sentW, local)
+		// remote is an SSH channel (net.Conn), not *net.TCPConn, so
+		// half-close isn't available. Full close unblocks the other goroutine.
+		remote.Close()
 	}()
 
 	go func() {
 		defer wg.Done()
-		io.Copy(local, remote)
+		io.Copy(recvW, remote)
 		if tc, ok := local.(*net.TCPConn); ok {
 			tc.CloseWrite()
 		}

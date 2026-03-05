@@ -447,3 +447,40 @@ if ($$('[data-uuid]').length > 0) {
   pollOnlineStatus();
   setInterval(pollOnlineStatus, 15000);
 }
+
+// ── Per-user bandwidth stats polling ─────────────────────────────────────────
+
+(function() {
+  const statsKV = document.getElementById('user-stats-kv');
+  if (!statsKV) return;
+
+  const card = statsKV.closest('[data-user]') || document.querySelector('[data-user]');
+  const userName = card ? card.dataset.user : null;
+  if (!userName) return;
+
+  function setBind(name, text) {
+    const el = document.querySelector('[data-bind="' + name + '"]');
+    if (el) el.textContent = text;
+  }
+
+  async function pollUserStats() {
+    try {
+      const data = await api.get('/api/stats?user=' + encodeURIComponent(userName));
+      if (!data.enabled || !data.snapshots || data.snapshots.length === 0) {
+        setBind('user-sent', '—');
+        setBind('user-recv', '—');
+        setBind('user-active', '0');
+        setBind('user-total', '0');
+        return;
+      }
+      const s = data.snapshots[0];
+      setBind('user-sent', formatBytes(s.bytes_sent));
+      setBind('user-recv', formatBytes(s.bytes_recv));
+      setBind('user-active', String(s.active_connections));
+      setBind('user-total', String(s.total_connections));
+    } catch (_) {}
+  }
+
+  setInterval(pollUserStats, 5000);
+  pollUserStats();
+})();

@@ -93,6 +93,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ServerStatus  ops.ServerStatus
 		ClientStatus  ops.ClientStatus
 		ConfigChanged bool
+		StatsEnabled  bool
 	}{
 		pageData:      pageData{Title: "Status", Active: "index", Mode: mode},
 		Config:        cfg,
@@ -104,6 +105,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ServerStatus:  srvStatus,
 		ClientStatus:  cliStatus,
 		ConfigChanged: s.ops.ConfigChanged(),
+		StatsEnabled:  s.ops.StatsEnabled(),
 	}
 	s.renderPage(w, "index", data)
 }
@@ -283,10 +285,12 @@ func (s *Server) handleUserDetail(w http.ResponseWriter, r *http.Request) {
 
 	data := struct {
 		pageData
-		User ops.UserInfo
+		User         ops.UserInfo
+		StatsEnabled bool
 	}{
-		pageData: pageData{Title: "User: " + name, Active: "users", Mode: mode},
-		User:     *found,
+		pageData:     pageData{Title: "User: " + name, Active: "users", Mode: mode},
+		User:         *found,
+		StatsEnabled: s.ops.StatsEnabled(),
 	}
 	s.renderPage(w, "user_detail", data)
 }
@@ -309,30 +313,51 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		logLevel = "info"
 	}
 
+	historySize := cfg.Analytics.HistorySize
+	if historySize <= 0 {
+		historySize = 720
+	}
+
 	data := struct {
 		pageData
-		ConfigPath string
-		ConfigYAML string
-		LogLevel   string
-		Proxy      string
-		Running    bool
-		Server     config.ServerConfig
-		Client     config.ClientConfig
-		Xray       config.XrayConfig
-		Version    string
+		ConfigPath       string
+		ConfigYAML       string
+		LogLevel         string
+		Proxy            string
+		Running          bool
+		Server           config.ServerConfig
+		Client           config.ClientConfig
+		Xray             config.XrayConfig
+		AnalyticsEnabled bool
+		HistorySize      int
+		Version          string
 	}{
-		pageData:   pageData{Title: "Config", Active: "config", Mode: mode},
-		ConfigPath: config.FilePath(),
-		ConfigYAML: string(cfgYAML),
-		LogLevel:   logLevel,
-		Proxy:      cfg.Proxy,
-		Running:    running,
-		Server:     cfg.Server,
-		Client:     cfg.Client,
-		Xray:       cfg.Xray,
-		Version:    version.Version,
+		pageData:         pageData{Title: "Config", Active: "config", Mode: mode},
+		ConfigPath:       config.FilePath(),
+		ConfigYAML:       string(cfgYAML),
+		LogLevel:         logLevel,
+		Proxy:            cfg.Proxy,
+		Running:          running,
+		Server:           cfg.Server,
+		Client:           cfg.Client,
+		Xray:             cfg.Xray,
+		AnalyticsEnabled: cfg.Analytics.Enabled,
+		HistorySize:      historySize,
+		Version:          version.Version,
 	}
 	s.renderPage(w, "config", data)
+}
+
+func (s *Server) handleBandwidth(w http.ResponseWriter, r *http.Request) {
+	mode := s.ops.Mode()
+	data := struct {
+		pageData
+		StatsEnabled bool
+	}{
+		pageData:     pageData{Title: "Bandwidth", Active: "bandwidth", Mode: mode},
+		StatsEnabled: s.ops.StatsEnabled(),
+	}
+	s.renderPage(w, "bandwidth", data)
 }
 
 func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {

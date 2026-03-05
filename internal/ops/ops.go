@@ -9,6 +9,7 @@ import (
 
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/logging"
+	"github.com/tunnelwhisperer/tw/internal/stats"
 )
 
 // ProgressEvent describes one step in a long-running operation.
@@ -39,10 +40,11 @@ const (
 
 // Ops centralises business logic shared by the CLI and the web dashboard.
 type Ops struct {
-	cfg *config.Config
-	mu  sync.Mutex // serialises relay + user operations
-	srv serverManager
-	cli clientManager
+	cfg   *config.Config
+	mu    sync.Mutex // serialises relay + user operations
+	srv   serverManager
+	cli   clientManager
+	stats *stats.Collector // nil when analytics disabled
 
 	onlineMu      sync.RWMutex
 	onlineCache   map[string]bool
@@ -57,11 +59,29 @@ func New() (*Ops, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Ops{
+	o := &Ops{
 		cfg: cfg,
 		srv: serverManager{state: StateStopped},
 		cli: clientManager{state: StateStopped},
-	}, nil
+	}
+	if cfg.Analytics.Enabled {
+		histSize := cfg.Analytics.HistorySize
+		if histSize <= 0 {
+			histSize = 720
+		}
+		o.stats = stats.New(histSize)
+	}
+	return o, nil
+}
+
+// Stats returns the bandwidth collector (nil if analytics disabled).
+func (o *Ops) Stats() *stats.Collector {
+	return o.stats
+}
+
+// StatsEnabled reports whether analytics collection is active.
+func (o *Ops) StatsEnabled() bool {
+	return o.stats != nil
 }
 
 // Config returns the current configuration (read-only snapshot).
@@ -206,6 +226,28 @@ func (o *Ops) SetClientSettings(c config.ClientConfig) error {
 	// Tunnels are managed separately (user creation), not updated here.
 	cfg := o.cfg
 	o.mu.Unlock()
+	return config.Save(cfg)
+}
+
+// SetAnalyticsSettings updates analytics config fields, creates or destroys
+// the stats collector as needed, and persists to disk.  A server/client
+// restart or reconnect will pick up the new collector.
+func (o *Ops) SetAnalyticsSettings(a config.AnalyticsConfig) error {
+	o.mu.Lock()
+	o.cfg.Analytics = a
+	cfg := o.cfg
+	o.mu.Unlock()
+
+	if a.Enabled && o.stats == nil {
+		histSize := a.HistorySize
+		if histSize <= 0 {
+			histSize = 720
+		}
+		o.stats = stats.New(histSize)
+	} else if !a.Enabled {
+		o.stats = nil
+	}
+
 	return config.Save(cfg)
 }
 

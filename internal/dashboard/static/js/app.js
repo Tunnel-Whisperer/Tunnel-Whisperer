@@ -99,3 +99,11 @@ function renderProgressEvent(container, event) {
 
 function $(sel, ctx) { return (ctx || document).querySelector(sel); }
 function $$(sel, ctx) { return [...(ctx || document).querySelectorAll(sel)]; }
+
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const val = bytes / Math.pow(1024, i);
+  return (i === 0 ? val : val.toFixed(1)) + ' ' + units[i];
+}

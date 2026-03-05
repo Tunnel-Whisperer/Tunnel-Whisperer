@@ -1,0 +1,45 @@
+{{define "content"}}
+<h1>Bandwidth</h1>
+
+{{if not .StatsEnabled}}
+<div class="card">
+  <p class="text-dim">Analytics is disabled. Enable it in <a href="/config">Config</a> to track bandwidth.</p>
+</div>
+{{else}}
+
+<div class="search-bar mb-16">
+  <input type="text" id="bw-search" placeholder="Search users..." autocomplete="off">
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2>All Tunnels</h2>
+    <span class="badge badge-dim" id="bw-badge">loading...</span>
+  </div>
+  <table id="bw-table">
+    <thead>
+      <tr>
+        <th class="sortable" data-sort="user">User</th>
+        <th class="sortable" data-sort="port">Port</th>
+        <th class="sortable active sort-desc" data-sort="sent">Sent</th>
+        <th class="sortable" data-sort="recv">Received</th>
+        <th class="sortable" data-sort="active">Active</th>
+        <th class="sortable" data-sort="total">Total</th>
+      </tr>
+    </thead>
+    <tbody id="bw-body">
+      <tr><td colspan="6" class="text-dim">Loading...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="pagination" id="bw-pagination"></div>
+
+{{end}}
+{{end}}
+
+{{define "scripts"}}
+{{if .StatsEnabled}}
+<script src="/static/js/bandwidth.js"></script>
+{{end}}
+{{end}}

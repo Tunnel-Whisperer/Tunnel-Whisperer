@@ -129,6 +129,36 @@ function showProxySuccess(msg) {
   }
 }
 
+// ── Analytics settings ──────────────────────────────────────────────────────
+
+async function saveAnalyticsSettings() {
+  const btn = $('#btn-analytics-save');
+  btn.disabled = true;
+
+  try {
+    const enabled = $('#analytics-enabled').checked;
+    const historySize = parseInt($('#analytics-history-size').value) || 720;
+
+    await api.post('/api/settings/analytics', {
+      enabled: enabled,
+      history_size: historySize,
+    });
+
+    const badge = $('#analytics-badge');
+    if (badge) {
+      badge.textContent = enabled ? 'enabled' : 'disabled';
+      badge.className = 'badge ' + (enabled ? 'badge-green' : 'badge-dim');
+    }
+
+    showResult('analytics', true, 'Analytics settings saved.' + restartMsg());
+    reloadConfigYAML();
+  } catch (err) {
+    showResult('analytics', false, err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // ── Xray settings ───────────────────────────────────────────────────────────
 
 async function saveXraySettings() {

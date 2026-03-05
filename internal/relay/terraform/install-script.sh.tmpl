@@ -90,7 +90,7 @@ cat > /usr/local/etc/xray/config.json <<'XRAYEOF'
         "network": "xhttp",
         "xhttpSettings": {
           "path": "{{.XrayPath}}",
-          "scMaxConcurrentPosts": 10
+          "mode": "stream-one"
         }
       }
     },

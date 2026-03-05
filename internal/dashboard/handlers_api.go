@@ -11,6 +11,7 @@ import (
 
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/ops"
+	"github.com/tunnelwhisperer/tw/internal/stats"
 	"github.com/tunnelwhisperer/tw/internal/version"
 )
 
@@ -82,6 +83,49 @@ func (s *Server) apiProviders(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) apiRelay(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, s.ops.GetRelayStatus())
+}
+
+// ── Stats & Metrics ─────────────────────────────────────────────────────────
+
+func (s *Server) apiStats(w http.ResponseWriter, r *http.Request) {
+	collector := s.ops.Stats()
+	if collector == nil {
+		jsonOK(w, map[string]interface{}{
+			"enabled":   false,
+			"snapshots": []stats.Snapshot{},
+			"history":   []stats.HistoryPoint{},
+		})
+		return
+	}
+
+	user := r.URL.Query().Get("user")
+
+	var snapshots []stats.Snapshot
+	if user != "" {
+		snap := collector.UserSnapshot(user)
+		if snap.BytesSent > 0 || snap.BytesRecv > 0 || snap.ActiveConn > 0 || snap.TotalConn > 0 {
+			snapshots = []stats.Snapshot{snap}
+		} else {
+			snapshots = []stats.Snapshot{}
+		}
+	} else {
+		snapshots = collector.Snapshot()
+	}
+
+	jsonOK(w, map[string]interface{}{
+		"enabled":   true,
+		"snapshots": snapshots,
+		"history":   collector.History(),
+	})
+}
+
+func (s *Server) apiMetrics(w http.ResponseWriter, r *http.Request) {
+	collector := s.ops.Stats()
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	if collector == nil {
+		return
+	}
+	collector.WritePrometheus(w)
 }
 
 // ── Mode ─────────────────────────────────────────────────────────────────────
@@ -624,6 +668,34 @@ func (s *Server) apiSetProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonOK(w, map[string]string{"status": "ok", "proxy": req.Proxy})
+}
+
+// ── Analytics settings ───────────────────────────────────────────────────────
+
+func (s *Server) apiSetAnalyticsSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Enabled     bool `json:"enabled"`
+		HistorySize int  `json:"history_size"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.ops.SetAnalyticsSettings(config.AnalyticsConfig{
+		Enabled:     req.Enabled,
+		HistorySize: req.HistorySize,
+	}); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	jsonOK(w, map[string]string{"status": "ok"})
 }
 
 // ── Log level ────────────────────────────────────────────────────────────────

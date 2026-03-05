@@ -33,7 +33,6 @@ var level slog.LevelVar
 var otelAttrMap = map[string]string{
 	"error":      "exception.message",
 	"user":       "enduser.id",
-	"tw_user":    "enduser.id",
 	"remote":     "net.peer.name",
 	"addr":       "net.host.name",
 	"local_port": "net.host.port",

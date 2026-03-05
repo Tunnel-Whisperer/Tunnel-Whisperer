@@ -122,6 +122,25 @@
 
 </div>
 
+{{if .StatsEnabled}}
+<!-- ── Bandwidth Stats (compact) ─────────────────────────────────────── -->
+<div class="card" id="stats-card" data-mode="server">
+  <div class="card-header">
+    <h2>Bandwidth</h2>
+    <div class="card-actions">
+      <span class="badge badge-dim" data-bind="stats-status">loading...</span>
+      <a href="/bandwidth" class="settings-btn" title="View All">&#9881;</a>
+    </div>
+  </div>
+  <div class="user-list user-list-scroll" id="stats-list">
+    <p class="text-dim">No data yet</p>
+  </div>
+  <div class="mt-16">
+    <a href="/bandwidth" class="btn btn-sm btn-block">View All</a>
+  </div>
+</div>
+{{end}}
+
 <!-- ── Console ───────────────────────────────────────────────────────── -->
 <div class="card console-card">
   <div class="card-header">
@@ -256,6 +275,21 @@
   </div>
 
 </div>
+
+{{if .StatsEnabled}}
+<!-- ── Bandwidth Stats (per-port) ──────────────────────────────────── -->
+<div class="card" id="stats-card" data-mode="client">
+  <div class="card-header">
+    <h2>Bandwidth</h2>
+    <div class="card-actions">
+      <span class="badge badge-dim" data-bind="stats-status">loading...</span>
+    </div>
+  </div>
+  <div id="stats-list">
+    <p class="text-dim">No data yet</p>
+  </div>
+</div>
+{{end}}
 
 <!-- ── Console ───────────────────────────────────────────────────────── -->
 <div class="card console-card">
