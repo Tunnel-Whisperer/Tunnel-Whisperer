@@ -183,6 +183,8 @@ tw/
 │   │   ├── forward.go                  # client-side local port forwarding (-L)
 │   │   ├── reverse.go                  # server-side reverse port forwarding (-R)
 │   │   └── keygen.go                   # ed25519 key pair generation
+│   ├── stats/                          # bandwidth analytics
+│   │   └── collector.go                # per-tunnel byte counters, connection tracking, history ring buffer
 │   ├── xray/                           # in-process xray-core
 │   │   └── xray.go                     # server + client config builders, instance management
 │   ├── relay/
@@ -215,6 +217,7 @@ tw/
 │   │   │       ├── user_new.html       # create user form
 │   │   │       ├── user_detail.html    # user detail + download
 │   │   │       ├── user_edit.html      # edit user port mappings
+│   │   │       ├── bandwidth.html      # bandwidth stats (full page)
 │   │   │       ├── apps.html           # application template list
 │   │   │       ├── app_new.html        # create application template
 │   │   │       └── app_edit.html       # edit application template
@@ -228,6 +231,7 @@ tw/
 │   │           ├── config.js           # config page logic
 │   │           ├── relay.js            # relay page logic
 │   │           ├── users.js            # users page logic
+│   │           ├── bandwidth.js       # bandwidth stats page logic
 │   │           ├── apps.js            # apps page logic
 │   │           └── vendor/
 │   │               ├── xterm.min.js

@@ -86,6 +86,11 @@ server:
         - { client_port: 3000, server_port: 3000 }
         - { client_port: 5432, server_port: 5432 }
 
+# Bandwidth analytics (opt-in, works in both modes).
+analytics:
+  enabled: true
+  history_size: 720  # snapshots to keep (default 720 = 1h at 5s intervals)
+
 # Client-only settings (ignored in server mode).
 client:
   # SSH user to authenticate as on the server.
@@ -149,6 +154,15 @@ client:
 |---|---|---|
 | `client_port` | int | Port the client listens on locally (1-65535). |
 | `server_port` | int | Port on the server to forward to (1-65535). |
+
+### `analytics` section
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Enable bandwidth statistics collection. Opt-in. |
+| `history_size` | int | `720` | Number of snapshots in the ring buffer. At the default 5-second interval, 720 = 1 hour of history. |
+
+Analytics works in both server and client modes. In server mode, stats are tracked per user per port. In client mode, stats are tracked per local port. Changes via the dashboard take effect immediately without a restart.
 
 ### `client` section
 

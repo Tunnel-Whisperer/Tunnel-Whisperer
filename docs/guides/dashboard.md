@@ -38,6 +38,10 @@ The main page shows three cards:
 - User list sorted by online status
 - Link to user management page
 
+### Bandwidth Card
+
+When analytics is enabled, a compact bandwidth card appears below the main grid showing the top 3 users sorted by total traffic (sent + received). Each row links to the user's detail page and shows active connection count. A gear icon links to the full **Stats** page.
+
 ### Console
 
 Real-time log streaming at the bottom of the page. Logs are captured from the application's `slog` output and streamed via Server-Sent Events.
@@ -54,6 +58,21 @@ Real-time log streaming at the bottom of the page. Logs are captured from the ap
 
 - List of configured port mappings (clickable to copy `localhost:port`)
 - Config update form (upload new config zip when stopped)
+
+### Bandwidth Card (client)
+
+When analytics is enabled, a bandwidth card shows per-port stats: each tunnel's sent/received bytes and active connection count, sorted by total traffic.
+
+## Stats Page (server mode only)
+
+Accessible from the **Stats** nav link in server mode. Provides a full sortable and searchable table of all tunnel bandwidth data with live 3-second polling.
+
+- **Search** — filter by user name
+- **Sortable columns** — User, Port, Sent, Received, Active connections, Total connections
+- **Pagination** — 10 rows per page
+- **Live badge** — total active connection count in the card header
+
+User names link to the user detail page.
 
 ## Config Page
 
@@ -84,6 +103,11 @@ Accessible from the settings icon on any card. All settings are editable from th
 
 - **SSH User** — username for SSH authentication to the server
 - **Server SSH Port** — server's SSH port on the relay
+
+### Analytics Settings
+
+- **Enable Analytics** — toggle bandwidth statistics collection on or off (takes effect immediately)
+- **History Size** — number of snapshots to keep in the ring buffer (default 720 = 1 hour at 5-second intervals)
 
 ### Config File
 

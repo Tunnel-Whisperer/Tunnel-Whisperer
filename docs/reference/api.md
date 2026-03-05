@@ -19,6 +19,8 @@ endpoints accept and return JSON unless noted otherwise.
 | `GET` | `/api/config` | Current configuration (sanitized) |
 | `GET` | `/api/relay` | Relay provisioning status (provisioned, domain, IP, provider) |
 | `GET` | `/api/providers` | List of supported cloud providers for relay provisioning |
+| `GET` | `/api/stats` | Bandwidth statistics snapshots and history (returns `enabled: false` when analytics is off) |
+| `GET` | `/metrics` | Prometheus-format bandwidth metrics |
 
 ### Mode
 
@@ -41,6 +43,7 @@ endpoints accept and return JSON unless noted otherwise.
 | `POST` | `/api/settings/server` | Update server settings (ports, relay SSH user, temp Xray port) |
 | `POST` | `/api/settings/xray` | Update Xray transport settings (relay host, port, path) |
 | `POST` | `/api/settings/client` | Update client settings (SSH user, server SSH port) |
+| `POST` | `/api/settings/analytics` | Enable/disable analytics and set history size |
 
 **Proxy request body:**
 
@@ -89,9 +92,22 @@ Only non-zero / non-empty fields are applied; omitted fields keep their current 
 }
 ```
 
+**Analytics settings request body:**
+
+```json
+{
+  "enabled": true,
+  "history_size": 720
+}
+```
+
+Analytics changes take effect immediately — no restart required. The stats
+collector is created or destroyed on the fly.
+
 !!! note "Restart required"
     Settings changes are persisted to `config.yaml` immediately. A restart
-    (server) or reconnect (client) is needed for the changes to take effect.
+    (server) or reconnect (client) is needed for most changes to take effect.
+    **Exception:** analytics settings take effect immediately.
 
 ### Server control
 
