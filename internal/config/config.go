@@ -13,8 +13,9 @@ import (
 
 // Config holds all Tunnel Whisperer settings.
 type Config struct {
-	Mode     string       `yaml:"mode,omitempty"`      // "server" or "client"
-	LogLevel string       `yaml:"log_level,omitempty"` // debug, info, warn, error
+	Mode      string       `yaml:"mode,omitempty"`       // "server" or "client"
+	LogLevel  string       `yaml:"log_level,omitempty"`  // debug, info, warn, error
+	LogFormat string       `yaml:"log_format,omitempty"` // "text" (default) or "json"
 	Proxy    string       `yaml:"proxy,omitempty"`     // e.g. "socks5://user:pass@host:port" or "http://host:port"
 	Xray     XrayConfig   `yaml:"xray"`
 	Server   ServerConfig `yaml:"server"`

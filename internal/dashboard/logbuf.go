@@ -10,9 +10,10 @@ import (
 
 // LogEntry is a single log line for the dashboard console.
 type LogEntry struct {
-	Time    string `json:"time"`
-	Level   string `json:"level"`
-	Message string `json:"msg"`
+	Time    string            `json:"time"`
+	Level   string            `json:"level"`
+	Message string            `json:"msg"`
+	Attrs   map[string]string `json:"attrs,omitempty"`
 }
 
 // logBuffer is a fixed-size ring buffer of log entries with subscriber support.
@@ -90,17 +91,23 @@ func (h *teeHandler) Enabled(ctx context.Context, level slog.Level) bool {
 
 func (h *teeHandler) Handle(ctx context.Context, r slog.Record) error {
 	msg := r.Message
-	// Append key=value attrs.
+	attrs := make(map[string]string, r.NumAttrs())
 	r.Attrs(func(a slog.Attr) bool {
+		attrs[a.Key] = a.Value.String()
 		msg += fmt.Sprintf(" %s=%s", a.Key, a.Value.String())
 		return true
 	})
 
-	h.buf.add(LogEntry{
-		Time:    r.Time.Format(time.DateTime),
+	entry := LogEntry{
+		Time:    r.Time.Format(time.RFC3339),
 		Level:   r.Level.String(),
 		Message: msg,
-	})
+	}
+	if len(attrs) > 0 {
+		entry.Attrs = attrs
+	}
+
+	h.buf.add(entry)
 	return h.inner.Handle(ctx, r)
 }
 

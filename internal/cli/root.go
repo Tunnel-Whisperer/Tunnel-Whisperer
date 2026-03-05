@@ -10,6 +10,7 @@ import (
 )
 
 var logLevel string
+var logFormat string
 
 var rootCmd = &cobra.Command{
 	Use:     "tw",
@@ -20,23 +21,32 @@ ports across separated private networks. It encapsulates traffic in standard
 HTTPS/WebSocket to traverse strict firewalls and DPI.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		if cmd.Flags().Changed("log-level") {
-			// Explicit flag — persist to config so the dashboard stays in sync.
 			if cfg, err := config.Load(); err == nil {
 				cfg.LogLevel = logLevel
 				config.Save(cfg)
 			}
 		} else {
-			// No flag — use config's log level if set.
 			if cfg, err := config.Load(); err == nil && cfg.LogLevel != "" {
 				logLevel = cfg.LogLevel
 			}
 		}
-		logging.Setup(logLevel)
+		if cmd.Flags().Changed("log-format") {
+			if cfg, err := config.Load(); err == nil {
+				cfg.LogFormat = logFormat
+				config.Save(cfg)
+			}
+		} else {
+			if cfg, err := config.Load(); err == nil && cfg.LogFormat != "" {
+				logFormat = cfg.LogFormat
+			}
+		}
+		logging.Setup(logLevel, logFormat)
 	},
 }
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().StringVar(&logFormat, "log-format", "text", "log format (text, json)")
 }
 
 func Execute() error {

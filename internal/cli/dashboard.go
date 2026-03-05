@@ -11,6 +11,7 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/api"
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/dashboard"
+	"github.com/tunnelwhisperer/tw/internal/logging"
 	"github.com/tunnelwhisperer/tw/internal/ops"
 	"github.com/tunnelwhisperer/tw/internal/service"
 )
@@ -46,6 +47,15 @@ func slogProgress(e ops.ProgressEvent) {
 }
 
 func runDashboard(cmd *cobra.Command, args []string) error {
+	// When running as a Windows service, redirect logs to a file
+	// since the SCM discards stdout/stderr.
+	if service.IsWindowsService() {
+		if f, err := logging.EnableFileLog(config.Dir()); err == nil {
+			defer f.Close()
+			logging.Setup(logLevel, logFormat)
+		}
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
