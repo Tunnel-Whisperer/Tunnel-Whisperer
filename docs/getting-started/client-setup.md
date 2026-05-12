@@ -62,6 +62,23 @@ psql -h localhost -p 5432 -U myuser mydb
 
 The connection goes through the tunnel transparently.
 
+## Running in a container
+
+Forwarded tunnels bind to `127.0.0.1` by default, which is reachable only from inside the container. To publish tunnel ports to the host, set the listen address to `0.0.0.0`:
+
+```bash
+tw client listen 0.0.0.0
+```
+
+Or set it in `config.yaml`:
+
+```yaml
+client:
+  listen_address: 0.0.0.0
+```
+
+You can also set this from the **Config → Client Settings** card in the web dashboard. The change takes effect on the next reconnect.
+
 ## 5. Run as a Service (Optional)
 
 To keep the client running in the background and auto-connect on boot:

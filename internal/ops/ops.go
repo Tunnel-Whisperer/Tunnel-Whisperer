@@ -223,7 +223,24 @@ func (o *Ops) SetClientSettings(c config.ClientConfig) error {
 	if c.XrayPort > 0 {
 		o.cfg.Client.XrayPort = c.XrayPort
 	}
+	if c.ListenAddress != "" {
+		o.cfg.Client.ListenAddress = c.ListenAddress
+	}
 	// Tunnels are managed separately (user creation), not updated here.
+	cfg := o.cfg
+	o.mu.Unlock()
+	return config.Save(cfg)
+}
+
+// SetClientListenAddress sets the local bind interface for forwarded tunnels.
+// Empty string resets to the default (127.0.0.1).
+func (o *Ops) SetClientListenAddress(addr string) error {
+	o.mu.Lock()
+	if addr == "" {
+		o.cfg.Client.ListenAddress = "127.0.0.1"
+	} else {
+		o.cfg.Client.ListenAddress = addr
+	}
 	cfg := o.cfg
 	o.mu.Unlock()
 	return config.Save(cfg)

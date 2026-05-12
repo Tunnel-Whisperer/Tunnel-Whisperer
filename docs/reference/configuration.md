@@ -99,6 +99,11 @@ client:
   # SSH port on the server (matches server.ssh_port via the tunnel).
   server_ssh_port: 2222
 
+  # Local interface forwarded tunnels bind to.
+  # 127.0.0.1 = local only (default); 0.0.0.0 = all interfaces (required
+  # when running tw inside a container that publishes ports to the host).
+  listen_address: 127.0.0.1
+
   # Port forwarding rules — each entry creates a local listener.
   tunnels:
     - local_port: 3389
@@ -170,6 +175,7 @@ Analytics works in both server and client modes. In server mode, stats are track
 |---|---|---|---|
 | `ssh_user` | string | `tunnel` | SSH user to authenticate as on the server side. |
 | `server_ssh_port` | int | `2222` | SSH port on the server (reached via the tunnel). |
+| `listen_address` | string | `127.0.0.1` | Local interface forwarded tunnels bind to. Set to `0.0.0.0` to expose tunnels on all interfaces — required when `tw` runs inside a container that publishes ports to the host. |
 | `tunnels` | list | _(empty)_ | Port forwarding rules. Each entry has `local_port`, `remote_host`, `remote_port`. |
 
 ### `tunnels[]` entry

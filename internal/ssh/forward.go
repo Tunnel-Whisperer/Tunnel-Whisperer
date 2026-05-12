@@ -39,6 +39,8 @@ type ForwardTunnel struct {
 	User string
 	// Path to the private key for authentication.
 	KeyPath string
+	// Local interface for the per-mapping listeners. Empty = 127.0.0.1.
+	ListenAddr string
 	// Port mappings to forward.
 	Mappings []Mapping
 	// Stats collector for bandwidth tracking (nil = disabled).
@@ -212,8 +214,12 @@ func (ft *ForwardTunnel) connect() error {
 	acceptDone := make(chan struct{})
 	var wg sync.WaitGroup
 
+	bindHost := ft.ListenAddr
+	if bindHost == "" {
+		bindHost = "127.0.0.1"
+	}
 	for _, m := range ft.Mappings {
-		listenAddr := fmt.Sprintf("127.0.0.1:%d", m.LocalPort)
+		listenAddr := net.JoinHostPort(bindHost, fmt.Sprintf("%d", m.LocalPort))
 		listener, err := net.Listen("tcp", listenAddr)
 		if err != nil {
 			close(acceptDone)

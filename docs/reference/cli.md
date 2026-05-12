@@ -31,6 +31,8 @@ config is set to `client`, and vice versa.
 | `tw proxy` | any | Show the current outbound proxy setting |
 | `tw proxy set <url>` | any | Set the outbound proxy URL |
 | `tw proxy clear` | any | Remove the outbound proxy |
+| `tw client listen` | client | Show the local interface forwarded tunnels bind to |
+| `tw client listen <addr>` | client | Set the listen address (e.g. `0.0.0.0` to expose tunnels from a container) |
 | `tw service install` | any | Install tw as a system service (Linux systemd / Windows SCM) |
 | `tw service uninstall` | any | Remove the system service |
 | `tw service start` | any | Start the system service |

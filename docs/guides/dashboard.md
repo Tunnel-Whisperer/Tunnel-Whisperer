@@ -103,6 +103,8 @@ Accessible from the settings icon on any card. All settings are editable from th
 
 - **SSH User** — username for SSH authentication to the server
 - **Server SSH Port** — server's SSH port on the relay
+- **Local Xray Port** — local port the Xray client listens on
+- **Listen Address** — local interface forwarded tunnels bind to. `127.0.0.1` (default) keeps tunnels local; `0.0.0.0` exposes them on all interfaces (use when running `tw` inside a container)
 
 ### Analytics Settings
 

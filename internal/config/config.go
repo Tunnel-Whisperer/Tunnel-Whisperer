@@ -67,6 +67,9 @@ type ClientConfig struct {
 	SSHUser       string   `yaml:"ssh_user"`
 	ServerSSHPort int      `yaml:"server_ssh_port"`
 	XrayPort      int      `yaml:"xray_port,omitempty"`
+	// ListenAddress is the local interface forwarded tunnels bind to.
+	// Defaults to 127.0.0.1; set to 0.0.0.0 to expose tunnels (e.g. in containers).
+	ListenAddress string   `yaml:"listen_address,omitempty"`
 	Tunnels       []Tunnel `yaml:"tunnels"`
 }
 
@@ -120,6 +123,7 @@ func Default() *Config {
 			SSHUser:       "tunnel",
 			ServerSSHPort: 2222,
 			XrayPort:      54001,
+			ListenAddress: "127.0.0.1",
 		},
 	}
 }

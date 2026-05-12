@@ -217,6 +217,7 @@ async function saveClientSettings() {
       ssh_user: $('#cli-ssh-user').value.trim(),
       server_ssh_port: parseInt($('#cli-server-ssh-port').value) || 0,
       xray_port: parseInt($('#cli-xray-port').value) || 0,
+      listen_address: $('#cli-listen-address').value.trim(),
     });
     showResult('client', true, 'Client settings saved. Reconnect to apply.');
     reloadConfigYAML();

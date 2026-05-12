@@ -118,6 +118,7 @@ func (m *clientManager) Start(o *Ops, progress ProgressFunc) error {
 		RemoteAddr: fmt.Sprintf("127.0.0.1:%d", xrayPort),
 		User:       cfg.Client.SSHUser,
 		KeyPath:    privPath,
+		ListenAddr: cfg.Client.ListenAddress,
 		Mappings:   mappings,
 		Stats:      o.stats,
 	}

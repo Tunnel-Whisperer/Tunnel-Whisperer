@@ -804,6 +804,7 @@ func (s *Server) apiSetClientSettings(w http.ResponseWriter, r *http.Request) {
 		SSHUser       string `json:"ssh_user"`
 		ServerSSHPort int    `json:"server_ssh_port"`
 		XrayPort      int    `json:"xray_port"`
+		ListenAddress string `json:"listen_address"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -814,6 +815,7 @@ func (s *Server) apiSetClientSettings(w http.ResponseWriter, r *http.Request) {
 		SSHUser:       req.SSHUser,
 		ServerSSHPort: req.ServerSSHPort,
 		XrayPort:      req.XrayPort,
+		ListenAddress: req.ListenAddress,
 	}); err != nil {
 		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
