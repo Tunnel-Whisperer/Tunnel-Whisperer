@@ -793,6 +793,24 @@ func (o *Ops) GetUserConfigBundle(name string) ([]byte, error) {
 		}
 	}
 
+	// Per-server client cert + key: presented to the relay's mTLS gate.
+	for _, f := range []struct{ name, path string }{
+		{"client.crt", config.ClientCertPath()},
+		{"client.key", config.ClientKeyPath()},
+	} {
+		data, err := os.ReadFile(f.path)
+		if err != nil {
+			return nil, fmt.Errorf("reading %s for bundle: %w", f.name, err)
+		}
+		w, err := zw.Create(f.name)
+		if err != nil {
+			return nil, fmt.Errorf("adding %s to bundle: %w", f.name, err)
+		}
+		if _, err := w.Write(data); err != nil {
+			return nil, fmt.Errorf("writing %s to bundle: %w", f.name, err)
+		}
+	}
+
 	if err := zw.Close(); err != nil {
 		return nil, err
 	}
@@ -871,6 +889,10 @@ func removeAuthorizedKey(pubKey []byte) error {
 // SSH connection, and passes it to fn. The tunnel and connection are torn
 // down automatically when fn returns.
 func withRelaySSH(cfg *config.Config, fn func(client *gossh.Client) error) error {
+	// Present the server's client cert so the relay's mTLS gate admits this
+	// management tunnel (covers TestRelay, the SSH terminal, enrollment, and
+	// user add/remove — every withRelaySSH caller).
+	applyClientCertPaths(&cfg.Xray)
 	xrayInstance, err := twxray.New(cfg.Xray)
 	if err != nil {
 		return fmt.Errorf("initializing Xray: %w", err)

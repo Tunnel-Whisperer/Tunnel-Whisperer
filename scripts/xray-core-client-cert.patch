@@ -1,0 +1,64 @@
+--- a/transport/internet/tls/config.go
++++ b/transport/internet/tls/config.go
+@@ -412,6 +412,25 @@
+ 		config.GetCertificate = getNewGetCertificateFunc(c.BuildCertificates(), c.RejectUnknownSni)
+ 	}
+ 
++	// tw patch: present a client certificate for mutual-TLS on OUTBOUND
++	// connections. Upstream only wires configured certificates into
++	// GetCertificate (the server-side selection callback); it never sets the
++	// client-side fields, so an Xray client never presents a cert and a relay
++	// doing `client_auth require_and_verify` rejects the handshake. Set both
++	// Certificates (so the standard tls.Client path works AND copyConfig() can
++	// carry them to the uTLS/fingerprinted path) and GetClientCertificate.
++	// Client-only; harmless server-side (GetCertificate takes precedence).
++	if built := c.BuildCertificates(); len(built) > 0 {
++		clientCerts := make([]tls.Certificate, 0, len(built))
++		for _, bc := range built {
++			clientCerts = append(clientCerts, *bc)
++		}
++		config.Certificates = clientCerts
++		config.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
++			return &clientCerts[0], nil
++		}
++	}
++
+ 	if sn := c.parseServerName(); len(sn) > 0 {
+ 		config.ServerName = sn
+ 	}
+--- a/transport/internet/tls/tls.go
++++ b/transport/internet/tls/tls.go
+@@ -131,7 +131,7 @@
+ }
+ 
+ func copyConfig(c *tls.Config) *utls.Config {
+-	return &utls.Config{
++	out := &utls.Config{
+ 		Rand:                           c.Rand,
+ 		RootCAs:                        c.RootCAs,
+ 		ServerName:                     c.ServerName,
+@@ -140,6 +140,24 @@
+ 		KeyLogWriter:                   c.KeyLogWriter,
+ 		EncryptedClientHelloConfigList: c.EncryptedClientHelloConfigList,
+ 	}
++	// tw patch: carry client certificates into the uTLS config so mutual-TLS
++	// works on the uTLS (fingerprinted) path. Upstream copyConfig drops the
++	// cert fields, so a relay using `client_auth require_and_verify` rejects
++	// the handshake ("client didn't provide a certificate").
++	for _, cert := range c.Certificates {
++		out.Certificates = append(out.Certificates, utls.Certificate{
++			Certificate: cert.Certificate,
++			PrivateKey:  cert.PrivateKey,
++			Leaf:        cert.Leaf,
++		})
++	}
++	if len(out.Certificates) > 0 {
++		certs := out.Certificates
++		out.GetClientCertificate = func(*utls.CertificateRequestInfo) (*utls.Certificate, error) {
++			return &certs[0], nil
++		}
++	}
++	return out
+ }
+ 
+ func init() {

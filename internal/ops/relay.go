@@ -3,6 +3,7 @@ package ops
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tunnelwhisperer/tw/internal/config"
+	"github.com/tunnelwhisperer/tw/internal/relay/caddy"
 	"github.com/tunnelwhisperer/tw/internal/relay/terraform"
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -201,15 +203,46 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 		return fmt.Errorf("reading public key: %w", err)
 	}
 
+	caCertPEM, err := os.ReadFile(config.CACertPath())
+	if err != nil {
+		progress(ProgressEvent{Step: 7, Total: 9, Label: "Provisioning", Status: "failed", Error: err.Error()})
+		return fmt.Errorf("reading CA certificate (run key init first): %w", err)
+	}
+	serverID := cfg.Xray.RelayHost
+	if serverID == "" {
+		serverID = "tw-server"
+	}
+	relayPath := cfg.Xray.Path
+	if relayPath == "" {
+		relayPath = "/tw"
+	}
+	caddyfile, err := caddy.RenderCaddyfile(caddy.Config{
+		Domain: cfg.Xray.RelayHost,
+		Servers: []caddy.Server{{
+			ID:         serverID,
+			Path:       relayPath,
+			CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", serverID),
+			Upstream:   "h2c://127.0.0.1:10000",
+			Role:       "server",
+		}},
+	})
+	if err != nil {
+		progress(ProgressEvent{Step: 7, Total: 9, Label: "Provisioning", Status: "failed", Error: err.Error()})
+		return fmt.Errorf("rendering relay Caddyfile: %w", err)
+	}
+
 	tfCfg := terraform.Config{
-		Domain:    cfg.Xray.RelayHost,
-		UUID:      cfg.Xray.UUID,
-		XrayPath:  cfg.Xray.Path,
-		SSHUser:   cfg.Server.RelaySSHUser,
-		PublicKey: strings.TrimSpace(string(pubKeyBytes)),
-		Provider:  req.ProviderKey,
-		SSHOpen:   req.SSHOpen,
-		Name:      req.Name,
+		Domain:       cfg.Xray.RelayHost,
+		UUID:         cfg.Xray.UUID,
+		XrayPath:     relayPath,
+		SSHUser:      cfg.Server.RelaySSHUser,
+		PublicKey:    strings.TrimSpace(string(pubKeyBytes)),
+		Provider:     req.ProviderKey,
+		SSHOpen:      req.SSHOpen,
+		Name:         req.Name,
+		ServerID:     serverID,
+		CACertB64:    base64.StdEncoding.EncodeToString(caCertPEM),
+		CaddyfileB64: base64.StdEncoding.EncodeToString([]byte(caddyfile)),
 	}
 
 	// Load saved TLS certificates for reuse (avoids Let's Encrypt rate limits).
@@ -340,13 +373,42 @@ func (o *Ops) GenerateManualInstallScript(domain string, sshOpen bool) (string, 
 		return "", fmt.Errorf("reading public key: %w", err)
 	}
 
+	caCertPEM, err := os.ReadFile(config.CACertPath())
+	if err != nil {
+		return "", fmt.Errorf("reading CA certificate (run key init first): %w", err)
+	}
+	serverID := cfg.Xray.RelayHost
+	if serverID == "" {
+		serverID = "tw-server"
+	}
+	relayPath := cfg.Xray.Path
+	if relayPath == "" {
+		relayPath = "/tw"
+	}
+	caddyfile, err := caddy.RenderCaddyfile(caddy.Config{
+		Domain: cfg.Xray.RelayHost,
+		Servers: []caddy.Server{{
+			ID:         serverID,
+			Path:       relayPath,
+			CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", serverID),
+			Upstream:   "h2c://127.0.0.1:10000",
+			Role:       "server",
+		}},
+	})
+	if err != nil {
+		return "", fmt.Errorf("rendering relay Caddyfile: %w", err)
+	}
+
 	tfCfg := terraform.Config{
-		Domain:    cfg.Xray.RelayHost,
-		UUID:      cfg.Xray.UUID,
-		XrayPath:  cfg.Xray.Path,
-		SSHUser:   cfg.Server.RelaySSHUser,
-		PublicKey: strings.TrimSpace(string(pubKeyBytes)),
-		SSHOpen:   sshOpen,
+		Domain:       cfg.Xray.RelayHost,
+		UUID:         cfg.Xray.UUID,
+		XrayPath:     relayPath,
+		SSHUser:      cfg.Server.RelaySSHUser,
+		PublicKey:    strings.TrimSpace(string(pubKeyBytes)),
+		SSHOpen:      sshOpen,
+		ServerID:     serverID,
+		CACertB64:    base64.StdEncoding.EncodeToString(caCertPEM),
+		CaddyfileB64: base64.StdEncoding.EncodeToString([]byte(caddyfile)),
 	}
 
 	return terraform.GenerateInstallScript(tfCfg)
@@ -520,16 +582,37 @@ func (o *Ops) TestRelay(progress ProgressFunc) {
 	}
 	progress(ProgressEvent{Step: 1, Total: 3, Label: "DNS", Status: "completed", Message: strings.Join(addrs, ", ")})
 
-	// 2. HTTPS (Caddy).
+	// 2. HTTPS (Caddy). The relay enforces mutual TLS (client_auth), so present
+	// this server's client cert during the handshake. A bare "certificate
+	// required" error (when we have no cert to present) still proves Caddy is up
+	// and the mTLS gate is active.
 	progress(ProgressEvent{Step: 2, Total: 3, Label: "HTTPS (Caddy)", Status: "running"})
-	httpClient := &http.Client{Timeout: 10 * time.Second}
+	tlsCfg := &tls.Config{}
+	presentedCert := false
+	if cert, certErr := tls.LoadX509KeyPair(config.ClientCertPath(), config.ClientKeyPath()); certErr == nil {
+		tlsCfg.Certificates = []tls.Certificate{cert}
+		presentedCert = true
+	}
+	httpClient := &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: tlsCfg},
+	}
 	resp, err := httpClient.Get("https://" + domain)
-	if err != nil {
+	switch {
+	case err == nil:
+		resp.Body.Close()
+		msg := fmt.Sprintf("HTTP %d", resp.StatusCode)
+		if presentedCert {
+			msg += " (mTLS client cert accepted)"
+		}
+		progress(ProgressEvent{Step: 2, Total: 3, Label: "HTTPS (Caddy)", Status: "completed", Message: msg})
+	case !presentedCert && strings.Contains(err.Error(), "certificate required"):
+		progress(ProgressEvent{Step: 2, Total: 3, Label: "HTTPS (Caddy)", Status: "completed",
+			Message: "Caddy up; mTLS gate active (no client cert available to present)"})
+	default:
 		progress(ProgressEvent{Step: 2, Total: 3, Label: "HTTPS (Caddy)", Status: "failed", Error: err.Error()})
 		return
 	}
-	resp.Body.Close()
-	progress(ProgressEvent{Step: 2, Total: 3, Label: "HTTPS (Caddy)", Status: "completed", Message: fmt.Sprintf("HTTP %d", resp.StatusCode)})
 
 	// 3. Xray + SSH through tunnel.
 	progress(ProgressEvent{Step: 3, Total: 3, Label: "Xray + SSH", Status: "running"})
@@ -554,6 +637,57 @@ func (o *Ops) TestRelay(progress ProgressFunc) {
 func (o *Ops) RelaySSH(fn func(client *gossh.Client) error) error {
 	cfg := o.Config()
 	return withRelaySSH(cfg, fn)
+}
+
+// runRelayCmd runs a single command over an established relay SSH client.
+func runRelayCmd(client *gossh.Client, cmd string) error {
+	session, err := client.NewSession()
+	if err != nil {
+		return fmt.Errorf("opening ssh session: %w", err)
+	}
+	defer session.Close()
+	if out, err := session.CombinedOutput(cmd); err != nil {
+		return fmt.Errorf("relay command %q failed: %w (output: %s)", cmd, err, string(out))
+	}
+	return nil
+}
+
+// enrollServerOnRelay installs each server's CA into the relay trust pool and
+// (re)writes the relay Caddyfile from the full server list, then reloads Caddy
+// with zero downtime. In v1 `servers` contains exactly this server; the
+// multi-tenant branch passes the full list. This is the single seam the admin
+// profile will reuse to enroll servers without recreating the relay.
+//
+// caCerts maps a server ID to its CA certificate PEM; each is written to
+// /etc/caddy/ca/<id>.crt (which the rendered Caddyfile's trust_pool references).
+func (o *Ops) enrollServerOnRelay(domain string, servers []caddy.Server, caCerts map[string][]byte) error {
+	caddyfile, err := caddy.RenderCaddyfile(caddy.Config{Domain: domain, Servers: servers})
+	if err != nil {
+		return fmt.Errorf("rendering Caddyfile: %w", err)
+	}
+	return o.RelaySSH(func(client *gossh.Client) error {
+		if err := runRelayCmd(client, "sudo mkdir -p /etc/caddy/ca"); err != nil {
+			return err
+		}
+		for id, pem := range caCerts {
+			b64 := base64.StdEncoding.EncodeToString(pem)
+			cmd := fmt.Sprintf("echo %s | base64 -d | sudo tee /etc/caddy/ca/%s.crt >/dev/null", b64, id)
+			if err := runRelayCmd(client, cmd); err != nil {
+				return fmt.Errorf("writing CA for %s: %w", id, err)
+			}
+		}
+		b64 := base64.StdEncoding.EncodeToString([]byte(caddyfile))
+		if err := runRelayCmd(client, fmt.Sprintf("echo %s | base64 -d | sudo tee /etc/caddy/Caddyfile >/dev/null", b64)); err != nil {
+			return fmt.Errorf("writing Caddyfile: %w", err)
+		}
+		if err := runRelayCmd(client, "sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile"); err != nil {
+			return fmt.Errorf("relay Caddyfile failed validation (not reloaded): %w", err)
+		}
+		if err := runRelayCmd(client, "sudo systemctl reload caddy"); err != nil {
+			return fmt.Errorf("reloading caddy: %w", err)
+		}
+		return nil
+	})
 }
 
 // DirectRelaySSH connects to the relay over plain SSH (port 22) without an

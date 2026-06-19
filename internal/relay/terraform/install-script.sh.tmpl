@@ -43,18 +43,9 @@ curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq caddy
 
-cat > /etc/caddy/Caddyfile <<'CADDYEOF'
-{{.Domain}} {
-    reverse_proxy {{.XrayPath}}* h2c://127.0.0.1:10000 {
-        flush_interval -1
-        transport http {
-            versions h2c 1.1
-            keepalive 120s
-            keepalive_idle_conns 32
-        }
-    }
-}
-CADDYEOF
+mkdir -p /etc/caddy/ca
+echo '{{.CACertB64}}' | base64 -d > /etc/caddy/ca/{{.ServerID}}.crt
+echo '{{.CaddyfileB64}}' | base64 -d > /etc/caddy/Caddyfile
 
 # ── Install Xray (pinned version for reproducibility) ──────
 echo "[4/7] Installing Xray {{.XrayVersion}}..."

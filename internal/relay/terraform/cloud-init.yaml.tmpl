@@ -72,6 +72,16 @@ write_files:
         }
       }
 
+  - path: /etc/caddy/ca/{{.ServerID}}.crt
+    permissions: "0644"
+    encoding: b64
+    content: {{.CACertB64}}
+
+  - path: /tmp/Caddyfile.tw
+    permissions: "0644"
+    encoding: b64
+    content: {{.CaddyfileB64}}
+
   - path: /etc/ssh/sshd_config.d/99-tw-localhost.conf
     permissions: "0644"
     content: |
@@ -93,20 +103,9 @@ runcmd:
   - apt-get update
   - DEBIAN_FRONTEND=noninteractive apt-get install -y caddy
 
-  # Write Caddyfile after installation to avoid dpkg conffile prompt
-  - |
-    cat > /etc/caddy/Caddyfile <<'CADDYEOF'
-    {{.Domain}} {
-        reverse_proxy {{.XrayPath}}* h2c://127.0.0.1:10000 {
-            flush_interval -1
-            transport http {
-                versions h2c 1.1
-                keepalive 120s
-                keepalive_idle_conns 32
-            }
-        }
-    }
-    CADDYEOF
+  # Install the rendered Caddyfile after Caddy is installed (avoids dpkg conffile prompt)
+  - cp /tmp/Caddyfile.tw /etc/caddy/Caddyfile
+  - rm -f /tmp/Caddyfile.tw
 
   # Install Xray (pinned version for reproducibility)
   - bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --version {{.XrayVersion}}
@@ -139,7 +138,7 @@ runcmd:
     nohup bash -c '
       for i in $(seq 1 8); do
         sleep 120
-        if curl -sSo /dev/null --max-time 5 https://localhost 2>/dev/null; then exit 0; fi
+        if find /var/lib/caddy/.local/share/caddy/certificates -name "*.crt" 2>/dev/null | grep -q .; then exit 0; fi
         systemctl restart caddy 2>/dev/null || true
       done
     ' &>/dev/null &

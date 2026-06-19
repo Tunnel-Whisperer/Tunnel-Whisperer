@@ -41,6 +41,9 @@ type Config struct {
 	XrayVersion   string // populated automatically from the pinned constant
 	SSHOpen       bool   // when true, SSH listens on 0.0.0.0 and port 22 is allowed in firewall
 	Name          string // cloud resource display name (e.g., "relay-hj38")
+	ServerID      string // CA/cert common name; names the CA file on the relay
+	CACertB64     string // base64 of the server's CA certificate PEM (written to /etc/caddy/ca)
+	CaddyfileB64  string // base64 of the fully-rendered relay Caddyfile
 }
 
 var providerTemplates = map[string]string{

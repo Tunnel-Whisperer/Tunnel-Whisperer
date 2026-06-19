@@ -3,3 +3,6 @@
 bin/
 site/
 .ssh-over-xray
+CLAUDE.md
+.xray-core-patched/
+.vscode/

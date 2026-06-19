@@ -24,6 +24,8 @@ func (o *Ops) UploadClientConfig(zipData []byte) error {
 		"config.yaml":    true,
 		"id_ed25519":     true,
 		"id_ed25519.pub": true,
+		"client.crt":     true,
+		"client.key":     true,
 	}
 
 	dir := config.Dir()
@@ -53,7 +55,7 @@ func (o *Ops) UploadClientConfig(zipData []byte) error {
 		}
 
 		perm := os.FileMode(0644)
-		if name == "id_ed25519" {
+		if name == "id_ed25519" || name == "client.key" {
 			perm = 0600
 		}
 

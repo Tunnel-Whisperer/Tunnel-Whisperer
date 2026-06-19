@@ -1,15 +1,24 @@
 {{.Domain}} {
-    # Public OAuth endpoint — unauthenticated
-    handle /oauth/* {
-        reverse_proxy {{.OAuthUpstream}}
+    tls {
+        client_auth {
+            mode require_and_verify
+            trust_pool file{{range .Servers}} {{.CACertPath}}{{end}}
+        }
+        # TLS 1.3 only: a single arg to `protocols` sets the minimum, pinning 1.3.
+        protocols tls1.3
     }
-
-    # Protected endpoint — requires valid JWT
-    handle /tunnel/* {
-        # Validate JWT against the OAuth provider
-        # caddy-security or caddy-jwt plugin required
-        reverse_proxy {{.ProtectedUpstream}}
+{{range .Servers}}
+    @{{.ID}} path {{.Path}}*
+    handle @{{.ID}} {
+        reverse_proxy {{.Upstream}} {
+            flush_interval -1
+            stream_close_delay {{$.StreamCloseDelay}}
+            transport http {
+                versions h2c 1.1
+                keepalive 120s
+                keepalive_idle_conns 32
+            }
+        }
     }
-
-    # TLS is automatically managed by Caddy
+{{end}}
 }

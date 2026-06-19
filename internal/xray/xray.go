@@ -38,7 +38,21 @@ type xrayLog struct {
 
 // vlessOutbound returns the VLESS outbound config block (shared by server and client).
 // If proxyURL is non-empty, adds proxySettings to route through the proxy outbound.
+// When ClientCertPath/ClientKeyPath are set, presents an X.509 client certificate
+// during the TLS handshake so the relay's Caddy client_auth gate admits us.
 func vlessOutbound(cfg config.XrayConfig, proxyURL string) map[string]interface{} {
+	tlsSettings := map[string]interface{}{
+		"serverName": cfg.RelayHost,
+	}
+	if cfg.ClientCertPath != "" && cfg.ClientKeyPath != "" {
+		tlsSettings["certificates"] = []map[string]interface{}{
+			{
+				"certificateFile": cfg.ClientCertPath,
+				"keyFile":         cfg.ClientKeyPath,
+				"usage":           "encipherment",
+			},
+		}
+	}
 	out := map[string]interface{}{
 		"tag":      "to-relay",
 		"protocol": "vless",
@@ -57,11 +71,9 @@ func vlessOutbound(cfg config.XrayConfig, proxyURL string) map[string]interface{
 			},
 		},
 		"streamSettings": map[string]interface{}{
-			"network":  "xhttp",
-			"security": "tls",
-			"tlsSettings": map[string]interface{}{
-				"serverName": cfg.RelayHost,
-			},
+			"network":     "xhttp",
+			"security":    "tls",
+			"tlsSettings": tlsSettings,
 			"xhttpSettings": map[string]interface{}{
 				"path": cfg.Path,
 				"mode": "stream-one",

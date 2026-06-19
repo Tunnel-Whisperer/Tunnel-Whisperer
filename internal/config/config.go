@@ -13,10 +13,10 @@ import (
 
 // Config holds all Tunnel Whisperer settings.
 type Config struct {
-	Mode      string       `yaml:"mode,omitempty"`       // "server" or "client"
-	LogLevel  string       `yaml:"log_level,omitempty"`  // debug, info, warn, error
-	LogFormat string       `yaml:"log_format,omitempty"` // "text" (default) or "json"
-	Proxy    string       `yaml:"proxy,omitempty"`     // e.g. "socks5://user:pass@host:port" or "http://host:port"
+	Mode      string          `yaml:"mode,omitempty"`       // "server" or "client"
+	LogLevel  string          `yaml:"log_level,omitempty"`  // debug, info, warn, error
+	LogFormat string          `yaml:"log_format,omitempty"` // "text" (default) or "json"
+	Proxy     string          `yaml:"proxy,omitempty"`      // e.g. "socks5://user:pass@host:port" or "http://host:port"
 	Xray      XrayConfig      `yaml:"xray"`
 	Server    ServerConfig    `yaml:"server"`
 	Client    ClientConfig    `yaml:"client"`
@@ -31,10 +31,12 @@ type AnalyticsConfig struct {
 
 // XrayConfig is the shared transport layer (both server and client).
 type XrayConfig struct {
-	UUID      string `yaml:"uuid"`
-	RelayHost string `yaml:"relay_host"`
-	RelayPort int    `yaml:"relay_port"`
-	Path      string `yaml:"path"`
+	UUID           string `yaml:"uuid"`
+	RelayHost      string `yaml:"relay_host"`
+	RelayPort      int    `yaml:"relay_port"`
+	Path           string `yaml:"path"`
+	ClientCertPath string `yaml:"client_cert_path,omitempty"` // X.509 client cert presented to relay mTLS gate
+	ClientKeyPath  string `yaml:"client_key_path,omitempty"`  // matching private key
 }
 
 // ServerConfig holds settings only used by `tw serve`.
@@ -64,9 +66,9 @@ type Application struct {
 
 // ClientConfig holds settings only used by `tw connect`.
 type ClientConfig struct {
-	SSHUser       string   `yaml:"ssh_user"`
-	ServerSSHPort int      `yaml:"server_ssh_port"`
-	XrayPort      int      `yaml:"xray_port,omitempty"`
+	SSHUser       string `yaml:"ssh_user"`
+	ServerSSHPort int    `yaml:"server_ssh_port"`
+	XrayPort      int    `yaml:"xray_port,omitempty"`
 	// ListenAddress is the local interface forwarded tunnels bind to.
 	// Defaults to 127.0.0.1; set to 0.0.0.0 to expose tunnels (e.g. in containers).
 	ListenAddress string   `yaml:"listen_address,omitempty"`
@@ -168,6 +170,19 @@ func HostKeyDir() string {
 func AuthorizedKeysPath() string {
 	return filepath.Join(Dir(), "authorized_keys")
 }
+
+// CACertPath is the server's CA certificate (PEM). Shared with the relay.
+func CACertPath() string { return filepath.Join(Dir(), "ca.crt") }
+
+// CAKeyPath is the server's CA private key (PEM). Never leaves the server.
+func CAKeyPath() string { return filepath.Join(Dir(), "ca.key") }
+
+// ClientCertPath is the per-server client certificate (PEM) presented to the
+// relay's mTLS gate. Shared by all of this server's clients.
+func ClientCertPath() string { return filepath.Join(Dir(), "client.crt") }
+
+// ClientKeyPath is the private key for ClientCertPath.
+func ClientKeyPath() string { return filepath.Join(Dir(), "client.key") }
 
 // Load reads the YAML config file from the platform-specific path.
 // If the file does not exist, it returns the default configuration.

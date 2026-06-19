@@ -112,6 +112,7 @@ func (m *serverManager) Start(o *Ops, progress ProgressFunc) error {
 		}
 
 		progress(ProgressEvent{Step: step, Total: total, Label: "Xray tunnel", Status: "running"})
+		applyClientCertPaths(&cfg.Xray)
 		xrayInstance, err := twxray.New(cfg.Xray)
 		if err != nil {
 			return fail(step, total, "Xray tunnel", err)

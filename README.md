@@ -88,8 +88,10 @@ New to Tunnel Whisperer? Watch the step-by-step video walkthrough:
 Requires **Go 1.25+** and **Terraform** (for relay provisioning).
 
 ```bash
-# Build
-make build            # or: go build -o bin/tw ./cmd/tw
+# Build  (first run also generates the patched xray-core dependency)
+make build
+# Raw build: generate the patched dependency once, then build:
+#   make patch-xray && go build -o bin/tw ./cmd/tw
 
 # Server side
 tw create relay-server    # 8-step wizard: provision relay VM
