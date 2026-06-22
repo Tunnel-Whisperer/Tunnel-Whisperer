@@ -45,11 +45,12 @@ config is set to `client`, and vice versa.
 | Flag | Values | Default | Description |
 |---|---|---|---|
 | `--log-level` | `debug`, `info`, `warn`, `error` | `info` | Set the log verbosity level |
+| `--log-format` | `text`, `json` | `text` | Set the log output format. `json` emits OpenTelemetry semantic-convention attribute names. |
 | `--version`, `-v` | | | Print the version and exit |
 
-The `--log-level` flag is **persisted to the config file** when specified
-explicitly. On subsequent runs without the flag, the saved value is used
-automatically.
+The `--log-level` and `--log-format` flags are **persisted to the config file**
+when specified explicitly. On subsequent runs without the flag, the saved value
+is used automatically.
 
 ```bash
 # Set log level for this run and persist it

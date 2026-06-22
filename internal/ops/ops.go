@@ -1,3 +1,7 @@
+// Package ops holds the business logic shared by the CLI and dashboard
+// front-ends. It owns the server and client lifecycle state machines, relay
+// provisioning, and user/key/certificate management; configuration mutators
+// persist to disk and take effect on the next start or restart.
 package ops
 
 import (

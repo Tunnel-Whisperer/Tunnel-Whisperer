@@ -9,6 +9,12 @@ The server admin will provide you with a zip file containing:
 - `config.yaml` — client configuration (relay address, tunnel mappings, SSH user)
 - `id_ed25519` — your SSH private key
 - `id_ed25519.pub` — your SSH public key
+- `client.crt` — the server's client certificate, presented to the relay's mutual-TLS gate
+- `client.key` — the private key for `client.crt`
+
+All five files must be extracted into the config directory — `client.crt`/`client.key`
+are required for the relay to admit your connection. They are the same for every
+user of this server; your individual access is enforced by the per-user SSH key.
 
 ## 2. Upload Config
 

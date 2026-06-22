@@ -7,7 +7,7 @@ The system layers multiple protocols to achieve secure, firewall-transparent tun
 ```mermaid
 graph TB
     subgraph "Protocol Stack (outside → inside)"
-        TLS["TLS 1.3<br/><small>Caddy terminates on relay :443</small>"]
+        TLS["TLS 1.3 + mutual auth<br/><small>Caddy terminates on relay :443; client_auth require_and_verify</small>"]
         HTTP["XHTTP Transport<br/><small>Traffic split into standard HTTP requests</small>"]
         VLESS["VLESS Protocol<br/><small>UUID-authenticated proxy layer</small>"]
         SSH["SSH Session<br/><small>End-to-end encrypted, key-based auth</small>"]
@@ -36,7 +36,7 @@ graph LR
     end
 
     subgraph "Relay VM"
-        CADDY[Caddy<br/>TLS + reverse proxy]
+        CADDY[Caddy<br/>mTLS + reverse proxy]
         XRAY_R[Xray<br/>VLESS inbound]
         OSSH[OpenSSH<br/>127.0.0.1 only]
     end
@@ -80,7 +80,9 @@ graph LR
 | Firewalls block non-HTTPS traffic | Encapsulate all traffic in TLS on port 443 | Xray (VLESS + XHTTP) |
 | Server and client are behind NAT | All connections are outbound-only; relay is the rendezvous point | SSH reverse port forwarding |
 | Relay must never see plaintext | End-to-end encryption between client and server | SSH session layer |
+| Relay must admit only trusted servers | Mutual-TLS gate verifying an X.509 client cert against a per-server CA at the handshake | Caddy `client_auth require_and_verify` + `internal/pki` |
 | TLS certificates for the relay | Automatic issuance and renewal | Caddy (ACME / Let's Encrypt) |
+| Per-server relay admission | One CA-issued client cert per server, presented by Xray (`usage: "client-cert"`) | patched xray-core + `internal/pki` |
 | Per-user access control | Public key auth with port restrictions | SSH `authorized_keys` + `permitopen` |
 | Infrastructure provisioning | Interactive wizard generates Terraform + cloud-init | Terraform (Hetzner, DigitalOcean, AWS) |
 | Cross-platform operation | Single binary for both server and client | Go (Linux + Windows + macOS) |

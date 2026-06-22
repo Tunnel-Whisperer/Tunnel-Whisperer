@@ -61,12 +61,13 @@ Client Network                   Public Cloud                    Server Network
                              +------------------+
 ```
 
-1. **Transport:** Xray VLESS + XHTTP + TLS on port 443 — indistinguishable from regular HTTPS
-2. **Relay:** Lightweight cloud VM (Hetzner, DigitalOcean, or AWS) with Caddy (TLS/ACME) and Xray. SSH on localhost only.
+1. **Transport:** Xray VLESS + XHTTP + mutual TLS on port 443 — indistinguishable from regular HTTPS
+2. **Relay:** Lightweight cloud VM (Hetzner, DigitalOcean, or AWS) with Caddy (TLS/ACME) and Xray. Caddy enforces mutual TLS (`client_auth require_and_verify`) against a per-server CA, so only certificate-bearing servers are admitted. SSH on localhost only.
 3. **Tunnel:** Embedded SSH server (Go `x/crypto/ssh`) handles port forwarding, encryption, and per-user auth
 
 **Key properties:**
 - Zero inbound ports — all connections outbound to :443
+- Mutual-TLS relay admission — a per-server X.509 client certificate is required at the TLS handshake
 - End-to-end SSH encryption — the relay never sees plaintext
 - Per-user port lockdown via `permitopen` in `authorized_keys`
 - Automatic reconnection with exponential backoff (2s → 30s max)
@@ -143,12 +144,13 @@ sudo tw service start     # start the service
 
 | Layer | Standard | Purpose |
 | ----- | -------- | ------- |
-| TLS 1.3 | Industry standard | Encrypts all data in transit |
-| VLESS + XHTTP | Tunnel protocol | Authenticates users, obfuscates traffic patterns |
+| TLS 1.3 + mTLS | Industry standard + X.509 | Encrypts all data in transit; admits only certificate-bearing connections at the relay |
+| VLESS + XHTTP | Tunnel protocol | Tags users, obfuscates traffic patterns (defense-in-depth) |
 | Ed25519 SSH | Elliptic curve cryptography | Authenticates endpoints, restricts per-user access |
 
+- **Mutual-TLS admission** — a per-server CA-issued client certificate gates the relay at the TLS handshake
 - **Zero plaintext** leaves the local network
-- **No credentials** stored on the relay — compromise does not expose user data
+- **No signing keys** on the relay — it holds only public CA certificates; compromise does not expose user data
 - **Least privilege** — each user can only forward to explicitly allowed ports
 - **Dynamic keys** — add/revoke users without restarting the server
 

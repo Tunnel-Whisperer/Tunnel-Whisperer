@@ -1,3 +1,7 @@
+// Package cli defines the Cobra command tree for the tw binary, with one file
+// per command. The commands are thin front-ends that call into internal/ops,
+// and many are interactive wizards. root.go also enforces the server/client
+// mode gate via requireMode.
 package cli
 
 import (

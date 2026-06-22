@@ -1,3 +1,5 @@
+// Package version exposes the binary's version string, injected at build time
+// via -ldflags and defaulting to "dev" for local builds.
 package version
 
 // Version is set at build time via -ldflags:

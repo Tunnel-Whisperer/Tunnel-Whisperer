@@ -52,15 +52,16 @@ graph TB
 The server brings up four internal services:
 
 - **SSH Server** -- an embedded SSH server (Go `golang.org/x/crypto/ssh`) that listens on a configurable port (default `:2222`), supports `direct-tcpip` port forwarding, reads `authorized_keys` dynamically, and enforces `permitopen` restrictions per client key
-- **Xray Instance** -- in-process xray-core creating a VLESS+XHTTP+TLS tunnel to the relay; dokodemo-door inbound on `sshPort+1` forwards to the relay's SSH port
+- **Xray Instance** -- in-process xray-core creating a VLESS+XHTTP+mTLS tunnel to the relay; presents the per-server X.509 client certificate (`usage: "client-cert"`) so the relay's Caddy `client_auth` gate admits it; dokodemo-door inbound on `sshPort+1` forwards to the relay's SSH port
 - **Reverse Tunnel** -- SSH reverse port forward (`-R`) through Xray, exposing the server's SSH on the relay
+- **Per-server CA** -- a small certificate authority (`internal/pki`) generated on first run that issues the client certificate presented at the relay; the CA public certificate is shipped to the relay's trust pool, the signing key never leaves the server
 - **API Server** -- a gRPC service exposing status and management operations
 
 ### Relay
 
 The relay is a lightweight cloud VM provisioned via `tw create relay-server` or the dashboard wizard. It runs:
 
-- **Caddy** -- reverse proxy on `:443`, automatic TLS via Let's Encrypt, forwards `/tw*` to Xray
+- **Caddy** -- reverse proxy on `:443`, automatic server TLS via Let's Encrypt, **mutual TLS** (`client_auth require_and_verify`, TLS 1.3 only) verifying client certificates against a per-server CA trust pool, then forwards `/tw*` to Xray. This is the relay's admission gate — see [Relay Authentication](../security/relay-authentication.md)
 - **Xray** -- VLESS inbound on `127.0.0.1:10000` with XHTTP transport and freedom outbound, accepts multiple client UUIDs
 - **SSH** -- OpenSSH on `127.0.0.1:22` only, accessible exclusively through the Xray tunnel; password authentication disabled
 - **Firewall (ufw)** -- only ports 80 and 443 open
@@ -139,7 +140,7 @@ tw/
 │   └── tw/                             # binary entry point (main.go)
 ├── internal/
 │   ├── cli/                            # cobra commands
-│   │   ├── root.go                     # root command, --log-level flag, requireMode()
+│   │   ├── root.go                     # root command, --log-level/--log-format flags, requireMode()
 │   │   ├── serve.go                    # tw serve
 │   │   ├── connect.go                  # tw connect
 │   │   ├── create_relay.go             # tw create relay-server (wizard)
@@ -159,9 +160,12 @@ tw/
 │   │   └── completion.go              # shell completion
 │   ├── config/                         # YAML config, platform-specific paths
 │   │   └── config.go                   # Load/Save, Dir/RelayDir/UsersDir, FileHash()
+│   ├── pki/                            # per-server CA + client cert issuance (ECDSA P-256)
+│   │   └── pki.go                      # GenerateCA(), IssueClientCert()
+│   ├── auth/                           # auth primitives (Credentials, Claims, JWT provider)
 │   ├── ops/                            # business logic shared by CLI + dashboard
 │   │   ├── ops.go                      # Ops struct, config change detection, lifecycle
-│   │   ├── keys.go                     # SSH key management
+│   │   ├── keys.go                     # SSH key + CA/client-cert management (ensureCerts, applyClientCertPaths)
 │   │   ├── setup.go                    # first-run setup
 │   │   ├── cloud.go                    # cloud provider credential testing
 │   │   ├── user.go                     # user CRUD, online tracking, relay config updates
@@ -188,6 +192,9 @@ tw/
 │   ├── xray/                           # in-process xray-core
 │   │   └── xray.go                     # server + client config builders, instance management
 │   ├── relay/
+│   │   ├── caddy/                      # relay Caddyfile renderer (mTLS gate + per-server routes)
+│   │   │   ├── config.go               # RenderCaddyfile(), Server/Config types
+│   │   │   └── Caddyfile.tmpl          # client_auth require_and_verify, trust_pool, tls1.3
 │   │   └── terraform/                  # cloud-init + Terraform templates (go:embed)
 │   │       ├── cloud-init.yaml.tmpl
 │   │       ├── install-script.sh.tmpl  # manual install script template

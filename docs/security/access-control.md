@@ -1,16 +1,27 @@
 # Access Control
 
-Tunnel Whisperer enforces access control at two independent layers: the transport layer (Xray UUID) and the session layer (SSH public key with port restrictions). Revoking access at either layer is sufficient to block a user.
+Tunnel Whisperer enforces access control at two scopes. **Relay admission** is per-server, decided at the TLS handshake by a mutual-TLS client certificate. **User authorization** is per-user, decided by the SSH public key and its port restrictions. The two are independent: a connection must clear the certificate gate to reach the relay at all, and then clear the SSH key check to do anything on the server.
 
 ---
 
-## Transport-Layer Auth
+## Relay Admission — Mutual TLS (per server)
+
+The relay's Caddy front door is configured with `client_auth require_and_verify`. Every connection must present an **X.509 client certificate** signed by the server's own certificate authority, or the TLS handshake is rejected before any tunnel is established.
+
+- The certificate is **per server, not per user** — every user of a server shares the same `client.crt`/`client.key`, delivered in the config bundle.
+- Admission is decided at the handshake, shielding the relay's downstream machinery from anonymous traffic.
+- This is the **primary** transport-layer gate.
+
+This layer is covered in full — CA generation, certificate distribution, the Caddy configuration, and the patched Xray-core that presents the certificate — on the [Relay Authentication](relay-authentication.md) page.
+
+---
+
+## Transport-Layer Identity — Xray UUID (defense-in-depth)
 
 Each user is assigned a unique **Xray UUID** during the `tw create user` wizard. This UUID is registered in the relay's Xray configuration file (`/usr/local/etc/xray/config.json`).
 
-- The relay accepts only connections authenticated with a registered UUID
-- Each UUID maps to a single user, enabling **individual revocation** at the transport layer
-- Removing a UUID from the relay config immediately prevents that user from establishing a tunnel
+- Each UUID maps to a single user
+- Removing a UUID from the relay config prevents that user from establishing a tunnel through it
 
 ```json
 {
@@ -25,6 +36,12 @@ Each user is assigned a unique **Xray UUID** during the `tw create user` wizard.
   }]
 }
 ```
+
+!!! info "No longer the security boundary"
+    Admission is now decided by the mutual-TLS certificate gate above. A caller
+    that cannot present a trusted client certificate never reaches the point
+    where the UUID is checked, so the UUID functions as defense-in-depth rather
+    than the primary control.
 
 ---
 
@@ -102,7 +119,7 @@ All application data is encrypted by the SSH layer before it reaches the Xray tu
 
 ### No credentials stored on relay
 
-The relay stores only Xray UUIDs (transport identifiers). It does not store SSH private keys, user passwords, or application data. **Compromise of the relay does not expose user credentials or data.**
+The relay stores only Xray UUIDs (transport identifiers) and the **public** CA certificate(s) it trusts for admission. It does not store SSH private keys, CA signing keys, user passwords, or application data. **Compromise of the relay does not expose user credentials or data.**
 
 ### Principle of least privilege
 

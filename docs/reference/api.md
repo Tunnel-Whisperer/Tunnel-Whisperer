@@ -42,7 +42,7 @@ endpoints accept and return JSON unless noted otherwise.
 | `POST` | `/api/log-level` | Set the log level (`debug`, `info`, `warn`, `error`) |
 | `POST` | `/api/settings/server` | Update server settings (ports, relay SSH user, temp Xray port) |
 | `POST` | `/api/settings/xray` | Update Xray transport settings (relay host, port, path) |
-| `POST` | `/api/settings/client` | Update client settings (SSH user, server SSH port) |
+| `POST` | `/api/settings/client` | Update client settings (SSH user, server SSH port, Xray port, listen address) |
 | `POST` | `/api/settings/analytics` | Enable/disable analytics and set history size |
 
 **Proxy request body:**
@@ -88,9 +88,14 @@ Only non-zero / non-empty fields are applied; omitted fields keep their current 
 ```json
 {
   "ssh_user": "tunnel",
-  "server_ssh_port": 2222
+  "server_ssh_port": 2222,
+  "xray_port": 54001,
+  "listen_address": "127.0.0.1"
 }
 ```
+
+`xray_port` and `listen_address` are optional. `listen_address` sets the local
+interface forwarded tunnels bind to (`0.0.0.0` to expose them on all interfaces).
 
 **Analytics settings request body:**
 

@@ -1,3 +1,5 @@
+// Package auth defines authentication credential and claim types and a stub
+// OAuth/JWT provider used for client authentication.
 package auth
 
 import "context"

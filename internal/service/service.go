@@ -1,3 +1,6 @@
+// Package service installs and runs tw as a native OS service, with
+// platform-specific backends for systemd, the Windows SCM, and launchd
+// selected by build tags.
 package service
 
 // Config holds service registration parameters.

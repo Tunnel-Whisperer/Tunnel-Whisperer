@@ -50,9 +50,9 @@ graph LR
 
 | Protocol | Port | Direction | Purpose |
 | -------- | ---- | --------- | ------- |
-| TLS (Xray VLESS+XHTTP) | 443 | Server -> Relay | Transport tunnel for SSH reverse forwarding |
-| TLS (Xray VLESS+XHTTP) | 443 | Client -> Relay | Transport tunnel for SSH local forwarding |
-| HTTPS (Caddy) | 443 | External -> Relay | TLS termination, reverse proxy to Xray |
+| mTLS (Xray VLESS+XHTTP) | 443 | Server -> Relay | Transport tunnel for SSH reverse forwarding; presents X.509 client cert |
+| mTLS (Xray VLESS+XHTTP) | 443 | Client -> Relay | Transport tunnel for SSH local forwarding; presents X.509 client cert |
+| HTTPS + mTLS (Caddy) | 443 | External -> Relay | TLS 1.3 termination with `client_auth require_and_verify` (admission gate), reverse proxy to Xray |
 | HTTP | 80 | External -> Relay | ACME challenge for Let's Encrypt certificate issuance |
 | SSH (over Xray) | -- | End-to-end | Reverse/local port forwarding and session security |
 | SSH (embedded) | 2222 | Local | Server's embedded SSH server (Go `x/crypto/ssh`) |

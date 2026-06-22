@@ -348,6 +348,44 @@ Both templates pass `--version {{ .XrayVersion }}` to the official Xray install 
 
 ---
 
+## Certificate Lifecycle (mutual-TLS admission)
+
+The relay admits connections via mutual TLS, backed by a per-server certificate
+authority. The lifecycle is handled transparently:
+
+- **Generation** — on the first `tw serve`, `internal/ops/keys.go` (`ensureCerts`)
+  creates the CA (`ca.crt`/`ca.key`) and issues the server's client certificate
+  (`client.crt`/`client.key`) via `internal/pki`. Generation is **idempotent and
+  self-healing**: an existing CA is never regenerated, but a missing client cert
+  is re-issued from the existing CA. It is skipped in client mode.
+- **Distribution to the relay** — at provisioning, the CA *public* certificate is
+  base64-embedded into cloud-init and written to `/etc/caddy/ca/<server-id>.crt`;
+  the rendered Caddyfile (with `client_auth require_and_verify`) is embedded the
+  same way. The CA signing key never leaves the server.
+- **Distribution to clients** — `client.crt`/`client.key` are bundled into every
+  user export zip. The same per-server certificate is shared by all users;
+  `applyClientCertPaths` derives the on-disk paths at runtime so a bundle works
+  regardless of platform or `TW_CONFIG_DIR`.
+- **Rotation** — re-provisioning the relay regenerates the trust pool. There is
+  no per-user certificate and no CRL on the relay; per-user revocation is an SSH
+  `authorized_keys` operation (see [Access Control](../security/access-control.md)).
+
+Validity: CA 10 years, client certificate 5 years (ECDSA P-256). Full detail on
+[Relay Authentication](../security/relay-authentication.md).
+
+!!! note "Patched xray-core for client-cert presentation"
+    Presenting a client certificate on an *outbound* TLS connection is not
+    supported by upstream xray-core `v1.260206.0` (its TLS layer wires only
+    server-side certificate selection, and the uTLS path used by XHTTP drops the
+    certificate fields). The build therefore applies `scripts/xray-core-client-cert.patch`
+    to a generated `./.xray-core-patched` tree, wired in via a `replace` directive
+    in `go.mod` and rebuilt by the `Makefile`. The patch adds the
+    `usage: "client-cert"` certificate type and carries the `GetClientCertificate`
+    callback through to the uTLS path. When upstream ships mTLS in a tagged
+    release, the `replace` is dropped and the version bumped.
+
+---
+
 ## Key Dependencies
 
 | Dependency | Version | Purpose |

@@ -1,3 +1,8 @@
+// Package api implements the Tunnel Whisperer control API served by `tw serve`
+// on :50051. It uses the gRPC server machinery, but the proto in
+// proto/api/v1/service.proto is documentation only: a JSON codec (codec.go) is
+// registered so the hand-written Go structs in this package are the wire
+// messages and no protoc-generated code is involved.
 package api
 
 // This file contains the gRPC service definitions.
@@ -16,8 +21,11 @@ import (
 
 // ── Request / Response types ────────────────────────────────────────────────
 
+// Empty is the request/response type for RPCs that carry no payload.
 type Empty struct{}
 
+// StatusResponse reports the daemon mode, version, relay status, user count,
+// and the active server or client status (whichever applies to the mode).
 type StatusResponse struct {
 	Mode      string             `json:"mode"`
 	Version   string             `json:"version"`
@@ -27,28 +35,36 @@ type StatusResponse struct {
 	Client    *ops.ClientStatus  `json:"client,omitempty"`
 }
 
+// ConfigResponse carries the current on-disk configuration.
 type ConfigResponse struct {
 	Config interface{} `json:"config"`
 }
 
+// SetModeRequest switches the daemon between "server" and "client" mode.
 type SetModeRequest struct {
 	Mode string `json:"mode"`
 }
 
+// ListProvidersResponse lists the supported cloud providers for relay provisioning.
 type ListProvidersResponse struct {
 	Providers interface{} `json:"providers"`
 }
 
+// RelayStatusResponse carries the current relay provisioning/connection status.
 type RelayStatusResponse struct {
 	Relay interface{} `json:"relay"`
 }
 
+// TestCredentialsRequest holds the cloud-provider credentials to validate
+// (AWSSecretKey is used only for the AWS provider).
 type TestCredentialsRequest struct {
 	ProviderName string `json:"provider_name"`
 	Token        string `json:"token"`
 	AWSSecretKey string `json:"aws_secret_key"`
 }
 
+// ProvisionRelayRequest holds the domain and cloud-provider credentials used
+// to provision a relay VM via Terraform.
 type ProvisionRelayRequest struct {
 	Domain       string `json:"domain"`
 	ProviderKey  string `json:"provider_key"`
@@ -57,19 +73,25 @@ type ProvisionRelayRequest struct {
 	AWSSecretKey string `json:"aws_secret_key"`
 }
 
+// ProvisionRelayResponse carries a human-readable result message.
 type ProvisionRelayResponse struct {
 	Message string `json:"message"`
 }
 
+// DestroyRelayRequest holds the cloud-provider credentials needed to tear down
+// the relay VM.
 type DestroyRelayRequest struct {
 	Creds map[string]string `json:"creds"`
 }
 
+// TestRelayResponse reports the overall result of a relay connectivity test
+// plus the per-step breakdown.
 type TestRelayResponse struct {
 	Message string             `json:"message"`
 	Steps   []TestRelayResult  `json:"steps,omitempty"`
 }
 
+// TestRelayResult is the outcome of one step in a relay connectivity test.
 type TestRelayResult struct {
 	Label   string `json:"label"`
 	Status  string `json:"status"` // "completed" or "failed"
@@ -77,10 +99,12 @@ type TestRelayResult struct {
 	Error   string `json:"error,omitempty"`
 }
 
+// ListUsersResponse lists the configured users.
 type ListUsersResponse struct {
 	Users []ops.UserInfo `json:"users"`
 }
 
+// CreateUserRequest names a new user and its client-port-to-server-port mappings.
 type CreateUserRequest struct {
 	Name     string `json:"name"`
 	Mappings []struct {
@@ -89,24 +113,30 @@ type CreateUserRequest struct {
 	} `json:"mappings"`
 }
 
+// DeleteUserRequest names the user to remove.
 type DeleteUserRequest struct {
 	Name string `json:"name"`
 }
 
+// GetUserConfigRequest names the user whose client config bundle is requested.
 type GetUserConfigRequest struct {
 	Name string `json:"name"`
 }
 
+// UserConfigResponse carries an exported client config bundle.
 type UserConfigResponse struct {
 	Data []byte `json:"data"`
 }
 
+// UploadClientConfigRequest carries a client config bundle to import in client mode.
 type UploadClientConfigRequest struct {
 	Data []byte `json:"data"`
 }
 
 // ── Service interface ───────────────────────────────────────────────────────
 
+// TunnelWhispererServer is the control API implemented by the daemon and
+// consumed by the CLI and dashboard.
 type TunnelWhispererServer interface {
 	GetStatus(ctx context.Context, req *Empty) (*StatusResponse, error)
 	GetConfig(ctx context.Context, req *Empty) (*ConfigResponse, error)
@@ -130,6 +160,8 @@ type TunnelWhispererServer interface {
 
 // ── Registration ────────────────────────────────────────────────────────────
 
+// RegisterTunnelWhispererServer registers srv with the gRPC server s, wiring up
+// every RPC handler so requests are decoded via the JSON codec and dispatched.
 func RegisterTunnelWhispererServer(s *grpc.Server, srv TunnelWhispererServer) {
 	methods := []grpc.MethodDesc{
 		unaryMethod("GetStatus", func(srv interface{}, ctx context.Context, dec func(interface{}) error) (interface{}, error) {
@@ -287,6 +319,8 @@ func unaryMethod(name string, fn func(srv interface{}, ctx context.Context, dec 
 
 // ── Unimplemented base ──────────────────────────────────────────────────────
 
+// UnimplementedTunnelWhispererServer provides "not implemented" stubs for every
+// RPC so implementations can embed it for forward compatibility.
 type UnimplementedTunnelWhispererServer struct{}
 
 func (UnimplementedTunnelWhispererServer) GetStatus(context.Context, *Empty) (*StatusResponse, error) {

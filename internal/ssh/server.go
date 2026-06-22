@@ -1,3 +1,7 @@
+// Package ssh implements the embedded SSH server and the forward and reverse
+// tunnels that carry traffic end-to-end through the relay. The server enforces
+// per-user access control from an authorized_keys file re-read on every auth
+// attempt, gating port forwarding against each key's permitopen options.
 package ssh
 
 import (

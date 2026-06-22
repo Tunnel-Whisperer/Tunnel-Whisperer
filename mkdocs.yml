@@ -108,4 +108,5 @@ nav:
   - Security:
     - security/index.md
     - Encryption: security/encryption.md
+    - Relay Authentication: security/relay-authentication.md
     - Access Control: security/access-control.md

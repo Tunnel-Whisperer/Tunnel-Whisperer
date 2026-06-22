@@ -22,6 +22,10 @@ A fully provisioned server with two users has the following layout:
 ├── authorized_keys          # SSH authorized keys (auto-generated from users)
 ├── ssh_host_ed25519_key     # SSH server host key (private)
 ├── ssh_host_ed25519_key.pub # SSH server host key (public)
+├── ca.crt                   # Per-server CA certificate (PEM); public cert shipped to the relay trust pool
+├── ca.key                   # Per-server CA private key (PEM); never leaves the server
+├── client.crt               # Client certificate (PEM) presented to the relay's mutual-TLS gate
+├── client.key               # Private key (PEM) for client.crt
 ├── relay/
 │   ├── main.tf              # Terraform configuration for the relay
 │   ├── cloud-init.yaml      # Cloud-init script (Caddy + Xray + SSH setup)
@@ -47,8 +51,16 @@ directory:
 /etc/tw/config/
 ├── config.yaml              # Client configuration (mode, xray, tunnels)
 ├── id_ed25519               # SSH private key (received from server)
-└── id_ed25519.pub           # SSH public key (received from server)
+├── id_ed25519.pub           # SSH public key (received from server)
+├── client.crt               # Per-server client certificate (received from server) for relay mTLS
+└── client.key               # Private key for client.crt (received from server)
 ```
+
+!!! note "The client certificate is per-server, not per-user"
+    `client.crt`/`client.key` admit the connection at the relay's mutual-TLS
+    gate. Every user of the same server shares the same client certificate;
+    individual identity is enforced later by the per-user SSH key. See
+    [Relay Authentication](../security/relay-authentication.md).
 
 ---
 
@@ -64,7 +76,9 @@ the client needs.
 <name>-tw-config.zip
 ├── config.yaml              # Complete client config
 ├── id_ed25519               # SSH private key for this user
-└── id_ed25519.pub           # SSH public key for this user
+├── id_ed25519.pub           # SSH public key for this user
+├── client.crt               # Per-server client certificate for relay mTLS (shared by all users)
+└── client.key               # Private key for client.crt
 ```
 
 The `config.yaml` inside the bundle is pre-filled with:
@@ -76,6 +90,10 @@ The `config.yaml` inside the bundle is pre-filled with:
 - `client.ssh_user` -- the user's name
 - `client.server_ssh_port` -- matching the server's SSH port
 - `client.tunnels` -- port mappings defined during user creation
+
+The bundle also carries the server's `client.crt`/`client.key` — the same
+per-server certificate for every user — which the client presents to the
+relay's mutual-TLS gate. See [Relay Authentication](../security/relay-authentication.md).
 
 !!! tip "Deploying the bundle"
     Extract the zip into the client's config directory and start the client:

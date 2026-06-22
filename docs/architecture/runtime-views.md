@@ -48,9 +48,15 @@ The cloud-init script on the relay:
 1. Creates the SSH user with the server's public key and passwordless sudo
 2. Installs Caddy from official apt repo, Xray via official install script
 3. Writes Xray config (VLESS inbound on `127.0.0.1:10000`, XHTTP transport, freedom outbound)
-4. Writes Caddyfile (`<domain> { reverse_proxy /tw* 127.0.0.1:10000 }`)
-5. Locks down SSH to `127.0.0.1` only, disables password authentication
-6. Configures firewall: deny all incoming, allow 80/tcp + 443/tcp
+4. Writes the server's CA public certificate to `/etc/caddy/ca/<server-id>.crt` (base64 in cloud-init)
+5. Writes the rendered Caddyfile — a per-site mutual-TLS gate (`client_auth require_and_verify` against the CA trust pool, TLS 1.3 only) plus a path-routed `reverse_proxy /tw* h2c://127.0.0.1:10000` handle block
+6. Locks down SSH to `127.0.0.1` only, disables password authentication
+7. Configures firewall: deny all incoming, allow 80/tcp + 443/tcp
+
+The Caddyfile and CA certificate are **rendered by the server** at provisioning
+time (`internal/relay/caddy` → `internal/ops/relay.go`) and embedded into
+cloud-init as base64, so the relay boots with the mTLS gate already in place. See
+[Relay Authentication](../security/relay-authentication.md).
 
 ---
 

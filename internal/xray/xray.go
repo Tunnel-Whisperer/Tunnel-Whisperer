@@ -1,3 +1,7 @@
+// Package xray builds the Xray JSON configuration in-process and runs an
+// embedded xray-core instance (no external binary). The server uses a
+// dokodemo-door inbound; both server and client share the VLESS/XHTTP/TLS
+// outbound, which can present a client certificate for the relay's mTLS gate.
 package xray
 
 import (
@@ -49,7 +53,7 @@ func vlessOutbound(cfg config.XrayConfig, proxyURL string) map[string]interface{
 			{
 				"certificateFile": cfg.ClientCertPath,
 				"keyFile":         cfg.ClientKeyPath,
-				"usage":           "encipherment",
+				"usage":           "client-cert",
 			},
 		}
 	}

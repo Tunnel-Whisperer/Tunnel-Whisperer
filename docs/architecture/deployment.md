@@ -47,6 +47,10 @@ client:                            # only needed for `tw connect`
 ├── id_ed25519.pub                 # server SSH public key
 ├── ssh_host_ed25519_key           # SSH host key
 ├── authorized_keys                # client public keys (with permitopen)
+├── ca.crt                         # per-server CA cert (public part shipped to relay)
+├── ca.key                         # per-server CA private key (never leaves server)
+├── client.crt                     # client cert presented to relay mTLS gate
+├── client.key                     # private key for client.crt
 ├── relay/                         # Terraform state + generated files
 │   ├── main.tf                    # provider-specific Terraform
 │   ├── cloud-init.yaml            # rendered cloud-init
@@ -66,7 +70,9 @@ client:                            # only needed for `tw connect`
 /etc/tw/config/                    # or C:\ProgramData\tw\config\ on Windows
 ├── config.yaml                    # client configuration (from server admin)
 ├── id_ed25519                     # client SSH private key (from server admin)
-└── id_ed25519.pub                 # client SSH public key
+├── id_ed25519.pub                 # client SSH public key
+├── client.crt                     # per-server client cert for relay mTLS (from server admin)
+└── client.key                     # private key for client.crt (from server admin)
 ```
 
 !!! note "Override"

@@ -4,7 +4,10 @@ BIN_DIR := bin
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X github.com/tunnelwhisperer/tw/internal/version.Version=$(VERSION)
 
-export GOTOOLCHAIN := local
+# Honor the toolchain pin in go.mod (the vendored xray-core requires go 1.26).
+# 'auto' lets go fetch the pinned toolchain when the base go is older; switch
+# back to 'local' once the system go is >= the go.mod toolchain directive.
+export GOTOOLCHAIN := auto
 
 # Patched xray-core: adds outbound client-cert (mutual-TLS) support that upstream
 # lacks. The patched copy is generated and git-ignored; only the regen script and

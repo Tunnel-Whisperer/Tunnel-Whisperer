@@ -31,6 +31,11 @@ mode: server
 # Can also be set with --log-level flag (persisted on use).
 log_level: info
 
+# Log output format: "text" (default, human-readable) or "json".
+# JSON maps attributes to OpenTelemetry semantic-convention names.
+# Can also be set with --log-format flag (persisted on use).
+log_format: text
+
 # Outbound proxy for all connections (Xray, SSH, Terraform).
 # Supported formats:
 #   socks5://host:port
@@ -54,6 +59,12 @@ xray:
   # WebSocket path used by Xray.
   path: /tw
 
+  # X.509 client certificate presented to the relay's mutual-TLS gate.
+  # Auto-populated at runtime from <config-dir>/client.{crt,key} when present,
+  # so you normally leave these empty. See Security → Relay Authentication.
+  client_cert_path: ""
+  client_key_path: ""
+
 # Server-only settings (ignored in client mode).
 server:
   # Port the internal SSH server listens on.
@@ -73,6 +84,10 @@ server:
 
   # Remote port on the relay that maps back to the local SSH port.
   remote_port: 2222
+
+  # Local port the embedded Xray instance listens on. Optional; leave 0
+  # to use the built-in default.
+  xray_port: 0
 
   # Port used for temporary Xray tunnel during relay config updates
   # (user creation, user registration). Change if 59000 is in use.
@@ -99,6 +114,9 @@ client:
   # SSH port on the server (matches server.ssh_port via the tunnel).
   server_ssh_port: 2222
 
+  # Local port the embedded Xray dokodemo-door listens on (default 54001).
+  xray_port: 54001
+
   # Local interface forwarded tunnels bind to.
   # 127.0.0.1 = local only (default); 0.0.0.0 = all interfaces (required
   # when running tw inside a container that publishes ports to the host).
@@ -122,6 +140,7 @@ client:
 |---|---|---|---|
 | `mode` | string | _(empty)_ | Operating mode. Set to `server` or `client`. |
 | `log_level` | string | `info` | Log verbosity. One of `debug`, `info`, `warn`, `error`. |
+| `log_format` | string | `text` | Log output format. `text` (human-readable) or `json` (OpenTelemetry semantic-convention attribute names). Also set via `--log-format`. |
 | `proxy` | string | _(empty)_ | Outbound proxy URL for all connections. |
 
 ### `xray` section
@@ -132,6 +151,8 @@ client:
 | `relay_host` | string | _(empty)_ | Relay server domain or IP address. |
 | `relay_port` | int | `443` | HTTPS/WebSocket port on the relay. |
 | `path` | string | `/tw` | WebSocket path for the Xray transport. |
+| `client_cert_path` | string | _(empty)_ | Path to the X.509 client certificate (PEM) presented to the relay's mutual-TLS gate. Auto-derived at runtime from `<config-dir>/client.crt` when present; rarely set by hand. See [Relay Authentication](../security/relay-authentication.md). |
+| `client_key_path` | string | _(empty)_ | Path to the private key (PEM) for `client_cert_path`. Auto-derived from `<config-dir>/client.key`. |
 
 ### `server` section
 
@@ -143,6 +164,7 @@ client:
 | `relay_ssh_port` | int | `22` | SSH port on the relay for the reverse tunnel. |
 | `relay_ssh_user` | string | `ubuntu` | SSH user on the relay server. |
 | `remote_port` | int | `2222` | Remote port on the relay forwarded back to local SSH. |
+| `xray_port` | int | _(empty)_ | Local port the embedded Xray instance listens on. Optional; leave unset to use the built-in default. |
 | `temp_xray_port` | int | `59000` | Port for the temporary Xray tunnel used during relay config updates (user creation/registration). Change if `59000` is already in use on your system. |
 | `applications` | list | _(empty)_ | Application templates — reusable port mapping bundles for user creation. |
 
@@ -175,6 +197,7 @@ Analytics works in both server and client modes. In server mode, stats are track
 |---|---|---|---|
 | `ssh_user` | string | `tunnel` | SSH user to authenticate as on the server side. |
 | `server_ssh_port` | int | `2222` | SSH port on the server (reached via the tunnel). |
+| `xray_port` | int | `54001` | Local port the embedded Xray dokodemo-door listens on. |
 | `listen_address` | string | `127.0.0.1` | Local interface forwarded tunnels bind to. Set to `0.0.0.0` to expose tunnels on all interfaces — required when `tw` runs inside a container that publishes ports to the host. |
 | `tunnels` | list | _(empty)_ | Port forwarding rules. Each entry has `local_port`, `remote_host`, `remote_port`. |
 

@@ -1,3 +1,6 @@
+// Package dashboard serves the server-rendered HTML web UI. It pushes real-time
+// updates over Server-Sent Events, exposes a relay SSH terminal over WebSocket,
+// and is a thin front-end that calls into internal/ops.
 package dashboard
 
 import (

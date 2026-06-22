@@ -1,3 +1,6 @@
+// Package logging configures the application slog logger. In JSON format it maps
+// attributes to OpenTelemetry semantic-convention names, exposes a dynamic level
+// so SetLevel takes effect live, and exports XrayLevel for the xray package.
 package logging
 
 import (

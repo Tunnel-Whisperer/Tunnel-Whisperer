@@ -1,3 +1,6 @@
+// Package tunnel is a placeholder type for a tunnel session. The actual
+// tunneling is implemented in internal/ssh over internal/xray; this package is
+// not on the data path.
 package tunnel
 
 import "log/slog"

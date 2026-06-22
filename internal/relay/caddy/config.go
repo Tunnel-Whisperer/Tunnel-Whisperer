@@ -1,3 +1,5 @@
+// Package caddy renders the relay's Caddyfile from a server list, configuring
+// TLS/ACME termination and the mutual-TLS client_auth trust pool.
 package caddy
 
 import (

@@ -9,12 +9,16 @@ Tunnel Whisperer applies three nested encryption layers to every byte of applica
 The outermost encryption layer is **TLS 1.3** — the same standard used by online banking, healthcare portals, and every major website.
 
 - **Caddy** handles TLS termination on the relay VM
-- Certificates are automatically provisioned and renewed via **Let's Encrypt** using the ACME protocol
+- The relay's server certificate is automatically provisioned and renewed via **Let's Encrypt** using the ACME protocol
+- The handshake is **mutual** (mTLS): Caddy is configured with `client_auth require_and_verify`, so the client must also present an **X.509 client certificate** signed by the server's CA, or the handshake is rejected
 - All traffic is served over standard **HTTPS on port 443**
 - To firewalls, proxies, and Deep Packet Inspection (DPI) systems, Tunnel Whisperer traffic is **indistinguishable from normal web browsing**
 
 !!! info "Why TLS 1.3?"
-    TLS 1.3 removes legacy cipher suites, reduces handshake round-trips, and provides forward secrecy by default. It is the minimum acceptable standard for modern encrypted communications.
+    TLS 1.3 removes legacy cipher suites, reduces handshake round-trips, and provides forward secrecy by default. It is the minimum acceptable standard for modern encrypted communications. The relay pins TLS 1.3 only (`protocols tls1.3`).
+
+!!! tip "Mutual authentication"
+    The client certificate is the relay's admission control — see [Relay Authentication](relay-authentication.md) for the per-server CA, certificate distribution, and the Caddy `client_auth` gate.
 
 ---
 
@@ -91,6 +95,7 @@ At every point in the relay, application data remains encrypted by the SSH layer
 Beyond the encryption layers, the relay VM itself is hardened:
 
 - The relay firewall (UFW) allows **only ports 80 and 443** — no SSH exposed to the internet
+- Caddy requires a **valid client certificate** (`client_auth require_and_verify`) before completing any TLS handshake, so untrusted callers are rejected before reaching the tunnel
 - SSH on the relay listens on **127.0.0.1 only** — accessible exclusively through the encrypted Xray tunnel
 - All management operations (user provisioning, relay configuration) happen through the encrypted tunnel, never over unprotected channels
 - Password authentication is **disabled** on the relay SSH daemon

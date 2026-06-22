@@ -1,3 +1,6 @@
+// Package terraform renders the Terraform configuration and cloud-init/install
+// scripts that provision the relay VM, with per-provider templates for Hetzner,
+// DigitalOcean, and AWS.
 package terraform
 
 import (
