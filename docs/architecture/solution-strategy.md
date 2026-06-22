@@ -82,7 +82,7 @@ graph LR
 | Relay must never see plaintext | End-to-end encryption between client and server | SSH session layer |
 | Relay must admit only trusted servers | Mutual-TLS gate verifying an X.509 client cert against a per-server CA at the handshake | Caddy `client_auth require_and_verify` + `internal/pki` |
 | TLS certificates for the relay | Automatic issuance and renewal | Caddy (ACME / Let's Encrypt) |
-| Per-server relay admission | One CA-issued client cert per server, presented by Xray (`usage: "client-cert"`) | patched xray-core + `internal/pki` |
+| Per-server relay admission | One CA-issued client cert per server, presented by Xray (`usage: "client-cert"`) | xray-core mTLS + `internal/pki` |
 | Per-user access control | Public key auth with port restrictions | SSH `authorized_keys` + `permitopen` |
 | Infrastructure provisioning | Interactive wizard generates Terraform + cloud-init | Terraform (Hetzner, DigitalOcean, AWS) |
 | Cross-platform operation | Single binary for both server and client | Go (Linux + Windows + macOS) |

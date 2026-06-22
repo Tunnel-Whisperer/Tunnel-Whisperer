@@ -373,16 +373,15 @@ authority. The lifecycle is handled transparently:
 Validity: CA 10 years, client certificate 5 years (ECDSA P-256). Full detail on
 [Relay Authentication](../security/relay-authentication.md).
 
-!!! note "Patched xray-core for client-cert presentation"
-    Presenting a client certificate on an *outbound* TLS connection is not
-    supported by upstream xray-core `v1.260206.0` (its TLS layer wires only
-    server-side certificate selection, and the uTLS path used by XHTTP drops the
-    certificate fields). The build therefore applies `scripts/xray-core-client-cert.patch`
-    to a generated `./.xray-core-patched` tree, wired in via a `replace` directive
-    in `go.mod` and rebuilt by the `Makefile`. The patch adds the
-    `usage: "client-cert"` certificate type and carries the `GetClientCertificate`
-    callback through to the uTLS path. When upstream ships mTLS in a tagged
-    release, the `replace` is dropped and the version bumped.
+!!! note "Xray-core mutual-TLS dependency"
+    Presenting a client certificate on an *outbound* TLS connection is a recent
+    Xray-core capability (older releases wired only server-side certificate
+    selection, and the uTLS path used by XHTTP dropped the certificate fields).
+    `go.mod` therefore pins `github.com/xtls/xray-core` to the upstream commit
+    that introduced native mTLS — the `usage: "client-cert"` certificate type
+    with the `GetClientCertificate` callback carried through to the uTLS path.
+    This requires **Go 1.26**; the build is a plain `go build` with no fork or
+    patch. When upstream publishes mTLS in a tagged release, bump the version.
 
 ---
 

@@ -116,21 +116,20 @@ The paths are **auto-derived at runtime** from `<config-dir>/client.{crt,key}`
 when present, so a config bundle works unchanged across machines and
 `TW_CONFIG_DIR` values — you rarely set the paths by hand.
 
-!!! warning "Requires a patched Xray-core"
-    Upstream Xray-core (`v1.260206.0`) cannot *present* a client certificate on
-    an outbound TLS connection — its TLS layer only wires server-side
-    certificate selection, and the uTLS path used by XHTTP drops the certificate
-    fields entirely. Tunnel Whisperer therefore builds against a patched copy of
-    Xray-core that adds the `usage: "client-cert"` certificate type and carries
-    the `GetClientCertificate` callback through to the uTLS path.
+!!! note "Requires a recent Xray-core with mutual-TLS support"
+    Presenting a client certificate on an *outbound* TLS connection is a recent
+    Xray-core capability — older releases only wired server-side certificate
+    selection, and the uTLS path used by XHTTP dropped the certificate fields
+    entirely. Tunnel Whisperer therefore builds against an Xray-core version that
+    includes native mutual-TLS support (the `usage: "client-cert"` certificate
+    type, with the `GetClientCertificate` callback carried through to the uTLS
+    path).
 
-    The patch is the official upstream mTLS approach backported onto the pinned
-    base. It is applied at build time via a `replace` directive in `go.mod`
-    pointing at a generated `./.xray-core-patched` tree (regenerated from
-    `scripts/xray-core-client-cert.patch` by `scripts/patch-xray-core.sh`; the
-    `Makefile` rebuilds it automatically). When upstream ships mTLS in a tagged
-    release, the `replace` is dropped and the version bumped — the
-    `usage: "client-cert"` config stays as-is.
+    This is pinned in `go.mod` to the upstream commit that introduced mTLS and
+    **requires Go 1.26**. No fork or patch is involved — the build is a plain
+    `go build`. When upstream publishes mTLS in a tagged release, bump the
+    `github.com/xtls/xray-core` version; the `usage: "client-cert"` config stays
+    as-is.
 
 ---
 

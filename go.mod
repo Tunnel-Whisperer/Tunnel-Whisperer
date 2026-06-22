@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/spf13/cobra v1.8.1
-	github.com/xtls/xray-core v1.260206.0
+	github.com/xtls/xray-core v1.260327.1-0.20260617150841-1ca32a7af8b5
 	golang.org/x/crypto v0.51.0
 	golang.org/x/sys v0.45.0
 	golang.org/x/term v0.43.0
@@ -60,5 +60,3 @@ require (
 	gvisor.dev/gvisor v0.0.0-20260122175437-89a5d21be8f0 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
-
-replace github.com/xtls/xray-core => ./.xray-core-patched

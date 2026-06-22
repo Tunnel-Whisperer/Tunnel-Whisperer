@@ -99,7 +99,7 @@ All templates use `user_data = file("${path.module}/cloud-init.yaml")` and outpu
 
 ## Building
 
-Requires **Go 1.25+**.
+Requires **Go 1.26+**.
 
 ### Version Injection
 
