@@ -11,10 +11,10 @@ Tunnel Whisperer creates **port-to-port bridges** across separated private netwo
 ```
 Client Network                   Public Cloud                    Server Network
 +--------------+             +------------------+             +--------------+
-|  tw connect  |-- HTTPS -->|     Relay VM      |<-- HTTPS --|   tw serve   |
+|  tw connect  |-- HTTPS --> |     Relay VM     |<-- HTTPS -- |   tw serve   |
 |              |   (Xray     |                  |   (Xray     |              |
 | local ports  |   VLESS +   |  Caddy :443      |   VLESS +   | SSH server   |
-| :5432 :3389  |   XHTTP)|  reverse proxy   |   XHTTP)| :2222        |
+| :5432 :3389  |   XHTTP)    |  reverse proxy   |   XHTTP)    | :2222        |
 |              |             |  Xray :10000     |             |              |
 |  SSH --------+-------------+------------------+-------------+> port fwd    |
 |  (over Xray) |             |  SSH :22 (local) |             | -> services  |
