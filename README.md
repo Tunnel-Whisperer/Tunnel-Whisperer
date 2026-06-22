@@ -7,6 +7,7 @@
 <p align="center"><strong>Surgical, resilient connectivity for restrictive enterprise environments.</strong></p>
 
 <p align="center">
+  <a href="https://github.com/Tunnel-Whisperer/Tunnel-Whisperer/actions/workflows/release.yml"><img src="https://github.com/Tunnel-Whisperer/Tunnel-Whisperer/actions/workflows/release.yml/badge.svg" alt="Release"></a>
   <a href="https://github.com/Tunnel-Whisperer/Tunnel-Whisperer"><img src="https://img.shields.io/badge/Status-Alpha-yellow" alt="Status"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue" alt="License"></a>
 </p>
