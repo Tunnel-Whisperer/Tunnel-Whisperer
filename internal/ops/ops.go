@@ -117,8 +117,8 @@ func (o *Ops) Mode() string {
 
 // SetMode persists the operating mode to config.
 func (o *Ops) SetMode(mode string) error {
-	if mode != "server" && mode != "client" {
-		return fmt.Errorf("invalid mode: %q (must be \"server\" or \"client\")", mode)
+	if !config.ValidMode(mode) {
+		return fmt.Errorf("invalid mode: %q (must be \"server\", \"client\", or \"admin\")", mode)
 	}
 	o.mu.Lock()
 	o.cfg.Mode = mode

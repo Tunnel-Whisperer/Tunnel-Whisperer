@@ -13,7 +13,7 @@ import (
 
 // Config holds all Tunnel Whisperer settings.
 type Config struct {
-	Mode      string          `yaml:"mode,omitempty"`       // "server" or "client"
+	Mode      string          `yaml:"mode,omitempty"`       // "server", "client", or "admin"
 	LogLevel  string          `yaml:"log_level,omitempty"`  // debug, info, warn, error
 	LogFormat string          `yaml:"log_format,omitempty"` // "text" (default) or "json"
 	Proxy     string          `yaml:"proxy,omitempty"`      // e.g. "socks5://user:pass@host:port" or "http://host:port"
@@ -21,6 +21,12 @@ type Config struct {
 	Server    ServerConfig    `yaml:"server"`
 	Client    ClientConfig    `yaml:"client"`
 	Analytics AnalyticsConfig `yaml:"analytics,omitempty"`
+}
+
+// ValidMode reports whether m is a recognized operating mode. It is the single
+// source of truth for the set of modes tw supports.
+func ValidMode(m string) bool {
+	return m == "server" || m == "client" || m == "admin"
 }
 
 // AnalyticsConfig controls bandwidth statistics collection.
