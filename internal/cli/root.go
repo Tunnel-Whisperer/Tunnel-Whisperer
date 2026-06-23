@@ -6,6 +6,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/tunnelwhisperer/tw/internal/config"
@@ -57,23 +58,28 @@ func Execute() error {
 	return rootCmd.Execute()
 }
 
-// requireMode returns an error if the current config mode doesn't match the
-// expected mode. This prevents running server-only commands in client mode
-// and vice versa.
-func requireMode(expected string) error {
+// requireMode returns an error if the current config mode is set and is not one
+// of the allowed modes. An unset mode is always permitted (setup not done yet).
+// Variadic so a command can be allowed in more than one mode.
+func requireMode(allowed ...string) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil // can't determine mode, let the command proceed
 	}
-	if cfg.Mode == "" {
+	return modeError(cfg.Mode, allowed)
+}
+
+// modeError is the pure decision behind requireMode, split out for testing:
+// nil if current is unset or present in allowed, otherwise a descriptive error.
+func modeError(current string, allowed []string) error {
+	if current == "" {
 		return nil // mode not set yet, allow
 	}
-	if cfg.Mode != expected {
-		other := "server"
-		if expected == "server" {
-			other = "client"
+	for _, a := range allowed {
+		if current == a {
+			return nil
 		}
-		return fmt.Errorf("this is a %s command, but tw is configured in %s mode", expected, other)
 	}
-	return nil
+	return fmt.Errorf("this command requires %s mode, but tw is configured in %s mode",
+		strings.Join(allowed, " or "), current)
 }
