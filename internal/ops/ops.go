@@ -108,7 +108,7 @@ func (o *Ops) ReloadConfig() error {
 	return nil
 }
 
-// Mode returns the current operating mode ("server", "client", or "").
+// Mode returns the current operating mode ("server", "client", "admin", or "").
 func (o *Ops) Mode() string {
 	o.mu.Lock()
 	defer o.mu.Unlock()
