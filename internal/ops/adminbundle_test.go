@@ -60,7 +60,10 @@ func TestAdminBundleRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("missing %s in dst: %v", rel, err)
 		}
-		want, _ := os.ReadFile(filepath.Join(srcDir, rel))
+		want, err := os.ReadFile(filepath.Join(srcDir, rel))
+		if err != nil {
+			t.Fatalf("reading source %s: %v", rel, err)
+		}
 		if !bytes.Equal(got, want) {
 			t.Errorf("%s mismatch: got %q want %q", rel, got, want)
 		}

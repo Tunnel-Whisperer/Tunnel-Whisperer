@@ -105,7 +105,10 @@ func writeAdminBundle(o *ops.Ops, domain string) error {
 	if err := os.WriteFile(fname, data, 0600); err != nil {
 		return fmt.Errorf("writing bundle: %w", err)
 	}
-	abs, _ := filepath.Abs(fname)
+	abs, err := filepath.Abs(fname)
+	if err != nil {
+		abs = fname
+	}
 	fmt.Printf("\n  Admin bundle written: %s\n", abs)
 	fmt.Println("  IMPORTANT: back this up securely. It is the only key to managing your relay")
 	fmt.Println("  and there is no recovery if it is lost. Anyone with this file AND its")

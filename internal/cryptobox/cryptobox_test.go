@@ -24,14 +24,20 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 }
 
 func TestDecryptWrongPassphrase(t *testing.T) {
-	ct, _ := Encrypt([]byte("secret"), "right")
+	ct, err := Encrypt([]byte("secret"), "right")
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
 	if _, err := Decrypt(ct, "wrong"); err == nil {
 		t.Fatal("expected error for wrong passphrase")
 	}
 }
 
 func TestDecryptTampered(t *testing.T) {
-	ct, _ := Encrypt([]byte("secret"), "pw")
+	ct, err := Encrypt([]byte("secret"), "pw")
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
 	ct[len(ct)-1] ^= 0xff
 	if _, err := Decrypt(ct, "pw"); err == nil {
 		t.Fatal("expected error for tampered ciphertext")
