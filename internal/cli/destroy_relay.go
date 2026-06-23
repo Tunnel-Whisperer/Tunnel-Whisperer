@@ -30,7 +30,7 @@ func init() {
 }
 
 func runDestroyRelayServer(cmd *cobra.Command, args []string) error {
-	if err := requireMode("server"); err != nil {
+	if err := requireMode("admin"); err != nil {
 		return err
 	}
 	o, err := ops.New()

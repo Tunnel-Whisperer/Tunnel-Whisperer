@@ -216,6 +216,10 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 	if relayPath == "" {
 		relayPath = "/tw"
 	}
+	role := "server"
+	if cfg.Mode == "admin" {
+		role = "admin"
+	}
 	caddyfile, err := caddy.RenderCaddyfile(caddy.Config{
 		Domain: cfg.Xray.RelayHost,
 		Servers: []caddy.Server{{
@@ -223,7 +227,7 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 			Path:       relayPath,
 			CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", serverID),
 			Upstream:   "h2c://127.0.0.1:10000",
-			Role:       "server",
+			Role:       role,
 		}},
 	})
 	if err != nil {

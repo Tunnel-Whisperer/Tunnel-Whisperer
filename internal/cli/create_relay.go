@@ -49,7 +49,7 @@ func cliProgress(e ops.ProgressEvent) {
 }
 
 func runCreateRelayServer(cmd *cobra.Command, args []string) error {
-	if err := requireMode("server"); err != nil {
+	if err := requireMode("admin"); err != nil {
 		return err
 	}
 	scanner := bufio.NewScanner(os.Stdin)
