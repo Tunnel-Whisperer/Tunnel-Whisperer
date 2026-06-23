@@ -87,7 +87,7 @@ func (o *Ops) CreateAdminBundle(passphrase string) ([]byte, error) {
 func (o *Ops) ImportAdminBundle(data []byte, passphrase string) error {
 	plain, err := cryptobox.Decrypt(data, passphrase)
 	if err != nil {
-		return err // cryptobox returns a passphrase-or-corrupt message
+		return fmt.Errorf("decrypting admin bundle: %w", err)
 	}
 	zr, err := zip.NewReader(bytes.NewReader(plain), int64(len(plain)))
 	if err != nil {
@@ -119,6 +119,9 @@ func (o *Ops) ImportAdminBundle(data []byte, passphrase string) error {
 		}
 		if err := os.WriteFile(dest, content, mode); err != nil {
 			return fmt.Errorf("writing %s: %w", dest, err)
+		}
+		if err := os.Chmod(dest, mode); err != nil {
+			return fmt.Errorf("setting permissions on %s: %w", zf.Name, err)
 		}
 	}
 	if err := o.ReloadConfig(); err != nil {
