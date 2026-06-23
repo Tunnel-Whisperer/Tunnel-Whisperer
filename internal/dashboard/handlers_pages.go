@@ -53,6 +53,18 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Admin mode: relay-management landing. Full UI (provisioning, bundle,
+	// server admission) lands in a later phase; for now a placeholder so the
+	// server/client status page below is never rendered for an admin instance.
+	if mode == "admin" {
+		s.renderPage(w, "admin", struct {
+			pageData
+		}{
+			pageData: pageData{Title: "Admin", Active: "index", Mode: mode},
+		})
+		return
+	}
+
 	cfg := s.ops.Config()
 	relay := s.ops.GetRelayStatus()
 	users, _ := s.ops.ListUsers()
