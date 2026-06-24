@@ -888,6 +888,26 @@ func removeAuthorizedKey(pubKey []byte) error {
 // withRelaySSH opens a temporary Xray tunnel to the relay, establishes an
 // SSH connection, and passes it to fn. The tunnel and connection are torn
 // down automatically when fn returns.
+// loopbackPortFree reports whether 127.0.0.1:port can currently be bound.
+func loopbackPortFree(port int) bool {
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		return false
+	}
+	ln.Close()
+	return true
+}
+
+// freeLoopbackPort asks the OS for an available loopback port.
+func freeLoopbackPort() (int, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer ln.Close()
+	return ln.Addr().(*net.TCPAddr).Port, nil
+}
+
 func withRelaySSH(cfg *config.Config, fn func(client *gossh.Client) error) error {
 	// Present the server's client cert so the relay's mTLS gate admits this
 	// management tunnel (covers TestRelay, the SSH terminal, enrollment, and
@@ -897,12 +917,35 @@ func withRelaySSH(cfg *config.Config, fn func(client *gossh.Client) error) error
 	if err != nil {
 		return fmt.Errorf("initializing Xray: %w", err)
 	}
+	// The management tunnel needs a free local loopback port for its Xray
+	// inbound. Reusing one fixed port (TempXrayPort+1) breaks back-to-back or
+	// concurrent tunnels: the previous tunnel's listener is not always released
+	// the instant Close() returns (notably on Windows: "Only one usage of each
+	// socket address"). Prefer the configured port, but fall back to an
+	// OS-assigned free port so tunnels never collide.
 	tempPort := cfg.Server.TempXrayPort
 	if tempPort == 0 {
 		tempPort = 59000
 	}
-	if err := xrayInstance.Start(tempPort+1, cfg.Server.RelaySSHPort, cfg.Proxy); err != nil {
-		return fmt.Errorf("starting Xray: %w", err)
+	listenPort := tempPort + 1
+	if !loopbackPortFree(listenPort) {
+		p, perr := freeLoopbackPort()
+		if perr != nil {
+			return fmt.Errorf("allocating local tunnel port: %w", perr)
+		}
+		listenPort = p
+	}
+	if err := xrayInstance.Start(listenPort, cfg.Server.RelaySSHPort, cfg.Proxy); err != nil {
+		// The port may have been taken between the free-check and the bind
+		// (tight race / lingering listener). Retry once on a fresh free port.
+		p, perr := freeLoopbackPort()
+		if perr != nil {
+			return fmt.Errorf("starting Xray: %w", err)
+		}
+		listenPort = p
+		if err := xrayInstance.Start(listenPort, cfg.Server.RelaySSHPort, cfg.Proxy); err != nil {
+			return fmt.Errorf("starting Xray: %w", err)
+		}
 	}
 	defer xrayInstance.Close()
 
@@ -923,7 +966,7 @@ func withRelaySSH(cfg *config.Config, fn func(client *gossh.Client) error) error
 		Timeout:         15 * time.Second,
 	}
 
-	xrayAddr := fmt.Sprintf("127.0.0.1:%d", tempPort+1)
+	xrayAddr := fmt.Sprintf("127.0.0.1:%d", listenPort)
 
 	var client *gossh.Client
 	for i := 0; i < 15; i++ {
