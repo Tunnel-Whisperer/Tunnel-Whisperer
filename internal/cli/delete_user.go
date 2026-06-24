@@ -13,21 +13,15 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
-var deleteCmd = &cobra.Command{
-	Use:   "delete",
-	Short: "Delete resources",
-}
-
 var deleteUserCmd = &cobra.Command{
-	Use:   "user <name>",
+	Use:   "delete <name>",
 	Short: "Delete a user",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runDeleteUser,
 }
 
 func init() {
-	deleteCmd.AddCommand(deleteUserCmd)
-	rootCmd.AddCommand(deleteCmd)
+	serverUserCmd.AddCommand(deleteUserCmd)
 }
 
 func runDeleteUser(cmd *cobra.Command, args []string) error {

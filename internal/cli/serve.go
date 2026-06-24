@@ -14,14 +14,14 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
-var serveCmd = &cobra.Command{
-	Use:   "serve",
+var serverStartCmd = &cobra.Command{
+	Use:   "start",
 	Short: "Start the Tunnel Whisperer server",
 	RunE:  runServe,
 }
 
 func init() {
-	rootCmd.AddCommand(serveCmd)
+	serverCmd.AddCommand(serverStartCmd)
 }
 
 func runServe(cmd *cobra.Command, args []string) error {

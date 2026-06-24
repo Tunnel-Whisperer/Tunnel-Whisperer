@@ -222,7 +222,7 @@ func (o *Ops) CreateUser(ctx context.Context, req CreateUserRequest, progress Pr
 		return fmt.Errorf("xray.relay_host must be configured before creating users")
 	}
 	if cfg.Xray.UUID == "" {
-		return fmt.Errorf("server UUID must be set — run `tw serve` or `tw create relay-server` first")
+		return fmt.Errorf("server UUID must be set — run `tw server start` or `tw admin create` first")
 	}
 
 	userDir := filepath.Join(config.UsersDir(), req.Name)

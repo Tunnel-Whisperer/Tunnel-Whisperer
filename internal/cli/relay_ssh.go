@@ -10,11 +10,6 @@ import (
 	"golang.org/x/term"
 )
 
-var relayCmd = &cobra.Command{
-	Use:   "relay",
-	Short: "Relay server operations",
-}
-
 var relaySSHCmd = &cobra.Command{
 	Use:   "ssh",
 	Short: "Open an interactive SSH shell on the relay server",
@@ -22,8 +17,7 @@ var relaySSHCmd = &cobra.Command{
 }
 
 func init() {
-	relayCmd.AddCommand(relaySSHCmd)
-	rootCmd.AddCommand(relayCmd)
+	adminCmd.AddCommand(relaySSHCmd)
 }
 
 func runRelaySSH(cmd *cobra.Command, args []string) error {
@@ -37,7 +31,7 @@ func runRelaySSH(cmd *cobra.Command, args []string) error {
 
 	status := o.GetRelayStatus()
 	if !status.Provisioned {
-		return fmt.Errorf("no relay provisioned — run `tw create relay-server` first")
+		return fmt.Errorf("no relay provisioned — run `tw admin create` first")
 	}
 
 	fmt.Printf("  Connecting to relay (%s)...\n", status.Domain)

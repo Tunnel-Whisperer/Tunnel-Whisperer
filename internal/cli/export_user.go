@@ -12,21 +12,15 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
-var exportCmd = &cobra.Command{
-	Use:   "export",
-	Short: "Export resources",
-}
-
 var exportUserCmd = &cobra.Command{
-	Use:   "user <name>",
+	Use:   "export <name>",
 	Short: "Export a user's config bundle as a zip file",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runExportUser,
 }
 
 func init() {
-	exportCmd.AddCommand(exportUserCmd)
-	rootCmd.AddCommand(exportCmd)
+	serverUserCmd.AddCommand(exportUserCmd)
 }
 
 func runExportUser(cmd *cobra.Command, args []string) error {

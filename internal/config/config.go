@@ -45,7 +45,7 @@ type XrayConfig struct {
 	ClientKeyPath  string `yaml:"client_key_path,omitempty"`  // matching private key
 }
 
-// ServerConfig holds settings only used by `tw serve`.
+// ServerConfig holds settings only used by `tw server start`.
 type ServerConfig struct {
 	SSHPort       int           `yaml:"ssh_port"`
 	APIPort       int           `yaml:"api_port"`
@@ -70,7 +70,7 @@ type Application struct {
 	Mappings []PortMapping `yaml:"mappings" json:"mappings"`
 }
 
-// ClientConfig holds settings only used by `tw connect`.
+// ClientConfig holds settings only used by `tw client connect`.
 type ClientConfig struct {
 	SSHUser       string `yaml:"ssh_user"`
 	ServerSSHPort int    `yaml:"server_ssh_port"`

@@ -1,4 +1,4 @@
-// Package api implements the Tunnel Whisperer control API served by `tw serve`
+// Package api implements the Tunnel Whisperer control API served by `tw server start`
 // on :50051. It uses the gRPC server machinery, but the proto in
 // proto/api/v1/service.proto is documentation only: a JSON codec (codec.go) is
 // registered so the hand-written Go structs in this package are the wire

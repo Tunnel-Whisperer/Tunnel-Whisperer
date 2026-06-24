@@ -115,7 +115,7 @@ function updateConfirmInfo() {
     if (wizardState.sshOpen) {
       warning.innerHTML = 'SSH port 22 will be <strong>open to the public</strong> (key-only authentication). Only this server\'s key is authorized.';
     } else {
-      warning.innerHTML = 'This script will disable public SSH access on the relay server (port 22 will be blocked by the firewall). After running it, use <strong>tw relay ssh</strong> to connect to the relay.';
+      warning.innerHTML = 'This script will disable public SSH access on the relay server (port 22 will be blocked by the firewall). After running it, use <strong>tw admin ssh</strong> to connect to the relay.';
     }
   }
 }

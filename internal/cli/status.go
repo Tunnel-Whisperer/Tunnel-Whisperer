@@ -10,17 +10,50 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
-var statusCmd = &cobra.Command{
+// adminStatusCmd is the admin-mode status command; gated to admin.
+var adminStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show current server/client status",
-	RunE:  runStatus,
+	Short: "Show current relay and tunnel status",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireMode("admin"); err != nil {
+			return err
+		}
+		return sharedStatus()
+	},
+}
+
+// serverStatusCmd is the server-mode status command; gated to server.
+var serverStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show current relay and tunnel status",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireMode("server"); err != nil {
+			return err
+		}
+		return sharedStatus()
+	},
+}
+
+// clientStatusCmd is the client-mode status command; gated to client.
+var clientStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show current relay and tunnel status",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireMode("client"); err != nil {
+			return err
+		}
+		return sharedStatus()
+	},
 }
 
 func init() {
-	rootCmd.AddCommand(statusCmd)
+	adminCmd.AddCommand(adminStatusCmd)
+	serverCmd.AddCommand(serverStatusCmd)
+	clientCmd.AddCommand(clientStatusCmd)
 }
 
-func runStatus(cmd *cobra.Command, args []string) error {
+// sharedStatus contains the shared status logic used by all three role variants.
+func sharedStatus() error {
 	cfg, _ := config.Load()
 	addr := fmt.Sprintf("localhost:%d", cfg.Server.APIPort)
 
@@ -100,7 +133,7 @@ func runStatusLocal() error {
 
 	if mode == "server" || mode == "client" {
 		fmt.Println()
-		fmt.Println("  (daemon not running — start with `tw serve` or `tw dashboard`)")
+		fmt.Println("  (daemon not running — start with `tw server start` or `tw dashboard`)")
 	}
 
 	return nil

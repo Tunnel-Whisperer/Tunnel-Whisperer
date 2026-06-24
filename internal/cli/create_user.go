@@ -16,14 +16,14 @@ import (
 var createUserFrom string
 
 var createUserCmd = &cobra.Command{
-	Use:   "user",
+	Use:   "create",
 	Short: "Create a client user with tunnel access",
 	RunE:  runCreateUser,
 }
 
 func init() {
 	createUserCmd.Flags().StringVar(&createUserFrom, "from", "", "copy port mappings from an existing user")
-	createCmd.AddCommand(createUserCmd)
+	serverUserCmd.AddCommand(createUserCmd)
 }
 
 func runCreateUser(cmd *cobra.Command, args []string) error {
@@ -134,7 +134,7 @@ func runCreateUser(cmd *cobra.Command, args []string) error {
 	fmt.Println("=== User created ===")
 	fmt.Println()
 	fmt.Println("  Send the user's config directory to the client.")
-	fmt.Println("  The client places these files in their config directory and runs `tw connect`.")
+	fmt.Println("  The client places these files in their config directory and runs `tw client connect`.")
 	fmt.Println()
 
 	return nil

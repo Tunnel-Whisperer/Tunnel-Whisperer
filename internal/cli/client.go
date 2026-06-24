@@ -11,7 +11,7 @@ import (
 
 var clientCmd = &cobra.Command{
 	Use:   "client",
-	Short: "Show or configure client settings",
+	Short: "Client-mode commands",
 }
 
 var clientListenCmd = &cobra.Command{

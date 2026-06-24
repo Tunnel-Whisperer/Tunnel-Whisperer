@@ -11,20 +11,14 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
-var createCmd = &cobra.Command{
-	Use:   "create",
-	Short: "Create infrastructure resources",
-}
-
 var createRelayServerCmd = &cobra.Command{
-	Use:   "relay-server",
-	Short: "Interactively provision a relay server on a cloud provider",
+	Use:   "create",
+	Short: "Provision a relay server on a cloud provider",
 	RunE:  runCreateRelayServer,
 }
 
 func init() {
-	createCmd.AddCommand(createRelayServerCmd)
-	rootCmd.AddCommand(createCmd)
+	adminCmd.AddCommand(createRelayServerCmd)
 }
 
 // cliProgress prints ProgressEvents to stdout.
@@ -215,7 +209,7 @@ func runCreateRelayServer(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	fmt.Println("=== Relay server setup complete ===")
 	fmt.Println()
-	fmt.Println("  Run `tw serve` to start the tunnel.")
+	fmt.Println("  Run `tw server start` to start the tunnel.")
 	fmt.Println()
 
 	return nil

@@ -18,7 +18,7 @@ var connectCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(connectCmd)
+	clientCmd.AddCommand(connectCmd)
 }
 
 func runConnect(cmd *cobra.Command, args []string) error {
