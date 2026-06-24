@@ -21,4 +21,12 @@ func TestModeError(t *testing.T) {
 	if err := modeError("server", []string{"client", "admin"}); err == nil {
 		t.Error("modeError(server, [client admin]) = nil, want error")
 	}
+	// Relay ownership moved to admin mode: server mode must be refused the
+	// admin-gated relay commands (e.g. `tw admin create`), and admin allowed.
+	if err := modeError("server", []string{"admin"}); err == nil {
+		t.Error("modeError(server, [admin]) = nil, want error (server must not run `tw admin create`)")
+	}
+	if err := modeError("admin", []string{"admin"}); err != nil {
+		t.Errorf("modeError(admin, [admin]) = %v, want nil", err)
+	}
 }

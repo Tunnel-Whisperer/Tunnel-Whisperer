@@ -94,7 +94,7 @@
   <div id="xray-success" class="alert alert-success mt-16 hidden"></div>
 </div>
 
-{{if ne .Mode "client"}}
+{{if eq .Mode "server"}}
 <div class="card mb-16">
   <div class="card-header">
     <h2>Server Settings</h2>
@@ -138,7 +138,7 @@
 </div>
 {{end}}
 
-{{if ne .Mode "server"}}
+{{if eq .Mode "client"}}
 <div class="card mb-16">
   <div class="card-header">
     <h2>Client Settings</h2>

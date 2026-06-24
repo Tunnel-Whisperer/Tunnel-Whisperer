@@ -1,7 +1,41 @@
 {{define "content"}}
-<div class="setup-container">
-  <h1>Admin</h1>
-  <p class="text-dim mb-16">This instance is configured to own and manage the relay.</p>
-  <p class="text-dim">Relay provisioning, the admin bundle, and server admission arrive in the next phase. Nothing to do here yet.</p>
+<h1>Admin</h1>
+<p class="text-dim mb-16">This instance owns and manages the relay.</p>
+
+{{if .Relay.Provisioned}}
+<div class="card mb-16">
+  <div class="card-header">
+    <h2>Relay</h2>
+    <span class="badge badge-green">provisioned</span>
+  </div>
+  <div class="kv">
+    <span class="kv-label">Domain</span>
+    <span class="kv-value">{{.Relay.Domain}}</span>
+    {{if .Relay.Name}}<span class="kv-label">Instance</span>
+    <span class="kv-value">{{.Relay.Name}}</span>{{end}}
+    <span class="kv-label">IP</span>
+    <span class="kv-value">{{or .Relay.IP "—"}}</span>
+    <span class="kv-label">Provider</span>
+    <span class="kv-value">{{or .Relay.Provider "—"}}</span>
+  </div>
+  <div class="mt-16">
+    <a href="/relay" class="btn btn-primary">Manage Relay</a>
+  </div>
+</div>
+{{else}}
+<div class="card mb-16">
+  <div class="card-header">
+    <h2>No Relay Provisioned</h2>
+  </div>
+  <p class="text-dim mb-16">Provision a relay to start admitting servers and clients.</p>
+  <a href="/relay/wizard" class="btn btn-primary">Provision Relay</a>
+</div>
+{{end}}
+
+<div class="card">
+  <div class="card-header">
+    <h2>Admin Bundle</h2>
+  </div>
+  <p class="text-dim">Your admin bundle (<code>tw_&lt;domain&gt;_admin.zip</code>) holds the CA keypair, the relay SSH key, and relay metadata. Back it up somewhere safe and remember its passphrase — <strong>there is no recovery</strong>. If it is lost, the relay must be re-provisioned.</p>
 </div>
 {{end}}
