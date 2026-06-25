@@ -120,6 +120,19 @@ func (o *Ops) GetRelayStatus() RelayStatus {
 		}
 	}
 
+	// Marker-less fallback: a configured manual relay whose marker file was lost
+	// (e.g. a config-dir wipe or a bundle import that predated marker round-trip).
+	// If the config points at a relay (RelayHost set) and this machine holds an
+	// issued client cert, treat it as provisioned so management (SSH, status) is
+	// not blocked by a missing marker file alone. No Terraform state means it is a
+	// manual relay; cloud relays are covered by the tfstate branch above.
+	if !status.Provisioned && cfg.Xray.RelayHost != "" {
+		if _, err := os.Stat(config.ClientCertPath()); err == nil {
+			status.Provisioned = true
+			status.Provider = "Manual"
+		}
+	}
+
 	return status
 }
 
