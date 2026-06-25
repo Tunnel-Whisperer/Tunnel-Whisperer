@@ -111,9 +111,18 @@ func unsealProfile(data []byte, passphrase string) error {
 		return fmt.Errorf("reading profile zip (corrupted?): %w", err)
 	}
 	dir := config.Dir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
+
+	// Pass 1: validate every entry and collect its destination, content, and
+	// mode. Write NOTHING to the live config dir here — any rejected entry
+	// (zip-slip, excluded context-store entry, read error) aborts the whole
+	// unseal with zero side effects, so a malformed bundle can never leave a
+	// half-overwritten config.
+	type pending struct {
+		dest    string
+		content []byte
+		mode    os.FileMode
 	}
+	var writes []pending
 	for _, zf := range zr.File {
 		clean := filepath.Clean(zf.Name)
 		if clean == "contexts" || clean == "contexts.yaml" || strings.HasPrefix(clean, "contexts"+string(os.PathSeparator)) || strings.HasPrefix(clean, "contexts/") {
@@ -130,20 +139,28 @@ func unsealProfile(data []byte, passphrase string) error {
 		content, err := io.ReadAll(rc)
 		rc.Close()
 		if err != nil {
-			return err
-		}
-		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-			return err
+			return fmt.Errorf("reading profile entry %q: %w", zf.Name, err)
 		}
 		mode := os.FileMode(0o644)
 		if strings.HasSuffix(clean, ".key") || filepath.Base(clean) == "id_ed25519" {
 			mode = 0o600
 		}
-		if err := os.WriteFile(dest, content, mode); err != nil {
-			return fmt.Errorf("writing %s: %w", clean, err)
+		writes = append(writes, pending{dest: dest, content: content, mode: mode})
+	}
+
+	// Pass 2: all entries validated — now write them to the live config dir.
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for _, w := range writes {
+		if err := os.MkdirAll(filepath.Dir(w.dest), 0o755); err != nil {
+			return err
 		}
-		if err := os.Chmod(dest, mode); err != nil {
-			return fmt.Errorf("setting mode on %s: %w", clean, err)
+		if err := os.WriteFile(w.dest, w.content, w.mode); err != nil {
+			return fmt.Errorf("writing %s: %w", w.dest, err)
+		}
+		if err := os.Chmod(w.dest, w.mode); err != nil {
+			return fmt.Errorf("setting mode on %s: %w", w.dest, err)
 		}
 	}
 	return nil

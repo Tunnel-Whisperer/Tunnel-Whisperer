@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
+	"github.com/tunnelwhisperer/tw/internal/cryptobox"
 )
 
 func writeFile(t *testing.T, p, content string) {
@@ -55,5 +56,32 @@ func TestUnsealProfileWrongPassphrase(t *testing.T) {
 	t.Setenv("TW_CONFIG_DIR", t.TempDir())
 	if err := unsealProfile(sealed, "wrong"); err == nil {
 		t.Error("expected error with wrong passphrase")
+	}
+}
+
+// TestZipHashMatchesProfileHash pins the invariant that zipHash (over a sealed
+// profile zip) and profileHash (over the live files) produce the same value.
+// If they ever drift out of the same byte-format, the "unchanged → skip
+// re-seal" check in resealCurrent would silently never fire.
+func TestZipHashMatchesProfileHash(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	writeFile(t, config.FilePath(), "mode: admin\n")
+	writeFile(t, config.CACertPath(), "CA")
+	writeFile(t, filepath.Join(config.Dir(), "users", "alice", "config.yaml"), "user: alice")
+
+	sealed, err := sealProfile("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := cryptobox.Decrypt(sealed, "pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := profileHash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := zipHash(plain); got != want {
+		t.Errorf("zipHash = %q, profileHash = %q; must match", got, want)
 	}
 }
