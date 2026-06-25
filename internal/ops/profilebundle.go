@@ -116,7 +116,7 @@ func unsealProfile(data []byte, passphrase string) error {
 	}
 	for _, zf := range zr.File {
 		clean := filepath.Clean(zf.Name)
-		if clean == "contexts.yaml" || strings.HasPrefix(clean, "contexts"+string(os.PathSeparator)) || strings.HasPrefix(clean, "contexts/") {
+		if clean == "contexts" || clean == "contexts.yaml" || strings.HasPrefix(clean, "contexts"+string(os.PathSeparator)) || strings.HasPrefix(clean, "contexts/") {
 			return fmt.Errorf("profile bundle must not contain context-store entry %q", zf.Name)
 		}
 		dest := filepath.Join(dir, clean)
@@ -142,13 +142,24 @@ func unsealProfile(data []byte, passphrase string) error {
 		if err := os.WriteFile(dest, content, mode); err != nil {
 			return fmt.Errorf("writing %s: %w", clean, err)
 		}
-		_ = os.Chmod(dest, mode)
+		if err := os.Chmod(dest, mode); err != nil {
+			return fmt.Errorf("setting mode on %s: %w", clean, err)
+		}
 	}
 	return nil
 }
 
 // profileHash returns a stable hash of the active profile files (name+content),
 // used to skip re-sealing an unchanged context.
+//
+// Hash scheme (must be replicated verbatim by any sibling hash, e.g. zipHash):
+// SHA256 over, for each profile file in sorted relative-path order:
+//
+//	fmt.Fprintf(h, "%s\n%d\n", relPath, len(content))
+//	h.Write(content)
+//
+// relPath is the config.Dir()-relative, forward-slash path; len(content) is the
+// raw byte length. The result is hex-encoded.
 func profileHash() (string, error) {
 	files, err := profileFiles()
 	if err != nil {
