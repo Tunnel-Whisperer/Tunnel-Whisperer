@@ -673,15 +673,16 @@ func runRelayCmd(client *gossh.Client, cmd string) error {
 	return nil
 }
 
-// enrollServerOnRelay installs each server's CA into the relay trust pool and
-// (re)writes the relay Caddyfile from the full server list, then reloads Caddy
-// with zero downtime. In v1 `servers` contains exactly this server; the
-// multi-tenant branch passes the full list. This is the single seam the admin
-// profile will reuse to enroll servers without recreating the relay.
+// enrollServerOnRelay installs each server's CA into the relay trust pool,
+// (re)writes the relay Caddyfile from the full server list and reloads Caddy,
+// then renders and writes the relay Xray config.json and reloads Xray.
+// In v1 `servers` and `tenants` each contain exactly this server; the
+// multi-tenant branch passes the full lists. This is the single seam the admin
+// profile uses to enroll servers without recreating the relay.
 //
 // caCerts maps a server ID to its CA certificate PEM; each is written to
 // /etc/caddy/ca/<id>.crt (which the rendered Caddyfile's trust_pool references).
-func (o *Ops) enrollServerOnRelay(domain string, servers []caddy.Server, caCerts map[string][]byte) error {
+func (o *Ops) enrollServerOnRelay(domain string, servers []caddy.Server, tenants []relayxray.Tenant, caCerts map[string][]byte) error {
 	caddyfile, err := caddy.RenderCaddyfile(caddy.Config{Domain: domain, Servers: servers})
 	if err != nil {
 		return fmt.Errorf("rendering Caddyfile: %w", err)
@@ -707,8 +708,61 @@ func (o *Ops) enrollServerOnRelay(domain string, servers []caddy.Server, caCerts
 		if err := runRelayCmd(client, "sudo systemctl reload caddy"); err != nil {
 			return fmt.Errorf("reloading caddy: %w", err)
 		}
+		xjson, rerr := relayxray.RenderConfig(relayxray.Config{Tenants: tenants})
+		if rerr != nil {
+			return fmt.Errorf("rendering relay Xray config: %w", rerr)
+		}
+		xb64 := base64.StdEncoding.EncodeToString([]byte(xjson))
+		if err := runRelayCmd(client, fmt.Sprintf("echo %s | base64 -d | sudo tee /usr/local/etc/xray/config.json >/dev/null", xb64)); err != nil {
+			return fmt.Errorf("writing relay Xray config: %w", err)
+		}
+		if err := runRelayCmd(client, "sudo systemctl reload xray 2>/dev/null || sudo systemctl restart xray"); err != nil {
+			return fmt.Errorf("reloading xray: %w", err)
+		}
 		return nil
 	})
+}
+
+// ReconcileRelay migrates an already-provisioned relay to the current identity
+// scheme in place: regenerate identity (new CN), recompute the per-tenant path,
+// re-render + reload the Caddyfile and relay Xray over the existing
+// VLESS-tunnelled SSH, swap the CA file old->new id in the trust pool. Idempotent.
+// Client bundles must be re-exported afterward (path + cert changed).
+func (o *Ops) ReconcileRelay(progress ProgressFunc) error {
+	if progress == nil {
+		progress = func(ProgressEvent) {}
+	}
+	cfg := o.Config()
+	osHost, _ := os.Hostname()
+	serverID := deriveServerID(osHost, cfg.Xray.UUID)
+	relayPath := "/tw/" + serverID
+	vlessInPort := cfg.Server.RemotePort + 10000
+
+	if err := o.ensureCerts(); err != nil {
+		return fmt.Errorf("ensuring identity: %w", err)
+	}
+	if err := o.SetXraySettings(config.XrayConfig{Path: relayPath}); err != nil {
+		return fmt.Errorf("persisting derived path: %w", err)
+	}
+	caPEM, err := os.ReadFile(config.CACertPath())
+	if err != nil {
+		return fmt.Errorf("reading CA: %w", err)
+	}
+	servers := []caddy.Server{{
+		ID:         serverID,
+		Path:       relayPath,
+		CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", serverID),
+		Upstream:   fmt.Sprintf("h2c://127.0.0.1:%d", vlessInPort),
+		Role:       "server",
+	}}
+	tenants := []relayxray.Tenant{{ServerID: serverID, UUID: cfg.Xray.UUID, RemotePort: cfg.Server.RemotePort}}
+	progress(ProgressEvent{Step: 1, Total: 1, Label: "Reconcile relay", Status: "running"})
+	if err := o.enrollServerOnRelay(cfg.Xray.RelayHost, servers, tenants, map[string][]byte{serverID: caPEM}); err != nil {
+		progress(ProgressEvent{Step: 1, Total: 1, Label: "Reconcile relay", Status: "failed", Error: err.Error()})
+		return err
+	}
+	progress(ProgressEvent{Step: 1, Total: 1, Label: "Reconcile relay", Status: "completed", Message: "relay re-enrolled on " + relayPath})
+	return nil
 }
 
 // DirectRelaySSH connects to the relay over plain SSH (port 22) without an
