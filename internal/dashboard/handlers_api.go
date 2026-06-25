@@ -864,6 +864,50 @@ func (s *Server) apiLogs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ── Context endpoints ────────────────────────────────────────────────────────
+
+// apiListContexts returns the stored contexts as JSON.
+func (s *Server) apiListContexts(w http.ResponseWriter, r *http.Request) {
+	list, err := s.ops.ListContexts()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(list)
+}
+
+// apiUseContext switches the daemon's active context and reconnects.
+func (s *Server) apiUseContext(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Name       string `json:"name"`
+		Passphrase string `json:"passphrase"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	progress := func(e ops.ProgressEvent) {
+		switch e.Status {
+		case "running":
+			slog.Info(e.Label, "step", e.Step, "total", e.Total, "status", "running")
+		case "completed":
+			slog.Info(e.Label, "step", e.Step, "total", e.Total, "status", "completed")
+		case "failed":
+			slog.Error(e.Label, "step", e.Step, "total", e.Total, "error", e.Error)
+		}
+	}
+	if err := s.ops.UseContext(req.Name, req.Passphrase, "", progress); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ── Applications ────────────────────────────────────────────────────────────
 
 func (s *Server) apiApps(w http.ResponseWriter, r *http.Request) {

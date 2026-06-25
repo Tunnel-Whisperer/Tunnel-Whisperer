@@ -130,6 +130,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/client/upload", s.apiClientUpload)
 	s.mux.HandleFunc("/api/apps", s.apiApps)
 	s.mux.HandleFunc("/api/apps/", s.apiAppAction)
+	s.mux.HandleFunc("/api/config/contexts", s.apiListContexts)
+	s.mux.HandleFunc("/api/config/use-context", s.apiUseContext)
 	s.mux.HandleFunc("/api/users", s.apiUsers)
 	s.mux.HandleFunc("/api/users/apply", s.apiApplyUsers)
 	s.mux.HandleFunc("/api/users/unregister", s.apiUnregisterUsers)
