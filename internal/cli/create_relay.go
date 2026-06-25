@@ -198,12 +198,12 @@ func runCreateRelayServer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Emit the password-protected admin bundle (the portable admin identity).
+	// Emit the password-protected bundle (the portable identity for this relay).
 	fmt.Println()
-	fmt.Println("  Creating admin bundle...")
-	if err := writeAdminBundle(o, domain); err != nil {
-		fmt.Printf("  Warning: could not create admin bundle: %v\n", err)
-		fmt.Println("  Run `tw admin export-bundle` to create it later.")
+	fmt.Println("  Creating relay bundle...")
+	if err := writeProfileBundle(o, domain); err != nil {
+		fmt.Printf("  Warning: could not create relay bundle: %v\n", err)
+		fmt.Println("  Run `tw config export` to create it later.")
 	}
 
 	fmt.Println()

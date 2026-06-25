@@ -3,9 +3,13 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"github.com/tunnelwhisperer/tw/internal/api"
+	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
@@ -54,7 +58,10 @@ var configImportCmd = &cobra.Command{
 	RunE:  runConfigImport,
 }
 
-var configImportName string
+var (
+	configImportName     string
+	configImportActivate bool
+)
 
 var configExportCmd = &cobra.Command{
 	Use:   "export [name]",
@@ -65,6 +72,7 @@ var configExportCmd = &cobra.Command{
 
 func init() {
 	configImportCmd.Flags().StringVar(&configImportName, "name", "", "context name (default: relay domain)")
+	configImportCmd.Flags().BoolVar(&configImportActivate, "activate", false, "switch to the imported context immediately (applies its mode)")
 	configCmd.AddCommand(configGetContextsCmd, configCurrentContextCmd, configUseContextCmd,
 		configRenameContextCmd, configDeleteContextCmd, configImportCmd, configExportCmd)
 	rootCmd.AddCommand(configCmd)
@@ -143,10 +151,35 @@ func runConfigDeleteContext(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := o.DeleteContext(args[0]); err != nil {
+	name := args[0]
+	cur, _ := o.CurrentContext()
+	list, _ := o.ListContexts()
+	resetting := name == cur && len(list) == 1
+	if resetting {
+		// A running daemon holds files in the config dir open; on Windows the
+		// wipe would only partially succeed and orphan the config. Refuse before
+		// deleting anything so the reset is all-or-nothing.
+		cfg, _ := config.Load()
+		if c, derr := api.Dial(fmt.Sprintf("localhost:%d", cfg.Server.APIPort)); derr == nil {
+			c.Close()
+			return fmt.Errorf("the tw service is running and holds the config folder open; stop it first (Windows: Stop-Service tw; otherwise: tw service stop), then run this again")
+		}
+		fmt.Printf("  %q is the only context and is active. Deleting it performs a FULL RESET:\n", name)
+		fmt.Println("  it removes all tw configuration (identity, keys, relay data) from this machine.")
+		fmt.Print("  Continue? [y/N]: ")
+		if ans, _ := sharedLine(); strings.ToLower(ans) != "y" {
+			fmt.Println("  Aborted.")
+			return nil
+		}
+	}
+	if err := o.DeleteContext(name); err != nil {
 		return err
 	}
-	fmt.Printf("  Deleted context %q.\n", args[0])
+	if resetting {
+		fmt.Println("  Configuration removed. This machine is no longer set up.")
+	} else {
+		fmt.Printf("  Deleted context %q.\n", name)
+	}
 	return nil
 }
 
@@ -163,14 +196,18 @@ func runConfigImport(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	name := configImportName
-	if name == "" {
-		return fmt.Errorf("a context name is required: pass --name")
-	}
-	if err := o.ImportContext(data, name, pass); err != nil {
+	name, err := o.ImportContext(data, configImportName, pass)
+	if err != nil {
 		return err
 	}
-	fmt.Printf("  Imported context %q. Switch with: tw config use-context %s\n", name, name)
+	if configImportActivate {
+		if err := o.UseContext(name, pass, "", cliProgress); err != nil {
+			return err
+		}
+		fmt.Printf("  Imported and switched to context %q (mode applied from the bundle).\n", name)
+		return nil
+	}
+	fmt.Printf("  Imported context %q. Activate with: tw config use-context %s\n", name, name)
 	return nil
 }
 
@@ -179,22 +216,57 @@ func runConfigExport(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	name := ""
+	cur, err := o.CurrentContext()
+	if err != nil {
+		return err
+	}
+	name := cur
 	if len(args) == 1 {
 		name = args[0]
-	} else {
-		if name, err = o.CurrentContext(); err != nil {
-			return err
-		}
+	}
+	// The active context has no on-disk snapshot until a switch seals it, so
+	// export it by sealing the live profile; a non-current context is already
+	// sealed on disk.
+	if name == cur || name == "" {
+		return writeProfileBundle(o, name)
 	}
 	data, err := o.ExportContext(name)
 	if err != nil {
 		return err
 	}
-	fname := fmt.Sprintf("tw_%s.twctx", name)
+	return writeBundleFile(name, data)
+}
+
+// writeProfileBundle seals the active profile under a freshly-prompted passphrase
+// and writes it as tw_<name>.twctx. This is the single portable bundle format
+// (admin/server/client alike) — it supersedes the old admin bundle.
+func writeProfileBundle(o *ops.Ops, name string) error {
+	pass, err := promptNewPassphrase()
+	if err != nil {
+		return err
+	}
+	data, err := o.ExportCurrentContext(pass)
+	if err != nil {
+		return err
+	}
+	return writeBundleFile(name, data)
+}
+
+func writeBundleFile(name string, data []byte) error {
+	safe := strings.NewReplacer(".", "-", ":", "-", "/", "-", " ", "-").Replace(name)
+	if safe == "" {
+		safe = "context"
+	}
+	fname := fmt.Sprintf("tw_%s.twctx", safe)
 	if err := os.WriteFile(fname, data, 0600); err != nil {
 		return fmt.Errorf("writing %s: %w", fname, err)
 	}
-	fmt.Printf("  Exported context %q to %s\n", name, fname)
+	abs, err := filepath.Abs(fname)
+	if err != nil {
+		abs = fname
+	}
+	fmt.Printf("\n  Bundle written: %s\n", abs)
+	fmt.Println("  IMPORTANT: back this up securely and remember its passphrase. It is the")
+	fmt.Println("  portable identity for this relay/context; there is no recovery if it is lost.")
 	return nil
 }

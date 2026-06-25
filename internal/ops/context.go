@@ -75,7 +75,10 @@ func (o *Ops) RenameContext(oldName, newName string) error {
 	return config.SaveContextIndex(idx)
 }
 
-// DeleteContext removes a stored context. The current context cannot be deleted.
+// DeleteContext removes a stored context. The current context can be deleted
+// only when it is the LAST remaining context — that is a full local reset and
+// removes the entire config directory. Deleting the current context while other
+// contexts exist is refused (switch first).
 func (o *Ops) DeleteContext(name string) error {
 	idx, err := config.EnsureContextIndex()
 	if err != nil {
@@ -85,7 +88,15 @@ func (o *Ops) DeleteContext(name string) error {
 		return fmt.Errorf("no such context: %s", name)
 	}
 	if idx.CurrentContext == name {
-		return fmt.Errorf("cannot delete the current context %q; switch first", name)
+		if len(idx.Contexts) > 1 {
+			return fmt.Errorf("cannot delete the current context %q while other contexts exist; switch to another first", name)
+		}
+		// Sole context and it is active: full local reset — wipe the config dir.
+		o.SetActivePassphrase("")
+		if err := os.RemoveAll(config.Dir()); err != nil {
+			return fmt.Errorf("could not fully remove the config directory %q (a process may be holding files open — stop the tw service, then remove it manually): %w", config.Dir(), err)
+		}
+		return nil
 	}
 	if err := os.Remove(config.ContextBundlePath(name)); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("removing bundle: %w", err)
@@ -94,43 +105,60 @@ func (o *Ops) DeleteContext(name string) error {
 	return config.SaveContextIndex(idx)
 }
 
-// ImportContext stores an encrypted profile bundle as a new context. The bundle
-// is decrypted once (passphrase) to read its config.yaml for the index metadata;
-// the encrypted blob is stored as-is.
-func (o *Ops) ImportContext(bundle []byte, name, passphrase string) error {
+// ImportContext stores an encrypted profile bundle (a context bundle, or a
+// legacy admin/user bundle — same encrypted-zip shape) as a new context. The
+// bundle is decrypted once (passphrase) to read its config.yaml for the index
+// metadata; the encrypted blob is stored as-is. If name is empty it is derived
+// from the bundle's relay domain. Returns the resolved context name.
+func (o *Ops) ImportContext(bundle []byte, name, passphrase string) (string, error) {
 	idx, err := config.EnsureContextIndex()
 	if err != nil {
-		return err
-	}
-	if _, exists := idx.Contexts[name]; exists {
-		return fmt.Errorf("context already exists: %s", name)
+		return "", err
 	}
 	plain, err := cryptobox.Decrypt(bundle, passphrase)
 	if err != nil {
-		return fmt.Errorf("decrypting bundle (wrong passphrase?): %w", err)
+		return "", fmt.Errorf("decrypting bundle (wrong passphrase?): %w", err)
 	}
 	role, relay := readBundleMeta(plain)
+	if name == "" {
+		name = sanitizeHostname(relay)
+	}
+	if _, exists := idx.Contexts[name]; exists {
+		return "", fmt.Errorf("context already exists: %s", name)
+	}
 	if err := os.MkdirAll(config.ContextsDir(), 0o755); err != nil {
-		return err
+		return "", err
 	}
 	if err := os.WriteFile(config.ContextBundlePath(name), bundle, 0o600); err != nil {
-		return fmt.Errorf("storing context bundle: %w", err)
+		return "", fmt.Errorf("storing context bundle: %w", err)
 	}
 	idx.Contexts[name] = config.ContextMeta{
 		Role:    role,
 		Relay:   relay,
 		Created: time.Now().UTC().Format(time.RFC3339),
 	}
-	return config.SaveContextIndex(idx)
+	if err := config.SaveContextIndex(idx); err != nil {
+		return "", err
+	}
+	return name, nil
 }
 
-// ExportContext returns the encrypted bundle bytes for a stored context.
+// ExportContext returns the encrypted bundle bytes for a stored (non-current)
+// context. To export the active context, use ExportCurrentContext (it seals the
+// live profile, which may have no on-disk snapshot yet).
 func (o *Ops) ExportContext(name string) ([]byte, error) {
 	data, err := os.ReadFile(config.ContextBundlePath(name))
 	if err != nil {
 		return nil, fmt.Errorf("reading context %q (not sealed yet?): %w", name, err)
 	}
 	return data, nil
+}
+
+// ExportCurrentContext seals the live (active) profile into an encrypted bundle
+// under passphrase — the portable form of the current context, and the single
+// bundle format (it supersedes the old admin bundle).
+func (o *Ops) ExportCurrentContext(passphrase string) ([]byte, error) {
+	return sealProfile(passphrase)
 }
 
 // readBundleMeta extracts mode + relay host from a decrypted profile zip's

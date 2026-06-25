@@ -98,6 +98,37 @@ func TestListAndDeleteContexts(t *testing.T) {
 	}
 }
 
+func TestDeleteLastContextWipesConfig(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	o := newOpsForTest(t)
+	// One context, which is current.
+	seedContext(t, "only", "admin", "a.example.com", "pw")
+	if _, err := os.Stat(config.FilePath()); err != nil {
+		t.Fatalf("config.yaml should exist before delete: %v", err)
+	}
+	// Deleting the sole, current context wipes the whole config dir (full reset).
+	if err := o.DeleteContext("only"); err != nil {
+		t.Fatalf("DeleteContext: %v", err)
+	}
+	if _, err := os.Stat(config.Dir()); !os.IsNotExist(err) {
+		t.Errorf("config dir should be removed after deleting the last context; stat err = %v", err)
+	}
+}
+
+func TestDeleteCurrentWithOthersRefused(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	o := newOpsForTest(t)
+	seedContext(t, "a", "admin", "a.example.com", "pw")  // becomes current
+	seedContext(t, "b", "client", "b.example.com", "pw") // second context
+	cur, _ := o.CurrentContext()
+	if err := o.DeleteContext(cur); err == nil {
+		t.Error("deleting the current context while others exist should be refused")
+	}
+	if _, err := os.Stat(config.Dir()); err != nil {
+		t.Errorf("config dir must NOT be wiped when the delete is refused: %v", err)
+	}
+}
+
 func TestUseContextSwitchesActive(t *testing.T) {
 	t.Setenv("TW_CONFIG_DIR", t.TempDir())
 	o := newOpsForTest(t)
@@ -142,8 +173,10 @@ func TestImportContext(t *testing.T) {
 	// bundle store are written to the correct location.
 	t.Setenv("TW_CONFIG_DIR", activeDir)
 
-	if err := o.ImportContext(blob, "imported", "pw"); err != nil {
+	if name, err := o.ImportContext(blob, "imported", "pw"); err != nil {
 		t.Fatalf("ImportContext: %v", err)
+	} else if name != "imported" {
+		t.Fatalf("ImportContext returned name %q, want imported", name)
 	}
 
 	// The encrypted bundle must be on disk.
