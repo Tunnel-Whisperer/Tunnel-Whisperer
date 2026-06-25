@@ -553,13 +553,16 @@ func removeMultipleUUIDsFromRelayConfig(cfg *config.Config, users []UserInfo) er
 	if len(users) == 0 {
 		return nil
 	}
+	hostname, _ := os.Hostname()
+	serverID := deriveServerID(hostname, cfg.Xray.UUID)
+	inboundTag := "vless-in-" + serverID
 	return withRelaySSH(cfg, func(client *gossh.Client) error {
 		xrayConf, err := readRelayXrayConfig(client)
 		if err != nil {
 			return err
 		}
 
-		settings, clients, err := relayClients(xrayConf)
+		settings, clients, err := relayClients(xrayConf, inboundTag)
 		if err != nil {
 			return err
 		}
@@ -720,13 +723,16 @@ func addMultipleUUIDsToRelay(cfg *config.Config, uuids []string) error {
 	if len(uuids) == 0 {
 		return nil
 	}
+	hostname, _ := os.Hostname()
+	serverID := deriveServerID(hostname, cfg.Xray.UUID)
+	inboundTag := "vless-in-" + serverID
 	return withRelaySSH(cfg, func(client *gossh.Client) error {
 		xrayConf, err := readRelayXrayConfig(client)
 		if err != nil {
 			return err
 		}
 
-		settings, clients, err := relayClients(xrayConf)
+		settings, clients, err := relayClients(xrayConf, inboundTag)
 		if err != nil {
 			return err
 		}
@@ -760,7 +766,7 @@ func addMultipleUUIDsToRelay(cfg *config.Config, uuids []string) error {
 		// Hot-add to running Xray via API; restart as fallback.
 		// We send all requested UUIDs (not just newly added) in case
 		// the running process is stale.
-		if err := xrayAPIAddUsers(client, uuids); err != nil {
+		if err := xrayAPIAddUsers(client, uuids, inboundTag); err != nil {
 			slog.Warn("xray API add failed, restarting xray", "error", err)
 			restartRelayXray(client)
 		}
@@ -1042,8 +1048,9 @@ func dialRelayGRPC(client *gossh.Client) (*grpc.ClientConn, error) {
 }
 
 // xrayAPIAddUsers hot-adds UUIDs to the running Xray process via gRPC.
-// Each UUID is added as a VLESS client on the "vless-in" inbound.
-func xrayAPIAddUsers(client *gossh.Client, uuids []string) error {
+// Each UUID is added as a VLESS client on the per-tenant inbound identified
+// by inboundTag (e.g. "vless-in-<server-id>").
+func xrayAPIAddUsers(client *gossh.Client, uuids []string, inboundTag string) error {
 	if len(uuids) == 0 {
 		return nil
 	}
@@ -1060,7 +1067,7 @@ func xrayAPIAddUsers(client *gossh.Client, uuids []string) error {
 
 	for _, u := range uuids {
 		_, err := hsClient.AlterInbound(ctx, &proxymanCmd.AlterInboundRequest{
-			Tag: "vless-in",
+			Tag: inboundTag,
 			Operation: serial.ToTypedMessage(&proxymanCmd.AddUserOperation{
 				User: &protocol.User{
 					Email: u,
@@ -1079,7 +1086,8 @@ func xrayAPIAddUsers(client *gossh.Client, uuids []string) error {
 }
 
 // xrayAPIRemoveUsers removes UUIDs from the running Xray process via gRPC.
-func xrayAPIRemoveUsers(client *gossh.Client, uuids []string) error {
+// inboundTag identifies the per-tenant VLESS inbound (e.g. "vless-in-<server-id>").
+func xrayAPIRemoveUsers(client *gossh.Client, uuids []string, inboundTag string) error {
 	if len(uuids) == 0 {
 		return nil
 	}
@@ -1096,7 +1104,7 @@ func xrayAPIRemoveUsers(client *gossh.Client, uuids []string) error {
 
 	for _, u := range uuids {
 		_, err := hsClient.AlterInbound(ctx, &proxymanCmd.AlterInboundRequest{
-			Tag: "vless-in",
+			Tag: inboundTag,
 			Operation: serial.ToTypedMessage(&proxymanCmd.RemoveUserOperation{
 				Email: u,
 			}),
@@ -1122,9 +1130,10 @@ func restartRelayXray(client *gossh.Client) {
 }
 
 // relayClients extracts the clients slice from the VLESS inbound in the
-// parsed Xray config.  It finds the inbound by tag ("vless-in") or
-// protocol ("vless") to avoid depending on array ordering.
-func relayClients(xrayConf map[string]interface{}) (settings map[string]interface{}, clients []interface{}, err error) {
+// parsed Xray config.  It finds the inbound by exact tag (inboundTag, e.g.
+// "vless-in-<server-id>") first; falls back to protocol=="vless" for
+// single-tenant relays where the tag is unambiguous.
+func relayClients(xrayConf map[string]interface{}, inboundTag string) (settings map[string]interface{}, clients []interface{}, err error) {
 	inbounds, _ := xrayConf["inbounds"].([]interface{})
 	if len(inbounds) == 0 {
 		return nil, nil, fmt.Errorf("no inbounds in relay config")
@@ -1136,13 +1145,22 @@ func relayClients(xrayConf map[string]interface{}) (settings map[string]interfac
 		if !ok {
 			continue
 		}
-		if tag, _ := m["tag"].(string); tag == "vless-in" {
+		if tag, _ := m["tag"].(string); tag == inboundTag {
 			inbound = m
 			break
 		}
-		if proto, _ := m["protocol"].(string); proto == "vless" {
-			inbound = m
-			break
+	}
+	if inbound == nil {
+		// fallback: pick the first VLESS inbound (harmless on single-tenant relays)
+		for _, ib := range inbounds {
+			m, ok := ib.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if proto, _ := m["protocol"].(string); proto == "vless" {
+				inbound = m
+				break
+			}
 		}
 	}
 	if inbound == nil {
@@ -1159,13 +1177,16 @@ func relayClients(xrayConf map[string]interface{}) (settings map[string]interfac
 // first, then hot-adds via the Xray API.  Falls back to restart if the
 // API fails.
 func addUUIDToRelay(cfg *config.Config, newUUID string) error {
+	hostname, _ := os.Hostname()
+	serverID := deriveServerID(hostname, cfg.Xray.UUID)
+	inboundTag := "vless-in-" + serverID
 	return withRelaySSH(cfg, func(client *gossh.Client) error {
 		xrayConf, err := readRelayXrayConfig(client)
 		if err != nil {
 			return err
 		}
 
-		settings, clients, err := relayClients(xrayConf)
+		settings, clients, err := relayClients(xrayConf, inboundTag)
 		if err != nil {
 			return err
 		}
@@ -1190,7 +1211,7 @@ func addUUIDToRelay(cfg *config.Config, newUUID string) error {
 		}
 
 		// Hot-add to running Xray via API; restart as fallback.
-		if err := xrayAPIAddUsers(client, []string{newUUID}); err != nil {
+		if err := xrayAPIAddUsers(client, []string{newUUID}, inboundTag); err != nil {
 			slog.Warn("xray API add failed, restarting xray", "error", err)
 			restartRelayXray(client)
 		}
@@ -1202,13 +1223,16 @@ func addUUIDToRelay(cfg *config.Config, newUUID string) error {
 // and removes a client UUID from the relay's Xray config.  Persists to
 // disk first, then hot-removes via the Xray API.  Falls back to restart.
 func removeUUIDFromRelay(cfg *config.Config, targetUUID string) error {
+	hostname, _ := os.Hostname()
+	serverID := deriveServerID(hostname, cfg.Xray.UUID)
+	inboundTag := "vless-in-" + serverID
 	return withRelaySSH(cfg, func(client *gossh.Client) error {
 		xrayConf, err := readRelayXrayConfig(client)
 		if err != nil {
 			return err
 		}
 
-		settings, clients, err := relayClients(xrayConf)
+		settings, clients, err := relayClients(xrayConf, inboundTag)
 		if err != nil {
 			return err
 		}
@@ -1234,7 +1258,7 @@ func removeUUIDFromRelay(cfg *config.Config, targetUUID string) error {
 		}
 
 		// Hot-remove from running Xray via API; restart as fallback.
-		if err := xrayAPIRemoveUsers(client, []string{targetUUID}); err != nil {
+		if err := xrayAPIRemoveUsers(client, []string{targetUUID}, inboundTag); err != nil {
 			slog.Warn("xray API remove failed, restarting xray", "error", err)
 			restartRelayXray(client)
 		}
