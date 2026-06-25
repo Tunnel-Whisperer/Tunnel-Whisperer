@@ -32,7 +32,7 @@ func profileFiles() ([]string, error) {
 			files = append(files, f)
 		}
 	}
-	for _, sub := range []string{"relay", "users"} {
+	for _, sub := range []string{"relay", "users", "servers"} {
 		root := filepath.Join(dir, sub)
 		err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 			if err != nil {
