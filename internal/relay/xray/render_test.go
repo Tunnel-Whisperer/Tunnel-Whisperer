@@ -34,10 +34,39 @@ func TestRenderConfigPerTenant(t *testing.T) {
 			t.Errorf("missing %q\n---\n%s", want, out)
 		}
 	}
+	// First-match-wins: the allow rule must precede its deny rule.
+	allowAt := strings.Index(out, "allow-web-01-a1b2c3d4")
+	denyAt := strings.Index(out, "deny-web-01-a1b2c3d4")
+	if allowAt < 0 || denyAt < 0 || allowAt >= denyAt {
+		t.Errorf("allow rule must precede deny rule (allow=%d deny=%d)", allowAt, denyAt)
+	}
 }
 
 func TestRenderConfigRequiresTenant(t *testing.T) {
 	if _, err := RenderConfig(Config{}); err == nil {
 		t.Error("expected error with no tenants")
+	}
+}
+
+func TestRenderConfigRejectsBadInput(t *testing.T) {
+	cases := map[string]Config{
+		"server id with quote": {Tenants: []Tenant{
+			{ServerID: `web"-01`, UUID: "11111111-1111-1111-1111-111111111111", RemotePort: 20000},
+		}},
+		"duplicate remote port": {Tenants: []Tenant{
+			{ServerID: "web-01", UUID: "11111111-1111-1111-1111-111111111111", RemotePort: 20000},
+			{ServerID: "db-02", UUID: "22222222-2222-2222-2222-222222222222", RemotePort: 20000},
+		}},
+		"duplicate server id": {Tenants: []Tenant{
+			{ServerID: "web-01", UUID: "11111111-1111-1111-1111-111111111111", RemotePort: 20000},
+			{ServerID: "web-01", UUID: "22222222-2222-2222-2222-222222222222", RemotePort: 20001},
+		}},
+	}
+	for name, cfg := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := RenderConfig(cfg); err == nil {
+				t.Errorf("expected error for %s", name)
+			}
+		})
 	}
 }

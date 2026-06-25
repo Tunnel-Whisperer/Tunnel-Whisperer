@@ -9,11 +9,20 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"regexp"
 	"text/template"
 )
 
 //go:embed relayconfig.json.tmpl
 var relayTmpl string
+
+// serverIDRe and uuidRe gate the two values interpolated into the rendered
+// JSON. They must be strictly validated to prevent JSON-string injection via a
+// crafted server id or uuid.
+var (
+	serverIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+	uuidRe     = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+)
 
 // Tenant is one server published on the relay.
 type Tenant struct {
@@ -40,8 +49,24 @@ func RenderConfig(cfg Config) (string, error) {
 	if len(cfg.Tenants) == 0 {
 		return "", fmt.Errorf("xray: at least one tenant is required")
 	}
+	seenID := make(map[string]bool, len(cfg.Tenants))
+	seenPort := make(map[int]bool, len(cfg.Tenants))
 	views := make([]tenantView, 0, len(cfg.Tenants))
 	for _, t := range cfg.Tenants {
+		if !serverIDRe.MatchString(t.ServerID) {
+			return "", fmt.Errorf("xray: invalid server id %q: must match %s", t.ServerID, serverIDRe)
+		}
+		if !uuidRe.MatchString(t.UUID) {
+			return "", fmt.Errorf("xray: invalid uuid %q for server %q", t.UUID, t.ServerID)
+		}
+		if seenID[t.ServerID] {
+			return "", fmt.Errorf("xray: duplicate server id %q", t.ServerID)
+		}
+		if seenPort[t.RemotePort] {
+			return "", fmt.Errorf("xray: duplicate remote port %d", t.RemotePort)
+		}
+		seenID[t.ServerID] = true
+		seenPort[t.RemotePort] = true
 		views = append(views, tenantView{
 			ServerID:    t.ServerID,
 			UUID:        t.UUID,
