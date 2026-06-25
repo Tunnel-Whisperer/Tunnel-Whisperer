@@ -8,8 +8,11 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"os"
 	"testing"
 	"time"
+
+	"github.com/tunnelwhisperer/tw/internal/config"
 )
 
 func testCAPEM(t *testing.T) string {
@@ -52,6 +55,28 @@ func TestDecodeJoinRequestRejectsBadCA(t *testing.T) {
 	b, _ := req.Encode() // Encode should not validate; Decode does
 	if _, err := DecodeJoinRequest(b); err == nil {
 		t.Error("expected error for invalid CA PEM")
+	}
+}
+
+func TestGenerateJoinRequestIdentity(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	if err := os.MkdirAll(config.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	o, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := o.GenerateJoinRequest("relay.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, _ := os.Hostname()
+	if want := deriveServerID(host, req.UUID); req.ServerID != want {
+		t.Errorf("ServerID = %q, want %q", req.ServerID, want)
+	}
+	if req.CACertPEM == "" || req.SSHPubkey == "" {
+		t.Error("request missing CA cert or ssh pubkey")
 	}
 }
 

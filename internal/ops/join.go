@@ -5,8 +5,14 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
+	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
+
+	"github.com/tunnelwhisperer/tw/internal/config"
 )
 
 // JoinRequest is the public artifact a joining server hands to the admin.
@@ -72,4 +78,70 @@ func DecodeJoinResponse(b []byte) (*JoinResponse, error) {
 		return nil, fmt.Errorf("join response is incomplete")
 	}
 	return &r, nil
+}
+
+// GenerateJoinRequest sets this machine up as a server joining relayHost: it
+// generates the server's identity (ssh key + CA + client cert with CN=server-id),
+// persists mode=server, relay host, derived path, and returns the public
+// join-request artifact (CA cert PEM + SSH public key).
+func (o *Ops) GenerateJoinRequest(relayHost string) (*JoinRequest, error) {
+	// Seed UUID and mode under the lock, then release before calling methods
+	// that also acquire o.mu to avoid deadlock.
+	o.mu.Lock()
+	if o.cfg.Mode == "" {
+		o.cfg.Mode = "server"
+	}
+	if o.cfg.Xray.UUID == "" {
+		o.cfg.Xray.UUID = uuid.New().String()
+	}
+	uid := o.cfg.Xray.UUID
+	cfg := o.cfg
+	o.mu.Unlock()
+
+	// Persist mode + UUID immediately so ensureCerts picks up the right UUID.
+	if err := config.Save(cfg); err != nil {
+		return nil, fmt.Errorf("persisting initial config: %w", err)
+	}
+
+	host, _ := os.Hostname()
+	serverID := deriveServerID(host, uid)
+	path := "/tw/" + serverID
+
+	// Persist relay host + path (SetXraySettings skips UUID, which is already saved above).
+	if err := o.SetXraySettings(config.XrayConfig{RelayHost: relayHost, Path: path}); err != nil {
+		return nil, fmt.Errorf("persisting relay config: %w", err)
+	}
+	// EnsureKeys calls ensureCerts internally; ensureCerts derives CN from deriveServerID(host, uuid).
+	if err := o.EnsureKeys(); err != nil {
+		return nil, fmt.Errorf("generating identity: %w", err)
+	}
+
+	caPEM, err := os.ReadFile(config.CACertPath())
+	if err != nil {
+		return nil, fmt.Errorf("reading CA cert: %w", err)
+	}
+	pub, err := os.ReadFile(filepath.Join(config.Dir(), "id_ed25519.pub"))
+	if err != nil {
+		return nil, fmt.Errorf("reading ssh pubkey: %w", err)
+	}
+	return &JoinRequest{
+		Version:   1,
+		ServerID:  serverID,
+		Hostname:  host,
+		UUID:      uid,
+		RelayHost: relayHost,
+		CACertPEM: string(caPEM),
+		SSHPubkey: strings.TrimSpace(string(pub)),
+	}, nil
+}
+
+// ApplyJoinResponse configures this server with the admin-assigned coordinates.
+func (o *Ops) ApplyJoinResponse(r *JoinResponse) error {
+	if err := o.SetXraySettings(config.XrayConfig{RelayHost: r.RelayHost, Path: r.Path}); err != nil {
+		return fmt.Errorf("persisting relay coords: %w", err)
+	}
+	if err := o.SetServerSettings(config.ServerConfig{RemotePort: r.RemotePort, RelaySSHUser: r.SSHUser}); err != nil {
+		return fmt.Errorf("persisting remote port: %w", err)
+	}
+	return nil
 }
