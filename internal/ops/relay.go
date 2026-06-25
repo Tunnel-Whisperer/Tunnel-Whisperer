@@ -123,6 +123,57 @@ func (o *Ops) GetRelayStatus() RelayStatus {
 	return status
 }
 
+// renderRelayConfigs derives the relay's tenant identity from the local
+// hostname + UUID and renders both relay configs (Caddyfile + Xray config.json)
+// for the single tenant this server represents. It is the single seam shared by
+// the cloud (ProvisionRelay) and manual (GenerateManualInstallScript) provisioning
+// paths so they can never drift. The derived path (/tw/<server-id>) is persisted
+// to config so client bundles and the server Xray config use it. It returns the
+// server ID plus base64-encoded Caddyfile and Xray config; reading the CA PEM
+// remains the caller's job (each sets CACertB64 itself).
+func (o *Ops) renderRelayConfigs(cfg *config.Config) (serverID, caddyfileB64, xrayConfigB64 string, err error) {
+	osHost, _ := os.Hostname()
+	serverID = deriveServerID(osHost, cfg.Xray.UUID)
+	relayPath := "/tw/" + serverID
+	remotePort := cfg.Server.RemotePort
+	vlessInPort := remotePort + 10000
+	role := "server"
+	if cfg.Mode == "admin" {
+		role = "admin"
+	}
+
+	caddyfile, err := caddy.RenderCaddyfile(caddy.Config{
+		Domain: cfg.Xray.RelayHost,
+		Servers: []caddy.Server{{
+			ID:         serverID,
+			Path:       relayPath,
+			CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", serverID),
+			Upstream:   fmt.Sprintf("h2c://127.0.0.1:%d", vlessInPort),
+			Role:       role,
+		}},
+	})
+	if err != nil {
+		return "", "", "", fmt.Errorf("rendering relay Caddyfile: %w", err)
+	}
+
+	relayXrayJSON, err := relayxray.RenderConfig(relayxray.Config{
+		Tenants: []relayxray.Tenant{{ServerID: serverID, UUID: cfg.Xray.UUID, RemotePort: remotePort}},
+	})
+	if err != nil {
+		return "", "", "", fmt.Errorf("rendering relay Xray config: %w", err)
+	}
+
+	// Persist the derived path so client bundles and the server Xray config use /tw/<id>.
+	if err := o.SetXraySettings(config.XrayConfig{Path: relayPath}); err != nil {
+		return "", "", "", fmt.Errorf("persisting derived path: %w", err)
+	}
+
+	return serverID,
+		base64.StdEncoding.EncodeToString([]byte(caddyfile)),
+		base64.StdEncoding.EncodeToString([]byte(relayXrayJSON)),
+		nil
+}
+
 // ProvisionRelay runs the full 9-step relay provisioning flow.
 // Progress events are sent through the callback. This method blocks until
 // the relay is provisioned or the context is cancelled.
@@ -209,41 +260,16 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 		progress(ProgressEvent{Step: 7, Total: 9, Label: "Provisioning", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("reading CA certificate (run key init first): %w", err)
 	}
-	osHost, _ := os.Hostname()
-	serverID := deriveServerID(osHost, cfg.Xray.UUID)
-	relayPath := "/tw/" + serverID
-	remotePort := cfg.Server.RemotePort
-	vlessInPort := remotePort + 10000
-	role := "server"
-	if cfg.Mode == "admin" {
-		role = "admin"
-	}
-	caddyfile, err := caddy.RenderCaddyfile(caddy.Config{
-		Domain: cfg.Xray.RelayHost,
-		Servers: []caddy.Server{{
-			ID:         serverID,
-			Path:       relayPath,
-			CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", serverID),
-			Upstream:   fmt.Sprintf("h2c://127.0.0.1:%d", vlessInPort),
-			Role:       role,
-		}},
-	})
+	serverID, caddyfileB64, xrayConfigB64, err := o.renderRelayConfigs(cfg)
 	if err != nil {
 		progress(ProgressEvent{Step: 7, Total: 9, Label: "Provisioning", Status: "failed", Error: err.Error()})
-		return fmt.Errorf("rendering relay Caddyfile: %w", err)
-	}
-	relayXrayJSON, err := relayxray.RenderConfig(relayxray.Config{
-		Tenants: []relayxray.Tenant{{ServerID: serverID, UUID: cfg.Xray.UUID, RemotePort: remotePort}},
-	})
-	if err != nil {
-		progress(ProgressEvent{Step: 7, Total: 9, Label: "Provisioning", Status: "failed", Error: err.Error()})
-		return fmt.Errorf("rendering relay Xray config: %w", err)
+		return err
 	}
 
 	tfCfg := terraform.Config{
 		Domain:        cfg.Xray.RelayHost,
 		UUID:          cfg.Xray.UUID,
-		XrayPath:      relayPath,
+		XrayPath:      cfg.Xray.Path,
 		SSHUser:       cfg.Server.RelaySSHUser,
 		PublicKey:     strings.TrimSpace(string(pubKeyBytes)),
 		Provider:      req.ProviderKey,
@@ -251,8 +277,8 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 		Name:          req.Name,
 		ServerID:      serverID,
 		CACertB64:     base64.StdEncoding.EncodeToString(caCertPEM),
-		CaddyfileB64:  base64.StdEncoding.EncodeToString([]byte(caddyfile)),
-		XrayConfigB64: base64.StdEncoding.EncodeToString([]byte(relayXrayJSON)),
+		CaddyfileB64:  caddyfileB64,
+		XrayConfigB64: xrayConfigB64,
 	}
 
 	// Load saved TLS certificates for reuse (avoids Let's Encrypt rate limits).
@@ -264,12 +290,6 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 	if err := terraform.Generate(relayDir, tfCfg); err != nil {
 		progress(ProgressEvent{Step: 7, Total: 9, Label: "Provisioning", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("generating terraform files: %w", err)
-	}
-
-	// Persist the derived path so client bundles and the server Xray config use /tw/<id>.
-	if err := o.SetXraySettings(config.XrayConfig{Path: relayPath}); err != nil {
-		progress(ProgressEvent{Step: 7, Total: 9, Label: "Provisioning", Status: "failed", Error: err.Error()})
-		return fmt.Errorf("persisting derived path: %w", err)
 	}
 
 	// Persist relay metadata alongside terraform state.
@@ -393,38 +413,23 @@ func (o *Ops) GenerateManualInstallScript(domain string, sshOpen bool) (string, 
 	if err != nil {
 		return "", fmt.Errorf("reading CA certificate (run key init first): %w", err)
 	}
-	serverID := cfg.Xray.RelayHost
-	if serverID == "" {
-		serverID = "tw-server"
-	}
-	relayPath := cfg.Xray.Path
-	if relayPath == "" {
-		relayPath = "/tw"
-	}
-	caddyfile, err := caddy.RenderCaddyfile(caddy.Config{
-		Domain: cfg.Xray.RelayHost,
-		Servers: []caddy.Server{{
-			ID:         serverID,
-			Path:       relayPath,
-			CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", serverID),
-			Upstream:   "h2c://127.0.0.1:10000",
-			Role:       "server",
-		}},
-	})
+
+	serverID, caddyfileB64, xrayConfigB64, err := o.renderRelayConfigs(cfg)
 	if err != nil {
-		return "", fmt.Errorf("rendering relay Caddyfile: %w", err)
+		return "", err
 	}
 
 	tfCfg := terraform.Config{
-		Domain:       cfg.Xray.RelayHost,
-		UUID:         cfg.Xray.UUID,
-		XrayPath:     relayPath,
-		SSHUser:      cfg.Server.RelaySSHUser,
-		PublicKey:    strings.TrimSpace(string(pubKeyBytes)),
-		SSHOpen:      sshOpen,
-		ServerID:     serverID,
-		CACertB64:    base64.StdEncoding.EncodeToString(caCertPEM),
-		CaddyfileB64: base64.StdEncoding.EncodeToString([]byte(caddyfile)),
+		Domain:        cfg.Xray.RelayHost,
+		UUID:          cfg.Xray.UUID,
+		XrayPath:      cfg.Xray.Path,
+		SSHUser:       cfg.Server.RelaySSHUser,
+		PublicKey:     strings.TrimSpace(string(pubKeyBytes)),
+		SSHOpen:       sshOpen,
+		ServerID:      serverID,
+		CACertB64:     base64.StdEncoding.EncodeToString(caCertPEM),
+		CaddyfileB64:  caddyfileB64,
+		XrayConfigB64: xrayConfigB64,
 	}
 
 	return terraform.GenerateInstallScript(tfCfg)

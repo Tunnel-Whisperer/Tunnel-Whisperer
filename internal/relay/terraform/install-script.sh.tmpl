@@ -52,57 +52,7 @@ echo "[4/7] Installing Xray {{.XrayVersion}}..."
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --version {{.XrayVersion}}
 
 mkdir -p /usr/local/etc/xray
-cat > /usr/local/etc/xray/config.json <<'XRAYEOF'
-{
-  "log": { "loglevel": "warning" },
-  "stats": {},
-  "api": {
-    "tag": "api",
-    "services": ["HandlerService", "StatsService"]
-  },
-  "policy": {
-    "system": {
-      "statsInboundUplink": true, "statsInboundDownlink": true,
-      "statsOutboundUplink": true, "statsOutboundDownlink": true
-    },
-    "levels": { "0": { "statsUserUplink": true, "statsUserDownlink": true, "statsUserOnline": true } }
-  },
-  "inbounds": [
-    {
-      "tag": "vless-in",
-      "listen": "127.0.0.1",
-      "port": 10000,
-      "protocol": "vless",
-      "settings": {
-        "clients": [{ "id": "{{.UUID}}", "email": "{{.UUID}}" }],
-        "decryption": "none"
-      },
-      "streamSettings": {
-        "network": "xhttp",
-        "xhttpSettings": {
-          "path": "{{.XrayPath}}",
-          "mode": "stream-one"
-        }
-      }
-    },
-    {
-      "tag": "api-in",
-      "listen": "127.0.0.1",
-      "port": 10085,
-      "protocol": "dokodemo-door",
-      "settings": { "address": "127.0.0.1" }
-    }
-  ],
-  "outbounds": [
-    { "tag": "freedom", "protocol": "freedom" }
-  ],
-  "routing": {
-    "rules": [
-      { "type": "field", "inboundTag": ["api-in"], "outboundTag": "api" }
-    ]
-  }
-}
-XRAYEOF
+echo '{{.XrayConfigB64}}' | base64 -d > /usr/local/etc/xray/config.json
 
 # ── Configure SSH ────────────────────────────────────────────
 {{if .SSHOpen}}echo "[5/7] Configuring SSH (public access, key-only)..."
