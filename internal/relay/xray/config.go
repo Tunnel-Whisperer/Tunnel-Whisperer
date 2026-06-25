@@ -44,6 +44,24 @@ type tenantView struct {
 	VlessInPort int
 }
 
+// newTenantView validates t and builds its tenantView. UUID may be empty for
+// rule-only operations (RenderTenantRules does not need it).
+func newTenantView(t Tenant, requireUUID bool) (tenantView, error) {
+	if !serverIDRe.MatchString(t.ServerID) {
+		return tenantView{}, fmt.Errorf("xray: invalid server id %q: must match %s", t.ServerID, serverIDRe)
+	}
+	if requireUUID && !uuidRe.MatchString(t.UUID) {
+		return tenantView{}, fmt.Errorf("xray: invalid uuid %q for server %q", t.UUID, t.ServerID)
+	}
+	return tenantView{
+		ServerID:    t.ServerID,
+		UUID:        t.UUID,
+		Path:        "/tw/" + t.ServerID,
+		RemotePort:  t.RemotePort,
+		VlessInPort: t.RemotePort + 10000,
+	}, nil
+}
+
 // RenderConfig renders the relay Xray config.json.
 func RenderConfig(cfg Config) (string, error) {
 	if len(cfg.Tenants) == 0 {
@@ -53,27 +71,19 @@ func RenderConfig(cfg Config) (string, error) {
 	seenPort := make(map[int]bool, len(cfg.Tenants))
 	views := make([]tenantView, 0, len(cfg.Tenants))
 	for _, t := range cfg.Tenants {
-		if !serverIDRe.MatchString(t.ServerID) {
-			return "", fmt.Errorf("xray: invalid server id %q: must match %s", t.ServerID, serverIDRe)
-		}
-		if !uuidRe.MatchString(t.UUID) {
-			return "", fmt.Errorf("xray: invalid uuid %q for server %q", t.UUID, t.ServerID)
-		}
 		if seenID[t.ServerID] {
 			return "", fmt.Errorf("xray: duplicate server id %q", t.ServerID)
 		}
 		if seenPort[t.RemotePort] {
 			return "", fmt.Errorf("xray: duplicate remote port %d", t.RemotePort)
 		}
+		v, err := newTenantView(t, true)
+		if err != nil {
+			return "", err
+		}
 		seenID[t.ServerID] = true
 		seenPort[t.RemotePort] = true
-		views = append(views, tenantView{
-			ServerID:    t.ServerID,
-			UUID:        t.UUID,
-			Path:        "/tw/" + t.ServerID,
-			RemotePort:  t.RemotePort,
-			VlessInPort: t.RemotePort + 10000,
-		})
+		views = append(views, v)
 	}
 	tmpl, err := template.New("relayconfig").Parse(relayTmpl)
 	if err != nil {
