@@ -20,6 +20,7 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/relay/caddy"
 	"github.com/tunnelwhisperer/tw/internal/relay/terraform"
+	relayxray "github.com/tunnelwhisperer/tw/internal/relay/xray"
 	gossh "golang.org/x/crypto/ssh"
 )
 
@@ -208,14 +209,11 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 		progress(ProgressEvent{Step: 7, Total: 9, Label: "Provisioning", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("reading CA certificate (run key init first): %w", err)
 	}
-	serverID := cfg.Xray.RelayHost
-	if serverID == "" {
-		serverID = "tw-server"
-	}
-	relayPath := cfg.Xray.Path
-	if relayPath == "" {
-		relayPath = "/tw"
-	}
+	osHost, _ := os.Hostname()
+	serverID := deriveServerID(osHost, cfg.Xray.UUID)
+	relayPath := "/tw/" + serverID
+	remotePort := cfg.Server.RemotePort
+	vlessInPort := remotePort + 10000
 	role := "server"
 	if cfg.Mode == "admin" {
 		role = "admin"
@@ -226,7 +224,7 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 			ID:         serverID,
 			Path:       relayPath,
 			CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", serverID),
-			Upstream:   "h2c://127.0.0.1:10000",
+			Upstream:   fmt.Sprintf("h2c://127.0.0.1:%d", vlessInPort),
 			Role:       role,
 		}},
 	})
@@ -234,19 +232,27 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 		progress(ProgressEvent{Step: 7, Total: 9, Label: "Provisioning", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("rendering relay Caddyfile: %w", err)
 	}
+	relayXrayJSON, err := relayxray.RenderConfig(relayxray.Config{
+		Tenants: []relayxray.Tenant{{ServerID: serverID, UUID: cfg.Xray.UUID, RemotePort: remotePort}},
+	})
+	if err != nil {
+		progress(ProgressEvent{Step: 7, Total: 9, Label: "Provisioning", Status: "failed", Error: err.Error()})
+		return fmt.Errorf("rendering relay Xray config: %w", err)
+	}
 
 	tfCfg := terraform.Config{
-		Domain:       cfg.Xray.RelayHost,
-		UUID:         cfg.Xray.UUID,
-		XrayPath:     relayPath,
-		SSHUser:      cfg.Server.RelaySSHUser,
-		PublicKey:    strings.TrimSpace(string(pubKeyBytes)),
-		Provider:     req.ProviderKey,
-		SSHOpen:      req.SSHOpen,
-		Name:         req.Name,
-		ServerID:     serverID,
-		CACertB64:    base64.StdEncoding.EncodeToString(caCertPEM),
-		CaddyfileB64: base64.StdEncoding.EncodeToString([]byte(caddyfile)),
+		Domain:        cfg.Xray.RelayHost,
+		UUID:          cfg.Xray.UUID,
+		XrayPath:      relayPath,
+		SSHUser:       cfg.Server.RelaySSHUser,
+		PublicKey:     strings.TrimSpace(string(pubKeyBytes)),
+		Provider:      req.ProviderKey,
+		SSHOpen:       req.SSHOpen,
+		Name:          req.Name,
+		ServerID:      serverID,
+		CACertB64:     base64.StdEncoding.EncodeToString(caCertPEM),
+		CaddyfileB64:  base64.StdEncoding.EncodeToString([]byte(caddyfile)),
+		XrayConfigB64: base64.StdEncoding.EncodeToString([]byte(relayXrayJSON)),
 	}
 
 	// Load saved TLS certificates for reuse (avoids Let's Encrypt rate limits).
@@ -258,6 +264,12 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 	if err := terraform.Generate(relayDir, tfCfg); err != nil {
 		progress(ProgressEvent{Step: 7, Total: 9, Label: "Provisioning", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("generating terraform files: %w", err)
+	}
+
+	// Persist the derived path so client bundles and the server Xray config use /tw/<id>.
+	if err := o.SetXraySettings(config.XrayConfig{Path: relayPath}); err != nil {
+		progress(ProgressEvent{Step: 7, Total: 9, Label: "Provisioning", Status: "failed", Error: err.Error()})
+		return fmt.Errorf("persisting derived path: %w", err)
 	}
 
 	// Persist relay metadata alongside terraform state.

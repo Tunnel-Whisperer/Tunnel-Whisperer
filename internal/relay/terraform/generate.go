@@ -47,6 +47,7 @@ type Config struct {
 	ServerID      string // CA/cert common name; names the CA file on the relay
 	CACertB64     string // base64 of the server's CA certificate PEM (written to /etc/caddy/ca)
 	CaddyfileB64  string // base64 of the fully-rendered relay Caddyfile
+	XrayConfigB64 string // base64 of the fully-rendered relay Xray config.json
 }
 
 var providerTemplates = map[string]string{
