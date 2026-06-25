@@ -77,7 +77,7 @@ func TestRenderCaddyfileIsolation(t *testing.T) {
 		`expression {http.request.tls.client.subject} == "CN=db-02-99887766"`,
 		"reverse_proxy h2c://127.0.0.1:30000",
 		"reverse_proxy h2c://127.0.0.1:30001",
-		"handle {\n        abort\n    }",
+		"handle {\n        respond 404\n    }",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q\n---\n%s", want, out)
