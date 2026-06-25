@@ -9,11 +9,17 @@ import (
 	"path/filepath"
 	"strings"
 
+	"regexp"
+
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
 )
+
+// joinServerIDRe is the server-id shape the relay renderers also enforce
+// (lowercase alphanumeric + hyphen, starting alphanumeric).
+var joinServerIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
 // JoinRequest is the public artifact a joining server hands to the admin.
 type JoinRequest struct {
@@ -50,6 +56,12 @@ func DecodeJoinRequest(b []byte) (*JoinRequest, error) {
 	}
 	if r.ServerID == "" || r.UUID == "" {
 		return nil, fmt.Errorf("join request missing server_id/uuid")
+	}
+	// server_id must match the same shape the relay renderers enforce, so a
+	// malformed id can't be enrolled (which would burn a port + orphan a
+	// registry entry before the render rejects it).
+	if !joinServerIDRe.MatchString(r.ServerID) {
+		return nil, fmt.Errorf("join request server_id %q has an invalid shape", r.ServerID)
 	}
 	blk, _ := pem.Decode([]byte(r.CACertPEM))
 	if blk == nil {
