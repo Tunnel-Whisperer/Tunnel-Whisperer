@@ -1,6 +1,8 @@
 package ops
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -79,17 +81,15 @@ func (o *Ops) EnsureKeys() error {
 func (o *Ops) ensureCerts() error {
 	o.mu.Lock()
 	mode := o.cfg.Mode
-	host := o.cfg.Xray.RelayHost
+	uuid := o.cfg.Xray.UUID
 	o.mu.Unlock()
 
 	if mode == "client" {
 		return nil
 	}
 
-	id := host
-	if id == "" {
-		id = "tw-server"
-	}
+	osHost, _ := os.Hostname()
+	id := deriveServerID(osHost, uuid)
 
 	caExists, err := statExists(config.CACertPath())
 	if err != nil {
@@ -100,7 +100,11 @@ func (o *Ops) ensureCerts() error {
 		return fmt.Errorf("checking client certificate: %w", err)
 	}
 	if caExists && clientExists {
-		return nil
+		if certCN(config.ClientCertPath()) == id {
+			return nil
+		}
+		slog.Info("re-issuing identity: cert CN changed", "id", id)
+		caExists, clientExists = false, false
 	}
 
 	var caCertPEM, caKeyPEM []byte
@@ -138,6 +142,24 @@ func (o *Ops) ensureCerts() error {
 		slog.Info("server client certificate written", "dir", config.Dir())
 	}
 	return nil
+}
+
+// certCN returns the Common Name from the PEM-encoded X.509 certificate at
+// path, or "" if the file cannot be read or parsed.
+func certCN(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	blk, _ := pem.Decode(b)
+	if blk == nil {
+		return ""
+	}
+	crt, err := x509.ParseCertificate(blk.Bytes)
+	if err != nil {
+		return ""
+	}
+	return crt.Subject.CommonName
 }
 
 // applyClientCertPaths points the Xray config at this host's local client
