@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"time"
 
@@ -151,6 +152,120 @@ func readBundleMeta(plainZip []byte) (role, relay string) {
 		return "", ""
 	}
 	return c.Mode, c.Xray.RelayHost
+}
+
+// UseContext switches the active context to name: it re-seals the current
+// profile (if changed), unseals the target over the live config dir, reconciles
+// the relay marker, reloads config, and reconnects under the new mode. The
+// current context's passphrase comes from the in-memory cache; if the profile
+// changed and nothing is cached, currentPassphrase is required.
+func (o *Ops) UseContext(name, targetPassphrase, currentPassphrase string, progress ProgressFunc) error {
+	if progress == nil {
+		progress = func(ProgressEvent) {}
+	}
+	idx, err := config.EnsureContextIndex()
+	if err != nil {
+		return err
+	}
+	if _, ok := idx.Contexts[name]; !ok {
+		return fmt.Errorf("no such context: %s", name)
+	}
+	if name == idx.CurrentContext {
+		return nil // already active
+	}
+	target, err := os.ReadFile(config.ContextBundlePath(name))
+	if err != nil {
+		return fmt.Errorf("reading target context %q: %w", name, err)
+	}
+
+	// 1. Re-seal the current context if its live profile changed.
+	if cur := idx.CurrentContext; cur != "" {
+		if err := o.resealCurrent(cur, currentPassphrase); err != nil {
+			return err
+		}
+	}
+
+	// 2. Unseal the target over the live profile.
+	if err := unsealProfile(target, targetPassphrase); err != nil {
+		return err
+	}
+
+	// 3. Reconcile the relay marker and reload config.
+	if err := o.ReloadConfig(); err != nil {
+		return fmt.Errorf("reloading config after switch: %w", err)
+	}
+	if err := o.ensureRelayMarker(); err != nil {
+		slog.Warn("switch: could not restore relay marker", "error", err)
+	}
+
+	// 4. Update the index pointer + cache the new passphrase.
+	idx.CurrentContext = name
+	if err := config.SaveContextIndex(idx); err != nil {
+		return err
+	}
+	o.SetActivePassphrase(targetPassphrase)
+
+	// 5. Reconnect under the new mode (only if a connection is active).
+	switch o.Mode() {
+	case "server":
+		if o.ServerStatus().State == StateRunning {
+			return o.RestartServer(progress)
+		}
+	case "client":
+		if o.ClientStatus().State == StateRunning {
+			return o.ReconnectClient(progress)
+		}
+	}
+	return nil
+}
+
+// resealCurrent writes the live profile back to contexts/<cur>.twctx if it
+// changed since it was sealed. Uses the cached passphrase; if none and the
+// profile changed, currentPassphrase must be supplied.
+func (o *Ops) resealCurrent(cur, currentPassphrase string) error {
+	pass := o.activePass()
+	if pass == "" {
+		pass = currentPassphrase
+	}
+
+	existing, readErr := os.ReadFile(config.ContextBundlePath(cur))
+	if readErr != nil {
+		// No existing snapshot.
+		if pass == "" {
+			// Migrated legacy context with no bundle and no passphrase: skip sealing.
+			slog.Warn("current context not sealed (no passphrase); local changes not saved", "context", cur)
+			return nil
+		}
+		// We have a passphrase but no snapshot yet — seal it now.
+		return o.writeSealedProfile(cur, pass)
+	}
+
+	// Snapshot exists; skip re-seal if live profile matches the sealed one.
+	if pass != "" {
+		if plain, derr := cryptobox.Decrypt(existing, pass); derr == nil {
+			if h, herr := profileHash(); herr == nil {
+				if zipHash(plain) == h {
+					return nil // unchanged
+				}
+			}
+		}
+	}
+
+	if pass == "" {
+		return fmt.Errorf("passphrase required to save changes to the current context %q before switching", cur)
+	}
+	return o.writeSealedProfile(cur, pass)
+}
+
+func (o *Ops) writeSealedProfile(name, pass string) error {
+	blob, err := sealProfile(pass)
+	if err != nil {
+		return fmt.Errorf("re-sealing current context: %w", err)
+	}
+	if err := os.MkdirAll(config.ContextsDir(), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(config.ContextBundlePath(name), blob, 0o600)
 }
 
 // readZipEntry reads one named entry from an in-memory zip.

@@ -98,6 +98,31 @@ func TestListAndDeleteContexts(t *testing.T) {
 	}
 }
 
+func TestUseContextSwitchesActive(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	o := newOpsForTest(t)
+	// Seal the current ("default"/admin) as a context with a known passphrase.
+	idx, _ := config.EnsureContextIndex() // migrates "default"
+	_ = idx
+	// Seed a second context to switch to.
+	seedContext(t, "relay-b", "client", "b.example.com", "pw")
+
+	// Switch to relay-b. current ("default") has no cached passphrase; it's
+	// unchanged since migration so re-seal is skipped — no currentPassphrase needed.
+	if err := o.UseContext("relay-b", "pw", "", func(ProgressEvent) {}); err != nil {
+		t.Fatal(err)
+	}
+	cur, _ := o.CurrentContext()
+	if cur != "relay-b" {
+		t.Fatalf("current = %q, want relay-b", cur)
+	}
+	// The active config.yaml is now relay-b's (mode client).
+	cfg, _ := config.Load()
+	if cfg.Mode != "client" {
+		t.Errorf("active mode = %q, want client", cfg.Mode)
+	}
+}
+
 func TestImportContext(t *testing.T) {
 	activeDir := t.TempDir()
 	t.Setenv("TW_CONFIG_DIR", activeDir)

@@ -149,6 +149,37 @@ func unsealProfile(data []byte, passphrase string) error {
 	return nil
 }
 
+// zipHash hashes the contents of a profile zip the same way profileHash hashes
+// the live files, so the two can be compared to detect "unchanged".
+//
+// Must replicate the profileHash scheme exactly: SHA256 over, for each entry in
+// sorted name order, fmt.Fprintf(h,"%s\n%d\n",name,len(content)) then content.
+func zipHash(zipBytes []byte) string {
+	zr, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+	if err != nil {
+		return ""
+	}
+	names := make([]string, 0, len(zr.File))
+	contents := map[string][]byte{}
+	for _, f := range zr.File {
+		rc, err := f.Open()
+		if err != nil {
+			return ""
+		}
+		b, _ := io.ReadAll(rc)
+		rc.Close()
+		names = append(names, f.Name)
+		contents[f.Name] = b
+	}
+	sort.Strings(names)
+	h := sha256.New()
+	for _, n := range names {
+		fmt.Fprintf(h, "%s\n%d\n", n, len(contents[n]))
+		h.Write(contents[n])
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 // profileHash returns a stable hash of the active profile files (name+content),
 // used to skip re-sealing an unchanged context.
 //
