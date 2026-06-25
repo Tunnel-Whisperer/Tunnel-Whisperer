@@ -455,6 +455,37 @@ func (o *Ops) SaveManualRelay(domain, ip string, sshOpen bool) error {
 	return os.WriteFile(filepath.Join(relayDir, "manual-relay.json"), data, 0644)
 }
 
+// ensureRelayMarker makes the relay show as provisioned after an admin-bundle
+// re-attach, so importing a bundle switches the admin to managing that relay
+// (status, SSH, etc.) without a manual step. The admin bundle carries the real
+// marker when available; this is the fallback + reconcile path:
+//   - Terraform-managed relay (tfstate present): leave it — tfstate is the marker.
+//   - A manual marker already matching the imported relay's domain: keep it.
+//   - Otherwise (no marker, or a stale marker from a previously-imported relay):
+//     synthesize the manual marker from the imported config (IP via DNS).
+// ssh_open defaults false; it only affects whether the UI offers direct SSH.
+func (o *Ops) ensureRelayMarker() error {
+	relayDir := config.RelayDir()
+	domain := o.Config().Xray.RelayHost
+	if domain == "" {
+		return nil // bundle describes no relay
+	}
+	if _, err := os.Stat(filepath.Join(relayDir, "terraform.tfstate")); err == nil {
+		return nil // cloud-provisioned; tfstate is the source of truth
+	}
+	if data, err := os.ReadFile(filepath.Join(relayDir, "manual-relay.json")); err == nil {
+		var m ManualRelayMarker
+		if json.Unmarshal(data, &m) == nil && m.Domain == domain {
+			return nil // marker already matches this relay
+		}
+	}
+	ip := ""
+	if addrs, err := net.LookupHost(domain); err == nil && len(addrs) > 0 {
+		ip = addrs[0]
+	}
+	return o.SaveManualRelay(domain, ip, false)
+}
+
 // caddyCertsPath returns the local path for a domain's archived Caddy TLS
 // certificate data: <config>/archive/<domain>/caddy-certs.tar.gz
 func caddyCertsPath(domain string) string {

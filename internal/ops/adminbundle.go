@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,6 +32,7 @@ func adminBundleEntries() []adminBundleEntry {
 		{"id_ed25519", filepath.Join(config.Dir(), "id_ed25519"), true},
 		{"id_ed25519.pub", filepath.Join(config.Dir(), "id_ed25519.pub"), true},
 		{"relay/relay-meta.json", filepath.Join(config.RelayDir(), "relay-meta.json"), false},
+		{"relay/manual-relay.json", filepath.Join(config.RelayDir(), "manual-relay.json"), false},
 	}
 }
 
@@ -126,6 +128,12 @@ func (o *Ops) ImportAdminBundle(data []byte, passphrase string) error {
 	}
 	if err := o.ReloadConfig(); err != nil {
 		return fmt.Errorf("reloading config after import: %w", err)
+	}
+	// Re-attach should leave this machine managing the bundle's relay: restore
+	// the provisioned marker so status/SSH work immediately (carried in the
+	// bundle when present, else synthesized from the imported config).
+	if err := o.ensureRelayMarker(); err != nil {
+		slog.Warn("import: could not restore relay provisioned marker", "error", err)
 	}
 	return nil
 }
