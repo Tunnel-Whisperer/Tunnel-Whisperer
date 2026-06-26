@@ -777,7 +777,7 @@ func addMultipleUUIDsToRelay(cfg *config.Config, uuids []string) error {
 
 // GetUserConfigBundle returns the user packaged as a role=client context: an
 // encrypted bundle (cryptobox TWBOX1) plus the generated passphrase that opens
-// it. The client imports it with `tw client import` (or `tw config import`).
+// it. The client imports it with `tw config import <file> --activate`.
 func (o *Ops) GetUserConfigBundle(name string) (bundle []byte, passphrase string, err error) {
 	userDir := filepath.Join(config.UsersDir(), name)
 	if _, err := os.Stat(userDir); os.IsNotExist(err) {

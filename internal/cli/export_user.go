@@ -13,10 +13,10 @@ import (
 )
 
 var exportUserCmd = &cobra.Command{
-	Use:   "export <name>",
-	Short: "Export a user as an encrypted client context bundle",
-	Long: `Package a user as a role=client context (the same format as tw config
-export). The client imports it with: tw client import <file>
+	Use:   "export-user <name>",
+	Short: "Issue a user as an encrypted client context bundle (server only)",
+	Long: `Package one of this server's users as a role=client context (the same
+format as tw config export). The client imports it with: tw config import <file>
 
 Exporting prints a one-time passphrase that seals the bundle; share it with the
 client out-of-band (the client needs it to import).`,
@@ -25,7 +25,7 @@ client out-of-band (the client needs it to import).`,
 }
 
 func init() {
-	serverUserCmd.AddCommand(exportUserCmd)
+	configCmd.AddCommand(exportUserCmd)
 }
 
 func runExportUser(cmd *cobra.Command, args []string) error {
@@ -70,6 +70,6 @@ func runExportUser(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Exported %s (%d bytes)\n", filename, len(data))
 	fmt.Printf("  Passphrase: %s\n", passphrase)
 	fmt.Println("  Share the passphrase out-of-band. The client imports with:")
-	fmt.Printf("    tw client import %s\n", filename)
+	fmt.Printf("    tw config import %s --activate\n", filename)
 	return nil
 }
