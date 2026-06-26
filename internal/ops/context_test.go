@@ -220,10 +220,22 @@ func TestImportContext(t *testing.T) {
 	// bundle store are written to the correct location.
 	t.Setenv("TW_CONFIG_DIR", activeDir)
 
-	if name, err := o.ImportContext(blob, "imported", "pw"); err != nil {
+	if name, err := o.ImportContext(blob, "imported", "pw", false); err != nil {
 		t.Fatalf("ImportContext: %v", err)
 	} else if name != "imported" {
 		t.Fatalf("ImportContext returned name %q, want imported", name)
+	}
+
+	// Re-importing the same name without replace is refused (ErrContextExists),
+	// returning the resolved name so callers can prompt.
+	if name, err := o.ImportContext(blob, "imported", "pw", false); !errors.Is(err, ErrContextExists) {
+		t.Fatalf("re-import: got (%q, %v), want ErrContextExists", name, err)
+	} else if name != "imported" {
+		t.Fatalf("re-import returned name %q, want imported", name)
+	}
+	// With replace=true it succeeds (updates in place, no duplicate).
+	if _, err := o.ImportContext(blob, "imported", "pw", true); err != nil {
+		t.Fatalf("replace import: %v", err)
 	}
 
 	// The encrypted bundle must be on disk.

@@ -111,12 +111,22 @@ func (o *Ops) DeleteContext(name string) error {
 	return config.SaveContextIndex(idx)
 }
 
+// ErrContextExists is returned by ImportContext (with replace=false) when a
+// context with the resolved name already exists. The resolved name is returned
+// alongside it so callers can prompt before replacing.
+var ErrContextExists = errors.New("context already exists")
+
 // ImportContext stores an encrypted profile bundle (a context bundle, or a
 // legacy admin/user bundle — same encrypted-zip shape) as a new context. The
 // bundle is decrypted once (passphrase) to read its config.yaml for the index
 // metadata; the encrypted blob is stored as-is. If name is empty it is derived
 // from the bundle's relay domain. Returns the resolved context name.
-func (o *Ops) ImportContext(bundle []byte, name, passphrase string) (string, error) {
+//
+// If a context with the resolved name already exists, ImportContext returns
+// that name with ErrContextExists unless replace is true, in which case the
+// stored bundle and its metadata are overwritten in place (the existing
+// context is updated, not duplicated).
+func (o *Ops) ImportContext(bundle []byte, name, passphrase string, replace bool) (string, error) {
 	idx, err := config.EnsureContextIndex()
 	if err != nil {
 		return "", err
@@ -129,8 +139,8 @@ func (o *Ops) ImportContext(bundle []byte, name, passphrase string) (string, err
 	if name == "" {
 		name = sanitizeHostname(relay)
 	}
-	if _, exists := idx.Contexts[name]; exists {
-		return "", fmt.Errorf("context already exists: %s", name)
+	if _, exists := idx.Contexts[name]; exists && !replace {
+		return name, fmt.Errorf("%w: %s", ErrContextExists, name)
 	}
 	if err := os.MkdirAll(config.ContextsDir(), 0o755); err != nil {
 		return "", err

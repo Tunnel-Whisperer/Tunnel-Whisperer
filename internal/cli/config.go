@@ -70,6 +70,7 @@ var configImportCmd = &cobra.Command{
 var (
 	configImportName     string
 	configImportActivate bool
+	configImportForce    bool
 )
 
 var configExportCmd = &cobra.Command{
@@ -82,6 +83,7 @@ var configExportCmd = &cobra.Command{
 func init() {
 	configImportCmd.Flags().StringVar(&configImportName, "name", "", "context name (default: relay domain)")
 	configImportCmd.Flags().BoolVar(&configImportActivate, "activate", false, "switch to the imported context immediately (applies its mode)")
+	configImportCmd.Flags().BoolVar(&configImportForce, "force", false, "replace an existing context of the same name without prompting")
 	configCmd.AddCommand(configGetContextsCmd, configCurrentContextCmd, configUseContextCmd,
 		configNewContextCmd, configRenameContextCmd, configDeleteContextCmd, configImportCmd, configExportCmd)
 	rootCmd.AddCommand(configCmd)
@@ -268,19 +270,46 @@ func runConfigImport(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	name, err := o.ImportContext(data, configImportName, pass)
+	name, err := o.ImportContext(data, configImportName, pass, configImportForce)
+	if errors.Is(err, ops.ErrContextExists) {
+		// Don't rewrite an existing context unasked. Keep it by default; only
+		// replace on explicit confirmation (or --force).
+		fmt.Printf("  Context %q already exists. Replace it with this bundle? [y/N]: ", name)
+		if ans, _ := sharedLine(); strings.ToLower(ans) != "y" {
+			fmt.Println("  Kept the existing context; nothing changed.")
+			return nil
+		}
+		name, err = o.ImportContext(data, configImportName, pass, true)
+	}
 	if err != nil {
 		return err
 	}
 	if configImportActivate {
-		if err := o.UseContext(name, pass, "", cliProgress); err != nil {
-			return err
+		if aerr := activateImported(o, name, pass); aerr != nil {
+			return aerr
 		}
 		fmt.Printf("  Imported and switched to context %q (mode applied from the bundle).\n", name)
 		return nil
 	}
 	fmt.Printf("  Imported context %q. Activate with: tw config use-context %s\n", name, name)
 	return nil
+}
+
+// activateImported switches to a freshly imported context, prompting for the
+// current context's passphrase if it must be re-sealed first (same retry the
+// use-context command does).
+func activateImported(o *ops.Ops, name, pass string) error {
+	err := o.UseContext(name, pass, "", cliProgress)
+	if errors.Is(err, ops.ErrCurrentNeedsPassphrase) {
+		cur, _ := o.CurrentContext()
+		fmt.Printf("  Set a passphrase to seal the current context %q (you'll need it to switch back):\n", cur)
+		curPass, perr := promptNewPassphrase()
+		if perr != nil {
+			return perr
+		}
+		err = o.UseContext(name, pass, curPass, cliProgress)
+	}
+	return err
 }
 
 func runConfigExport(cmd *cobra.Command, args []string) error {
