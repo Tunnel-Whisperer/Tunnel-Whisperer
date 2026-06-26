@@ -6,6 +6,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -16,6 +17,7 @@ import (
 
 var logLevel string
 var logFormat string
+var workingDir string
 
 var rootCmd = &cobra.Command{
 	Use:     "tw",
@@ -25,6 +27,12 @@ var rootCmd = &cobra.Command{
 ports across separated private networks. It encapsulates traffic in standard
 HTTPS/WebSocket to traverse strict firewalls and DPI.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// --working-directory overrides the config/state dir for every command;
+		// must be applied before any config.Load() below (config.Dir reads the env).
+		if workingDir != "" {
+			os.Setenv("TW_CONFIG_DIR", workingDir)
+			_ = os.MkdirAll(workingDir, 0o755)
+		}
 		if cmd.Flags().Changed("log-level") {
 			if cfg, err := config.Load(); err == nil {
 				cfg.LogLevel = logLevel
@@ -52,6 +60,7 @@ HTTPS/WebSocket to traverse strict firewalls and DPI.`,
 func init() {
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level (debug, info, warn, error)")
 	rootCmd.PersistentFlags().StringVar(&logFormat, "log-format", "text", "log format (text, json)")
+	rootCmd.PersistentFlags().StringVar(&workingDir, "working-directory", "", "config/state directory to use instead of the system default (no permissions needed)")
 }
 
 func Execute() error {

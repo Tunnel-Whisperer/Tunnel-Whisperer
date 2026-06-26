@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"net"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/tunnelwhisperer/tw/internal/config"
@@ -33,9 +35,43 @@ Examples:
 	RunE: runClientListen,
 }
 
+var clientImportCmd = &cobra.Command{
+	Use:   "import <user-bundle.zip>",
+	Short: "Install a server-issued user bundle so this machine can connect",
+	Long: `Extract the zip your server gave you (tw server user export) into the
+config directory, then connect with: tw client connect
+
+Use --working-directory to extract into a specific folder (and pass the same
+--working-directory to later commands), e.g.:
+  tw client import alice.zip --working-directory ./alice
+  tw client connect --working-directory ./alice`,
+	Args: cobra.ExactArgs(1),
+	RunE: runClientImport,
+}
+
 func init() {
-	clientCmd.AddCommand(clientListenCmd)
+	clientCmd.AddCommand(clientListenCmd, clientImportCmd)
 	rootCmd.AddCommand(clientCmd)
+}
+
+func runClientImport(cmd *cobra.Command, args []string) error {
+	data, err := os.ReadFile(args[0])
+	if err != nil {
+		return fmt.Errorf("reading bundle: %w", err)
+	}
+	if _, err := os.Stat(config.FilePath()); err == nil {
+		fmt.Printf("  A config already exists at %s and will be overwritten. Continue? [y/N]: ", config.Dir())
+		if ans, _ := sharedLine(); strings.ToLower(ans) != "y" {
+			fmt.Println("  Aborted.")
+			return nil
+		}
+	}
+	if err := ops.ImportUserBundle(data); err != nil {
+		return err
+	}
+	fmt.Printf("  User bundle imported into %s\n", config.Dir())
+	fmt.Println("  Connect with: tw client connect")
+	return nil
 }
 
 func runClientListen(cmd *cobra.Command, args []string) error {
