@@ -7,6 +7,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -30,8 +31,9 @@ HTTPS/WebSocket to traverse strict firewalls and DPI.`,
 		// --working-directory overrides the config/state dir for every command;
 		// must be applied before any config.Load() below (config.Dir reads the env).
 		if workingDir != "" {
-			os.Setenv("TW_CONFIG_DIR", workingDir)
-			_ = os.MkdirAll(workingDir, 0o755)
+			wd := filepath.Clean(workingDir)
+			os.Setenv("TW_CONFIG_DIR", wd)
+			_ = os.MkdirAll(wd, 0o755)
 		}
 		if cmd.Flags().Changed("log-level") {
 			if cfg, err := config.Load(); err == nil {

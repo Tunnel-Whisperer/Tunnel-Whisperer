@@ -133,7 +133,7 @@ func unsealProfile(data []byte, passphrase string) error {
 	if err != nil {
 		return fmt.Errorf("reading profile zip (corrupted?): %w", err)
 	}
-	dir := config.Dir()
+	dir := filepath.Clean(config.Dir())
 
 	// Pass 1: validate every entry and collect its destination, content, and
 	// mode. Write NOTHING to the live config dir here — any rejected entry

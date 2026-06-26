@@ -21,7 +21,7 @@ func ImportUserBundle(zipData []byte) error {
 	if err != nil {
 		return fmt.Errorf("reading bundle zip (corrupted?): %w", err)
 	}
-	dir := config.Dir()
+	dir := filepath.Clean(config.Dir())
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("creating config dir: %w", err)
 	}

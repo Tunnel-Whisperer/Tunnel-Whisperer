@@ -54,6 +54,18 @@ func TestImportUserBundle(t *testing.T) {
 	}
 }
 
+func TestImportUserBundleNonCleanDir(t *testing.T) {
+	// A working dir with a trailing "/." (as a user might pass via
+	// --working-directory ./tw1/.) must not break the zip-slip guard.
+	t.Setenv("TW_CONFIG_DIR", t.TempDir()+string(os.PathSeparator)+".")
+	if err := ImportUserBundle(makeUserBundle(t)); err != nil {
+		t.Fatalf("import into non-clean dir: %v", err)
+	}
+	if _, err := os.Stat(config.FilePath()); err != nil {
+		t.Errorf("config not written: %v", err)
+	}
+}
+
 func TestImportUserBundleRejectsZipSlip(t *testing.T) {
 	t.Setenv("TW_CONFIG_DIR", t.TempDir())
 	var buf bytes.Buffer
