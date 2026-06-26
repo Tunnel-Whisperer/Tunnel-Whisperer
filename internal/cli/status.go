@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/tunnelwhisperer/tw/internal/api"
@@ -71,6 +72,11 @@ func runStatusRemote(client *api.Client) error {
 		return fmt.Errorf("getting status: %w", err)
 	}
 
+	if w := daemonContextMismatch(resp.Mode, resp.Relay.Domain); w != "" {
+		fmt.Println(w)
+		fmt.Println()
+	}
+
 	fmt.Printf("  Mode:   %s\n", orDash(resp.Mode))
 	fmt.Printf("  Users:  %d\n", resp.UserCount)
 	fmt.Println()
@@ -137,6 +143,32 @@ func runStatusLocal() error {
 	}
 
 	return nil
+}
+
+// daemonContextMismatch returns a warning when a running tw service's mode or
+// relay differs from the active on-disk context, or "" when they agree. The
+// service keeps serving the config it loaded at startup, so a `tw config
+// use-context` switch does not reach the daemon until it is restarted; this
+// surfaces that drift (the source of the "I'm in context X but status shows Y"
+// confusion) instead of letting it pass silently.
+func daemonContextMismatch(daemonMode, daemonRelay string) string {
+	cfg, err := config.Load()
+	if err != nil {
+		return ""
+	}
+	var diffs []string
+	if cfg.Mode != "" && daemonMode != "" && cfg.Mode != daemonMode {
+		diffs = append(diffs, fmt.Sprintf("mode    — active context: %s, running service: %s", cfg.Mode, daemonMode))
+	}
+	if cfg.Xray.RelayHost != "" && daemonRelay != "" && cfg.Xray.RelayHost != daemonRelay {
+		diffs = append(diffs, fmt.Sprintf("relay   — active context: %s, running service: %s", cfg.Xray.RelayHost, daemonRelay))
+	}
+	if len(diffs) == 0 {
+		return ""
+	}
+	return "  ⚠ The running tw service does not match the active context:\n    " +
+		strings.Join(diffs, "\n    ") +
+		"\n    Restart the service to apply the switch (Windows: Restart-Service tw; otherwise: tw service stop && tw service start)."
 }
 
 func orDash(s string) string {

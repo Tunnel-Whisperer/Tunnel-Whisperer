@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -179,7 +180,30 @@ func runConfigUseContext(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	fmt.Printf("  Switched to context %q.\n", args[0])
+	warnIfDaemonStale()
 	return nil
+}
+
+// warnIfDaemonStale prints the daemon/context mismatch warning after a switch
+// if a tw service is running and still serving its old config. Best-effort: no
+// daemon, or a daemon already in sync, prints nothing.
+func warnIfDaemonStale() {
+	cfg, err := config.Load()
+	if err != nil {
+		return
+	}
+	c, err := api.Dial(fmt.Sprintf("localhost:%d", cfg.Server.APIPort))
+	if err != nil {
+		return
+	}
+	defer c.Close()
+	resp, err := c.GetStatus(context.Background())
+	if err != nil {
+		return
+	}
+	if w := daemonContextMismatch(resp.Mode, resp.Relay.Domain); w != "" {
+		fmt.Println(w)
+	}
 }
 
 func runConfigRenameContext(cmd *cobra.Command, args []string) error {
