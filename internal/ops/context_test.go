@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"errors"
 	"os"
 	"testing"
 
@@ -129,6 +130,48 @@ func TestDeleteCurrentWithOthersRefused(t *testing.T) {
 	}
 }
 
+func TestNewContextPreservesCurrent(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	o := newOpsForTest(t)
+	if _, err := config.EnsureContextIndex(); err != nil { // migrate "default"
+		t.Fatal(err)
+	}
+	// Create a fresh empty context, sealing "default" with a passphrase.
+	if err := o.NewContext("srv", "pw"); err != nil {
+		t.Fatal(err)
+	}
+	// The previous context is preserved as a sealed snapshot.
+	if _, err := os.Stat(config.ContextBundlePath("default")); err != nil {
+		t.Errorf("default context not sealed/preserved: %v", err)
+	}
+	// The new context is current and its live profile is empty.
+	if cur, _ := o.CurrentContext(); cur != "srv" {
+		t.Errorf("current = %q, want srv", cur)
+	}
+	if _, err := os.Stat(config.FilePath()); !os.IsNotExist(err) {
+		t.Errorf("live config.yaml should be wiped for the fresh context: %v", err)
+	}
+	// Both contexts exist (current one not deleted).
+	if list, _ := o.ListContexts(); len(list) != 2 {
+		t.Fatalf("want 2 contexts, got %d", len(list))
+	}
+}
+
+func TestNewContextRefusesWithoutPassphrase(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	o := newOpsForTest(t)
+	if _, err := config.EnsureContextIndex(); err != nil {
+		t.Fatal(err)
+	}
+	// No passphrase + no snapshot => current can't be sealed => refuse (don't wipe).
+	if err := o.NewContext("srv", ""); err == nil {
+		t.Error("NewContext should refuse when the current context can't be sealed")
+	}
+	if _, err := os.Stat(config.FilePath()); err != nil {
+		t.Errorf("live config must be intact after a refused new-context: %v", err)
+	}
+}
+
 func TestUseContextSwitchesActive(t *testing.T) {
 	t.Setenv("TW_CONFIG_DIR", t.TempDir())
 	o := newOpsForTest(t)
@@ -138,9 +181,13 @@ func TestUseContextSwitchesActive(t *testing.T) {
 	// Seed a second context to switch to.
 	seedContext(t, "relay-b", "client", "b.example.com", "pw")
 
-	// Switch to relay-b. current ("default") has no cached passphrase; it's
-	// unchanged since migration so re-seal is skipped — no currentPassphrase needed.
-	if err := o.UseContext("relay-b", "pw", "", func(ProgressEvent) {}); err != nil {
+	// Switching away from the content-bearing "default" requires a passphrase to
+	// seal it (so it's never silently lost) — with none, UseContext refuses.
+	if err := o.UseContext("relay-b", "pw", "", func(ProgressEvent) {}); !errors.Is(err, ErrCurrentNeedsPassphrase) {
+		t.Fatalf("expected ErrCurrentNeedsPassphrase with no current passphrase, got %v", err)
+	}
+	// With a passphrase to seal "default", the switch proceeds.
+	if err := o.UseContext("relay-b", "pw", "defaultpw", func(ProgressEvent) {}); err != nil {
 		t.Fatal(err)
 	}
 	cur, _ := o.CurrentContext()

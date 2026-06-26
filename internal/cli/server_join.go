@@ -8,7 +8,10 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
-var serverJoinApply string
+var (
+	serverJoinApply      string
+	serverJoinNewContext string
+)
 
 var serverJoinCmd = &cobra.Command{
 	Use:   "join <relay-host>",
@@ -19,6 +22,7 @@ var serverJoinCmd = &cobra.Command{
 
 func init() {
 	serverJoinCmd.Flags().StringVar(&serverJoinApply, "apply", "", "apply an admin join-response file instead of generating a request")
+	serverJoinCmd.Flags().StringVar(&serverJoinNewContext, "new-context", "", "first create+switch to a fresh context of this name (preserving the current one), then join in it")
 	serverCmd.AddCommand(serverJoinCmd)
 }
 
@@ -26,6 +30,12 @@ func runServerJoin(cmd *cobra.Command, args []string) error {
 	o, err := ops.New()
 	if err != nil {
 		return err
+	}
+	if serverJoinNewContext != "" {
+		if err := newContextSealingCurrent(o, serverJoinNewContext); err != nil {
+			return err
+		}
+		fmt.Printf("  Created context %q (current one preserved); joining in it.\n", serverJoinNewContext)
 	}
 	if serverJoinApply != "" {
 		data, err := os.ReadFile(serverJoinApply)

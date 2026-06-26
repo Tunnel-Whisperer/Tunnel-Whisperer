@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,6 +36,13 @@ var configUseContextCmd = &cobra.Command{
 	Short: "Switch the active context (re-seals current, reconnects)",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runConfigUseContext,
+}
+
+var configNewContextCmd = &cobra.Command{
+	Use:   "new-context <name>",
+	Short: "Create a fresh empty context and switch to it (the current one is preserved)",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runConfigNewContext,
 }
 
 var configRenameContextCmd = &cobra.Command{
@@ -74,8 +82,37 @@ func init() {
 	configImportCmd.Flags().StringVar(&configImportName, "name", "", "context name (default: relay domain)")
 	configImportCmd.Flags().BoolVar(&configImportActivate, "activate", false, "switch to the imported context immediately (applies its mode)")
 	configCmd.AddCommand(configGetContextsCmd, configCurrentContextCmd, configUseContextCmd,
-		configRenameContextCmd, configDeleteContextCmd, configImportCmd, configExportCmd)
+		configNewContextCmd, configRenameContextCmd, configDeleteContextCmd, configImportCmd, configExportCmd)
 	rootCmd.AddCommand(configCmd)
+}
+
+// newContextSealingCurrent creates a fresh empty context named `name` and
+// switches to it, prompting for a passphrase to seal (and preserve) the current
+// context first. Shared by `tw config new-context` and `tw server join --new-context`.
+func newContextSealingCurrent(o *ops.Ops, name string) error {
+	cur, _ := o.CurrentContext()
+	if cur != "" {
+		fmt.Printf("  Set a passphrase to seal the current context %q (you'll need it to switch back):\n", cur)
+		pass, err := promptNewPassphrase()
+		if err != nil {
+			return err
+		}
+		return o.NewContext(name, pass)
+	}
+	return o.NewContext(name, "")
+}
+
+func runConfigNewContext(cmd *cobra.Command, args []string) error {
+	o, err := ops.New()
+	if err != nil {
+		return err
+	}
+	if err := newContextSealingCurrent(o, args[0]); err != nil {
+		return err
+	}
+	fmt.Printf("  Created context %q and switched to it. Configure it (e.g. tw server join / a relay), then\n", args[0])
+	fmt.Println("  switch back any time with: tw config use-context <name>")
+	return nil
 }
 
 func runConfigGetContexts(cmd *cobra.Command, args []string) error {
@@ -124,10 +161,21 @@ func runConfigUseContext(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	// currentPassphrase is prompted lazily by ops only if needed; pass "" and
-	// let UseContext error with guidance if it must re-seal a changed current
-	// context that has no cached passphrase.
-	if err := o.UseContext(args[0], pass, "", cliProgress); err != nil {
+	// Try with no current-context passphrase first (the daemon may have it
+	// cached, or the current context may be empty). If sealing the current
+	// context needs a passphrase, prompt to set/enter it and retry — so a
+	// configured context is never silently dropped on switch.
+	err = o.UseContext(args[0], pass, "", cliProgress)
+	if errors.Is(err, ops.ErrCurrentNeedsPassphrase) {
+		cur, _ := o.CurrentContext()
+		fmt.Printf("  Set a passphrase to seal the current context %q (you'll need it to switch back):\n", cur)
+		curPass, perr := promptNewPassphrase()
+		if perr != nil {
+			return perr
+		}
+		err = o.UseContext(args[0], pass, curPass, cliProgress)
+	}
+	if err != nil {
 		return err
 	}
 	fmt.Printf("  Switched to context %q.\n", args[0])

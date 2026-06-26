@@ -16,6 +16,29 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/cryptobox"
 )
 
+// clearLiveProfile removes the active profile from config.Dir() (the flat
+// identity files + the relay/users/servers dirs), leaving the context store
+// (contexts/ + contexts.yaml) intact. Used to start a fresh empty context.
+func clearLiveProfile() error {
+	dir := config.Dir()
+	flat := []string{
+		config.FilePath(), config.CACertPath(), config.CAKeyPath(),
+		config.ClientCertPath(), config.ClientKeyPath(),
+		filepath.Join(dir, "id_ed25519"), filepath.Join(dir, "id_ed25519.pub"),
+	}
+	for _, f := range flat {
+		if err := os.Remove(f); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("removing %s: %w", f, err)
+		}
+	}
+	for _, sub := range []string{"relay", "users", "servers"} {
+		if err := os.RemoveAll(filepath.Join(dir, sub)); err != nil {
+			return fmt.Errorf("removing %s: %w", sub, err)
+		}
+	}
+	return nil
+}
+
 // profileFiles returns the absolute paths of the files that make up the active
 // context profile, gathered from config.Dir(): the flat identity files plus
 // everything under relay/ and users/. The contexts store itself is excluded.
