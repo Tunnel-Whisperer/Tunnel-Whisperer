@@ -284,6 +284,16 @@ func runConfigImport(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	// If we just replaced the *active* context, re-activating it is a no-op, so
+	// the live config would keep the old content. Refresh the live profile from
+	// the new bundle so the next connection uses the updated config.
+	if cur, _ := o.CurrentContext(); name == cur {
+		if rerr := o.ReapplyContext(name, pass, cliProgress); rerr != nil {
+			return rerr
+		}
+		fmt.Printf("  Updated the active context %q from the bundle.\n", name)
+		return nil
+	}
 	if configImportActivate {
 		if aerr := activateImported(o, name, pass); aerr != nil {
 			return aerr

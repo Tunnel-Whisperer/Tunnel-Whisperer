@@ -278,6 +278,45 @@ func (o *Ops) UseContext(name, targetPassphrase, currentPassphrase string, progr
 	return nil
 }
 
+// ReapplyContext re-unseals the stored bundle of the already-active context
+// over the live profile, then reloads config and reconnects. Used after the
+// active context's bundle is replaced by an import: re-activating it via
+// UseContext is a no-op (it is already current), so the live profile would
+// otherwise keep the old config. This ONLY unseals (bundle -> live) and never
+// re-seals, so the freshly imported bundle is authoritative and a later switch
+// won't write the stale live profile back over it.
+func (o *Ops) ReapplyContext(name, passphrase string, progress ProgressFunc) error {
+	if progress == nil {
+		progress = func(ProgressEvent) {}
+	}
+	bundle, err := os.ReadFile(config.ContextBundlePath(name))
+	if err != nil {
+		return fmt.Errorf("reading context %q: %w", name, err)
+	}
+	if err := unsealProfile(bundle, passphrase); err != nil {
+		return err
+	}
+	if err := o.ReloadConfig(); err != nil {
+		return fmt.Errorf("reloading config after reapply: %w", err)
+	}
+	if err := o.ensureRelayMarker(); err != nil {
+		slog.Warn("reapply: could not restore relay marker", "error", err)
+	}
+	o.SetActivePassphrase(passphrase)
+
+	switch o.Mode() {
+	case "server":
+		if o.ServerStatus().State == StateRunning {
+			return o.RestartServer(progress)
+		}
+	case "client":
+		if o.ClientStatus().State == StateRunning {
+			return o.ReconnectClient(progress)
+		}
+	}
+	return nil
+}
+
 // resealCurrent writes the live profile back to contexts/<cur>.twctx if it
 // changed since it was sealed. Uses the cached passphrase; if none and the
 // profile changed, currentPassphrase must be supplied.
