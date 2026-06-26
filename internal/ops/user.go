@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tunnelwhisperer/tw/internal/config"
+	"github.com/tunnelwhisperer/tw/internal/cryptobox"
 	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
 	twxray "github.com/tunnelwhisperer/tw/internal/xray"
 	proxymanCmd "github.com/xtls/xray-core/app/proxyman/command"
@@ -774,57 +775,108 @@ func addMultipleUUIDsToRelay(cfg *config.Config, uuids []string) error {
 	})
 }
 
-// GetUserConfigBundle returns the user's config files as a zip archive.
-func (o *Ops) GetUserConfigBundle(name string) ([]byte, error) {
+// GetUserConfigBundle returns the user packaged as a role=client context: an
+// encrypted bundle (cryptobox TWBOX1) plus the generated passphrase that opens
+// it. The client imports it with `tw client import` (or `tw config import`).
+func (o *Ops) GetUserConfigBundle(name string) (bundle []byte, passphrase string, err error) {
 	userDir := filepath.Join(config.UsersDir(), name)
 	if _, err := os.Stat(userDir); os.IsNotExist(err) {
-		return nil, fmt.Errorf("user %q not found", name)
+		return nil, "", fmt.Errorf("user %q not found", name)
 	}
 
+	// The exported user is a role=client context: a profile zip (the same shape
+	// unsealProfile/ImportContext consume) sealed under a generated passphrase.
+	// The client imports it as a context and switches to it.
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 
-	files := []string{"config.yaml", "id_ed25519", "id_ed25519.pub"}
-	for _, f := range files {
-		data, err := os.ReadFile(filepath.Join(userDir, f))
-		if err != nil {
-			continue
-		}
-		w, err := zw.Create(f)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := w.Write(data); err != nil {
-			return nil, err
-		}
+	// config.yaml: the user's client config with mode:client injected so the
+	// imported context indexes as role=client and the client daemon runs as a
+	// client. The user's own config.yaml carries no mode.
+	userCfg, err := os.ReadFile(filepath.Join(userDir, "config.yaml"))
+	if err != nil {
+		return nil, "", fmt.Errorf("reading user config: %w", err)
+	}
+	clientCfg, err := injectMode(userCfg, "client")
+	if err != nil {
+		return nil, "", fmt.Errorf("setting client mode: %w", err)
+	}
+	if w, err := zw.Create("config.yaml"); err != nil {
+		return nil, "", err
+	} else if _, err := w.Write(clientCfg); err != nil {
+		return nil, "", err
 	}
 
-	// Per-server client cert + key: presented to the relay's mTLS gate.
-	for _, f := range []struct{ name, path string }{
+	// The user's SSH identity and the per-server client cert/key (presented to
+	// the relay's mTLS gate). Cert paths are computed from the config dir at
+	// runtime, so these land flat in the client's config dir on unseal.
+	entries := []struct{ name, path string }{
+		{"id_ed25519", filepath.Join(userDir, "id_ed25519")},
+		{"id_ed25519.pub", filepath.Join(userDir, "id_ed25519.pub")},
 		{"client.crt", config.ClientCertPath()},
 		{"client.key", config.ClientKeyPath()},
-	} {
-		data, err := os.ReadFile(f.path)
+	}
+	for _, e := range entries {
+		data, err := os.ReadFile(e.path)
 		if err != nil {
-			return nil, fmt.Errorf("reading %s for bundle: %w", f.name, err)
+			return nil, "", fmt.Errorf("reading %s for bundle: %w", e.name, err)
 		}
-		w, err := zw.Create(f.name)
+		w, err := zw.Create(e.name)
 		if err != nil {
-			return nil, fmt.Errorf("adding %s to bundle: %w", f.name, err)
+			return nil, "", fmt.Errorf("adding %s to bundle: %w", e.name, err)
 		}
 		if _, err := w.Write(data); err != nil {
-			return nil, fmt.Errorf("writing %s to bundle: %w", f.name, err)
+			return nil, "", fmt.Errorf("writing %s to bundle: %w", e.name, err)
 		}
 	}
 
 	if err := zw.Close(); err != nil {
-		return nil, err
+		return nil, "", err
+	}
+
+	passphrase = generatePassphrase()
+	sealed, err := cryptobox.Encrypt(buf.Bytes(), passphrase)
+	if err != nil {
+		return nil, "", fmt.Errorf("sealing user context: %w", err)
 	}
 
 	// Clear the mappings-dirty flag on download.
 	_ = os.Remove(filepath.Join(userDir, ".mappings-dirty"))
 
-	return buf.Bytes(), nil
+	return sealed, passphrase, nil
+}
+
+// injectMode parses a config.yaml, sets its top-level mode, and re-marshals it,
+// preserving every other key. Used to stamp an exported user config as a client
+// context.
+func injectMode(cfgYAML []byte, mode string) ([]byte, error) {
+	var m map[string]interface{}
+	if err := yaml.Unmarshal(cfgYAML, &m); err != nil {
+		return nil, err
+	}
+	if m == nil {
+		m = map[string]interface{}{}
+	}
+	m["mode"] = mode
+	return yaml.Marshal(m)
+}
+
+// passphraseGroups/passphraseGroupLen shape the generated export passphrase:
+// 4 dash-separated groups of 4 lowercase-alphanumeric chars (~80 bits).
+const (
+	passphraseGroups   = 4
+	passphraseGroupLen = 4
+)
+
+// generatePassphrase returns a random, human-typable passphrase used to seal an
+// exported user context. The admin shares it out-of-band; the client enters it
+// on import.
+func generatePassphrase() string {
+	groups := make([]string, passphraseGroups)
+	for i := range groups {
+		groups[i] = randomSuffix(passphraseGroupLen)
+	}
+	return strings.Join(groups, "-")
 }
 
 // appendAuthorizedKey adds a public key to the server's authorized_keys

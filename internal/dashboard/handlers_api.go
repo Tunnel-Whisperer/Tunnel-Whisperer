@@ -635,14 +635,17 @@ func (s *Server) apiUserSingleSession(w http.ResponseWriter, r *http.Request, na
 }
 
 func (s *Server) apiUserDownload(w http.ResponseWriter, r *http.Request, name string) {
-	data, err := s.ops.GetUserConfigBundle(name)
+	data, passphrase, err := s.ops.GetUserConfigBundle(name)
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+name+"-tw-config.zip\"")
+	// The bundle is an encrypted client context; the passphrase opens it. The
+	// dashboard UI (deferred) should read this header and show it to the admin.
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+name+"-tw-context.twctx\"")
+	w.Header().Set("X-TW-Passphrase", passphrase)
 	w.Write(data)
 }
 

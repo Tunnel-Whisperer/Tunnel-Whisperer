@@ -14,9 +14,14 @@ import (
 
 var exportUserCmd = &cobra.Command{
 	Use:   "export <name>",
-	Short: "Export a user's config bundle as a zip file",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runExportUser,
+	Short: "Export a user as an encrypted client context bundle",
+	Long: `Package a user as a role=client context (the same format as tw config
+export). The client imports it with: tw client import <file>
+
+Exporting prints a one-time passphrase that seals the bundle; share it with the
+client out-of-band (the client needs it to import).`,
+	Args: cobra.ExactArgs(1),
+	RunE: runExportUser,
 }
 
 func init() {
@@ -33,7 +38,7 @@ func runExportUser(cmd *cobra.Command, args []string) error {
 	addr := fmt.Sprintf("localhost:%d", cfg.Server.APIPort)
 
 	var data []byte
-	var err error
+	var passphrase string
 
 	client, dialErr := api.Dial(addr)
 	if dialErr != nil {
@@ -42,19 +47,20 @@ func runExportUser(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("initializing: %w", err)
 		}
-		data, err = o.GetUserConfigBundle(name)
+		data, passphrase, err = o.GetUserConfigBundle(name)
 		if err != nil {
 			return err
 		}
 	} else {
 		defer client.Close()
-		data, err = client.GetUserConfig(context.Background(), name)
+		var err error
+		data, passphrase, err = client.GetUserConfig(context.Background(), name)
 		if err != nil {
 			return fmt.Errorf("exporting user config: %w", err)
 		}
 	}
 
-	filename := name + "-tw-config.zip"
+	filename := name + "-tw-context.twctx"
 	outPath := filepath.Join(".", filename)
 
 	if err := os.WriteFile(outPath, data, 0644); err != nil {
@@ -62,5 +68,8 @@ func runExportUser(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("  Exported %s (%d bytes)\n", filename, len(data))
+	fmt.Printf("  Passphrase: %s\n", passphrase)
+	fmt.Println("  Share the passphrase out-of-band. The client imports with:")
+	fmt.Printf("    tw client import %s\n", filename)
 	return nil
 }

@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -36,15 +38,20 @@ Examples:
 }
 
 var clientImportCmd = &cobra.Command{
-	Use:   "import <user-bundle.zip>",
-	Short: "Install a server-issued user bundle so this machine can connect",
-	Long: `Extract the zip your server gave you (tw server user export) into the
-config directory, then connect with: tw client connect
+	Use:   "import <context.twctx>",
+	Short: "Import a server-issued client context so this machine can connect",
+	Long: `Import the context your server gave you (tw server user export). It is
+added as a role=client context, switched to, and ready to connect with:
+  tw client connect
 
-Use --working-directory to extract into a specific folder (and pass the same
---working-directory to later commands), e.g.:
-  tw client import alice.zip --working-directory ./alice
-  tw client connect --working-directory ./alice`,
+You'll be prompted for the passphrase the server printed at export time.
+
+Use --working-directory to keep the config in a specific folder (and pass the
+same --working-directory to later commands), e.g.:
+  tw client import alice.twctx --working-directory ./alice
+  tw client connect --working-directory ./alice
+
+Legacy plain user-bundle zips are still accepted (extracted into the config dir).`,
 	Args: cobra.ExactArgs(1),
 	RunE: runClientImport,
 }
@@ -59,6 +66,52 @@ func runClientImport(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("reading bundle: %w", err)
 	}
+	// New format: an encrypted context bundle (cryptobox TWBOX1). Legacy: a
+	// plain zip (PK..). Detect by magic so old bundles still import.
+	if bytes.HasPrefix(data, []byte("TWBOX1")) {
+		return importClientContext(data)
+	}
+	return importLegacyUserBundle(data)
+}
+
+// importClientContext imports a sealed client context and switches to it, so
+// the user can connect immediately.
+func importClientContext(data []byte) error {
+	o, err := ops.New()
+	if err != nil {
+		return err
+	}
+	pass, err := readSecret("Passphrase (from the server's export)")
+	if err != nil {
+		return err
+	}
+	name, err := o.ImportContext(data, "", pass)
+	if err != nil {
+		return err
+	}
+	// Activate it. On a fresh client there's no current context to seal; if one
+	// exists and needs a passphrase to re-seal, prompt and retry.
+	err = o.UseContext(name, pass, "", cliProgress)
+	if errors.Is(err, ops.ErrCurrentNeedsPassphrase) {
+		cur, _ := o.CurrentContext()
+		fmt.Printf("  Set a passphrase to seal the current context %q (you'll need it to switch back):\n", cur)
+		curPass, perr := promptNewPassphrase()
+		if perr != nil {
+			return perr
+		}
+		err = o.UseContext(name, pass, curPass, cliProgress)
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Printf("  Imported context %q (role client) and switched to it.\n", name)
+	fmt.Println("  Connect with: tw client connect")
+	return nil
+}
+
+// importLegacyUserBundle extracts a plain (pre-context) user-bundle zip into the
+// config dir and sets client mode.
+func importLegacyUserBundle(data []byte) error {
 	if _, err := os.Stat(config.FilePath()); err == nil {
 		fmt.Printf("  A config already exists at %s and will be overwritten. Continue? [y/N]: ", config.Dir())
 		if ans, _ := sharedLine(); strings.ToLower(ans) != "y" {
