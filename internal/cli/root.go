@@ -18,7 +18,7 @@ import (
 
 var logLevel string
 var logFormat string
-var workingDir string
+var configDir string
 
 var rootCmd = &cobra.Command{
 	Use:     "tw",
@@ -28,12 +28,14 @@ var rootCmd = &cobra.Command{
 ports across separated private networks. It encapsulates traffic in standard
 HTTPS/WebSocket to traverse strict firewalls and DPI.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		// --working-directory overrides the config/state dir for every command;
-		// must be applied before any config.Load() below (config.Dir reads the env).
-		if workingDir != "" {
-			wd := filepath.Clean(workingDir)
-			os.Setenv("TW_CONFIG_DIR", wd)
-			_ = os.MkdirAll(wd, 0o755)
+		// --config-dir is the flag form of the TW_CONFIG_DIR env var: it sets the
+		// same variable (flag wins over an inherited env value) so there's one
+		// source of truth. Must be applied before any config.Load() below, since
+		// config.Dir reads the env.
+		if configDir != "" {
+			d := filepath.Clean(configDir)
+			os.Setenv("TW_CONFIG_DIR", d)
+			_ = os.MkdirAll(d, 0o755)
 		}
 		if cmd.Flags().Changed("log-level") {
 			if cfg, err := config.Load(); err == nil {
@@ -62,7 +64,7 @@ HTTPS/WebSocket to traverse strict firewalls and DPI.`,
 func init() {
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level (debug, info, warn, error)")
 	rootCmd.PersistentFlags().StringVar(&logFormat, "log-format", "text", "log format (text, json)")
-	rootCmd.PersistentFlags().StringVar(&workingDir, "working-directory", "", "config/state directory to use instead of the system default (no permissions needed)")
+	rootCmd.PersistentFlags().StringVar(&configDir, "config-dir", "", "config/state directory to use instead of the system default; flag form of TW_CONFIG_DIR (no permissions needed)")
 }
 
 func Execute() error {
