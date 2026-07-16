@@ -50,8 +50,6 @@ type Ops struct {
 	cli   clientManager
 	stats *stats.Collector // nil when analytics disabled
 
-	activePassphrase string // in-memory only; used to re-seal the active context on switch
-
 	onlineMu      sync.RWMutex
 	onlineCache   map[string]bool
 	onlinePoll    time.Time
@@ -59,19 +57,6 @@ type Ops struct {
 	trafficReset  bool       // true after first traffic stats reset
 }
 
-// SetActivePassphrase records the passphrase of the active context in memory so
-// the next switch can re-seal it without prompting. Never persisted.
-func (o *Ops) SetActivePassphrase(p string) {
-	o.mu.Lock()
-	o.activePassphrase = p
-	o.mu.Unlock()
-}
-
-func (o *Ops) activePass() string {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return o.activePassphrase
-}
 
 // New loads the configuration and returns a ready Ops instance.
 func New() (*Ops, error) {

@@ -23,20 +23,17 @@ func TestGetUserConfigBundleProducesClientContext(t *testing.T) {
 	writeFile(t, filepath.Join(userDir, "id_ed25519"), "SSHKEY")
 	writeFile(t, filepath.Join(userDir, "id_ed25519.pub"), "ssh-ed25519 AAAA")
 
-	bundle, pass, err := o.GetUserConfigBundle("alice")
+	bundle, err := o.GetUserConfigBundle("alice")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.HasPrefix(bundle, []byte("TWBOX1")) {
 		t.Fatal("bundle is not a sealed cryptobox blob")
 	}
-	if pass == "" {
-		t.Fatal("expected a generated passphrase")
-	}
-
-	plain, err := cryptobox.Decrypt(bundle, pass)
+	// User bundles carry no passphrase — the bundle opens with "".
+	plain, err := cryptobox.Decrypt(bundle, "")
 	if err != nil {
-		t.Fatalf("decrypt with returned passphrase: %v", err)
+		t.Fatalf("decrypt user bundle with empty passphrase: %v", err)
 	}
 
 	// Indexes as a client context with the user's relay.
@@ -64,7 +61,7 @@ func TestGetUserConfigBundleProducesClientContext(t *testing.T) {
 func TestGetUserConfigBundleUnknownUser(t *testing.T) {
 	t.Setenv("TW_CONFIG_DIR", t.TempDir())
 	o := newOpsForTest(t)
-	if _, _, err := o.GetUserConfigBundle("nobody"); err == nil {
+	if _, err := o.GetUserConfigBundle("nobody"); err == nil {
 		t.Error("expected error for unknown user")
 	}
 }

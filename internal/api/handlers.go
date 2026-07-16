@@ -177,9 +177,9 @@ func (h *handler) DeleteUser(ctx context.Context, req *DeleteUserRequest) (*Empt
 }
 
 func (h *handler) GetUserConfig(ctx context.Context, req *GetUserConfigRequest) (*UserConfigResponse, error) {
-	data, passphrase, err := h.ops.GetUserConfigBundle(req.Name)
+	data, err := h.ops.GetUserConfigBundle(req.Name)
 	if err != nil {
 		return nil, status.Errorf(codes.NotFound, "%v", err)
 	}
-	return &UserConfigResponse{Data: data, Passphrase: passphrase}, nil
+	return &UserConfigResponse{Data: data}, nil
 }

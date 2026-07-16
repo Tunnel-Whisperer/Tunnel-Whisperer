@@ -26,15 +26,21 @@ const (
 	argonThreads = 4
 )
 
+// ErrDecrypt is returned when opening a bundle fails — a wrong passphrase or
+// corrupted data. Callers use errors.Is to distinguish "needs a passphrase"
+// from other failures (e.g. import trying an empty passphrase first).
+var ErrDecrypt = errors.New("cryptobox: decryption failed (wrong passphrase or corrupted data)")
+
 func deriveKey(passphrase string, salt []byte) []byte {
 	return argon2.IDKey([]byte(passphrase), salt, argonTime, argonMemory, argonThreads, keyLen)
 }
 
 // Encrypt seals plaintext under passphrase and returns the framed ciphertext.
 func Encrypt(plaintext []byte, passphrase string) ([]byte, error) {
-	if passphrase == "" {
-		return nil, errors.New("cryptobox: empty passphrase")
-	}
+	// An empty passphrase is allowed: it produces a bundle openable with "" (no
+	// real protection). Used for user-context bundles, which are shared over an
+	// already-trusted channel and deliberately carry no passphrase. Callers that
+	// require a passphrase (admin bundles) enforce it before calling here.
 	salt := make([]byte, saltLen)
 	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
 		return nil, fmt.Errorf("cryptobox: reading salt: %w", err)
@@ -73,7 +79,7 @@ func Decrypt(data []byte, passphrase string) ([]byte, error) {
 	}
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return nil, errors.New("cryptobox: decryption failed (wrong passphrase or corrupted data)")
+		return nil, ErrDecrypt
 	}
 	return plaintext, nil
 }

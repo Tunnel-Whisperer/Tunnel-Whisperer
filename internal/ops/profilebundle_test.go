@@ -27,14 +27,14 @@ func TestSealUnsealProfileRoundTrip(t *testing.T) {
 	writeFile(t, filepath.Join(config.RelayDir(), "manual-relay.json"), `{"domain":"a"}`)
 	writeFile(t, filepath.Join(config.Dir(), "users", "alice", "config.yaml"), "user: alice")
 
-	sealed, err := sealProfile("pw")
+	sealed, err := sealProfile()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	dst := t.TempDir()
 	t.Setenv("TW_CONFIG_DIR", dst)
-	if err := unsealProfile(sealed, "pw"); err != nil {
+	if err := unsealProfile(sealed); err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range []string{config.FilePath(), config.CACertPath(),
@@ -43,19 +43,6 @@ func TestSealUnsealProfileRoundTrip(t *testing.T) {
 		if _, err := os.Stat(f); err != nil {
 			t.Errorf("missing after unseal: %s (%v)", f, err)
 		}
-	}
-}
-
-func TestUnsealProfileWrongPassphrase(t *testing.T) {
-	t.Setenv("TW_CONFIG_DIR", t.TempDir())
-	writeFile(t, config.FilePath(), "mode: admin\n")
-	sealed, err := sealProfile("pw")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("TW_CONFIG_DIR", t.TempDir())
-	if err := unsealProfile(sealed, "wrong"); err == nil {
-		t.Error("expected error with wrong passphrase")
 	}
 }
 
@@ -69,11 +56,11 @@ func TestZipHashMatchesProfileHash(t *testing.T) {
 	writeFile(t, config.CACertPath(), "CA")
 	writeFile(t, filepath.Join(config.Dir(), "users", "alice", "config.yaml"), "user: alice")
 
-	sealed, err := sealProfile("pw")
+	sealed, err := sealProfile()
 	if err != nil {
 		t.Fatal(err)
 	}
-	plain, err := cryptobox.Decrypt(sealed, "pw")
+	plain, err := cryptobox.Decrypt(sealed, "")
 	if err != nil {
 		t.Fatal(err)
 	}

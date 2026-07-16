@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/google/uuid"
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/pki"
 	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
@@ -81,15 +82,33 @@ func (o *Ops) EnsureKeys() error {
 func (o *Ops) ensureCerts() error {
 	o.mu.Lock()
 	mode := o.cfg.Mode
-	uuid := o.cfg.Xray.UUID
+	xrayUUID := o.cfg.Xray.UUID
 	o.mu.Unlock()
 
 	if mode == "client" {
 		return nil
 	}
 
+	// The server-id (cert CN) is derived as "<host>-<first8(uuid)>". If the UUID
+	// is still empty here, the id truncates to "<host>-" and permanently desyncs
+	// the cert from the relay config (Caddyfile subject matcher / path / xray),
+	// which is rendered later once the UUID is populated. Assign and persist a
+	// UUID first so the identity is stable across cert issuance and rendering.
+	if xrayUUID == "" {
+		o.mu.Lock()
+		if o.cfg.Xray.UUID == "" {
+			o.cfg.Xray.UUID = uuid.New().String()
+			if err := config.Save(o.cfg); err != nil {
+				o.mu.Unlock()
+				return fmt.Errorf("assigning Xray UUID: %w", err)
+			}
+		}
+		xrayUUID = o.cfg.Xray.UUID
+		o.mu.Unlock()
+	}
+
 	osHost, _ := os.Hostname()
-	id := deriveServerID(osHost, uuid)
+	id := deriveServerID(osHost, xrayUUID)
 
 	caExists, err := statExists(config.CACertPath())
 	if err != nil {

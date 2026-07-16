@@ -70,13 +70,13 @@ func (c *Client) DestroyRelay(ctx context.Context, creds map[string]string) erro
 	return c.invoke(ctx, "DestroyRelay", &DestroyRelayRequest{Creds: creds}, &Empty{})
 }
 
-// GetUserConfig calls the GetUserConfig RPC and returns the sealed context
-// bundle plus the generated passphrase that opens it.
-func (c *Client) GetUserConfig(ctx context.Context, name string) ([]byte, string, error) {
+// GetUserConfig calls the GetUserConfig RPC and returns the context bundle
+// (which carries no passphrase).
+func (c *Client) GetUserConfig(ctx context.Context, name string) ([]byte, error) {
 	resp := &UserConfigResponse{}
 	err := c.invoke(ctx, "GetUserConfig", &GetUserConfigRequest{Name: name}, resp)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	return resp.Data, resp.Passphrase, nil
+	return resp.Data, nil
 }

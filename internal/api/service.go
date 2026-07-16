@@ -123,11 +123,10 @@ type GetUserConfigRequest struct {
 	Name string `json:"name"`
 }
 
-// UserConfigResponse carries an exported client context bundle plus the
-// generated passphrase that opens it.
+// UserConfigResponse carries an exported client context bundle. The bundle
+// carries no passphrase.
 type UserConfigResponse struct {
-	Data       []byte `json:"data"`
-	Passphrase string `json:"passphrase"`
+	Data []byte `json:"data"`
 }
 
 // UploadClientConfigRequest carries a client config bundle to import in client mode.

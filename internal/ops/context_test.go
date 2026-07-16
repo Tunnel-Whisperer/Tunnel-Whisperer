@@ -22,7 +22,8 @@ func seedContext(t *testing.T, name, mode, relay, pass string) {
 	scratch := t.TempDir()
 	t.Setenv("TW_CONFIG_DIR", scratch)
 	writeFile(t, config.FilePath(), "mode: "+mode+"\nxray:\n  relay_host: "+relay+"\n")
-	blob, err := sealProfile(pass)
+	_ = pass // bundles carry no passphrase
+	blob, err := sealProfile()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,8 +137,8 @@ func TestNewContextPreservesCurrent(t *testing.T) {
 	if _, err := config.EnsureContextIndex(); err != nil { // migrate "default"
 		t.Fatal(err)
 	}
-	// Create a fresh empty context, sealing "default" with a passphrase.
-	if err := o.NewContext("srv", "pw"); err != nil {
+	// Create a fresh empty context, preserving "default" (sealed, no passphrase).
+	if err := o.NewContext("srv"); err != nil {
 		t.Fatal(err)
 	}
 	// The previous context is preserved as a sealed snapshot.
@@ -157,38 +158,22 @@ func TestNewContextPreservesCurrent(t *testing.T) {
 	}
 }
 
-func TestNewContextRefusesWithoutPassphrase(t *testing.T) {
-	t.Setenv("TW_CONFIG_DIR", t.TempDir())
-	o := newOpsForTest(t)
-	if _, err := config.EnsureContextIndex(); err != nil {
-		t.Fatal(err)
-	}
-	// No passphrase + no snapshot => current can't be sealed => refuse (don't wipe).
-	if err := o.NewContext("srv", ""); err == nil {
-		t.Error("NewContext should refuse when the current context can't be sealed")
-	}
-	if _, err := os.Stat(config.FilePath()); err != nil {
-		t.Errorf("live config must be intact after a refused new-context: %v", err)
-	}
-}
-
 func TestUseContextSwitchesActive(t *testing.T) {
 	t.Setenv("TW_CONFIG_DIR", t.TempDir())
 	o := newOpsForTest(t)
-	// Seal the current ("default"/admin) as a context with a known passphrase.
 	idx, _ := config.EnsureContextIndex() // migrates "default"
 	_ = idx
 	// Seed a second context to switch to.
 	seedContext(t, "relay-b", "client", "b.example.com", "pw")
 
-	// Switching away from the content-bearing "default" requires a passphrase to
-	// seal it (so it's never silently lost) — with none, UseContext refuses.
-	if err := o.UseContext("relay-b", "pw", "", func(ProgressEvent) {}); !errors.Is(err, ErrCurrentNeedsPassphrase) {
-		t.Fatalf("expected ErrCurrentNeedsPassphrase with no current passphrase, got %v", err)
-	}
-	// With a passphrase to seal "default", the switch proceeds.
-	if err := o.UseContext("relay-b", "pw", "defaultpw", func(ProgressEvent) {}); err != nil {
+	// Switching preserves the content-bearing "default" (sealed, no passphrase)
+	// and proceeds without any prompt.
+	if err := o.UseContext("relay-b", func(ProgressEvent) {}); err != nil {
 		t.Fatal(err)
+	}
+	// "default" is preserved as a sealed snapshot.
+	if _, err := os.Stat(config.ContextBundlePath("default")); err != nil {
+		t.Errorf("default context not preserved on switch: %v", err)
 	}
 	cur, _ := o.CurrentContext()
 	if cur != "relay-b" {
@@ -211,7 +196,7 @@ func TestImportContext(t *testing.T) {
 	scratch := t.TempDir()
 	t.Setenv("TW_CONFIG_DIR", scratch)
 	writeFile(t, config.FilePath(), "mode: client\nxray:\n  relay_host: imp.example.com\n")
-	blob, err := sealProfile("pw")
+	blob, err := sealProfile()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +205,7 @@ func TestImportContext(t *testing.T) {
 	// bundle store are written to the correct location.
 	t.Setenv("TW_CONFIG_DIR", activeDir)
 
-	if name, err := o.ImportContext(blob, "imported", "pw", false); err != nil {
+	if name, err := o.ImportContext(blob, "imported", false); err != nil {
 		t.Fatalf("ImportContext: %v", err)
 	} else if name != "imported" {
 		t.Fatalf("ImportContext returned name %q, want imported", name)
@@ -228,13 +213,13 @@ func TestImportContext(t *testing.T) {
 
 	// Re-importing the same name without replace is refused (ErrContextExists),
 	// returning the resolved name so callers can prompt.
-	if name, err := o.ImportContext(blob, "imported", "pw", false); !errors.Is(err, ErrContextExists) {
+	if name, err := o.ImportContext(blob, "imported", false); !errors.Is(err, ErrContextExists) {
 		t.Fatalf("re-import: got (%q, %v), want ErrContextExists", name, err)
 	} else if name != "imported" {
 		t.Fatalf("re-import returned name %q, want imported", name)
 	}
 	// With replace=true it succeeds (updates in place, no duplicate).
-	if _, err := o.ImportContext(blob, "imported", "pw", true); err != nil {
+	if _, err := o.ImportContext(blob, "imported", true); err != nil {
 		t.Fatalf("replace import: %v", err)
 	}
 

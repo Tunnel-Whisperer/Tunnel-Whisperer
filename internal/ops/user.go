@@ -775,13 +775,13 @@ func addMultipleUUIDsToRelay(cfg *config.Config, uuids []string) error {
 	})
 }
 
-// GetUserConfigBundle returns the user packaged as a role=client context: an
-// encrypted bundle (cryptobox TWBOX1) plus the generated passphrase that opens
-// it. The client imports it with `tw config import <file> --activate`.
-func (o *Ops) GetUserConfigBundle(name string) (bundle []byte, passphrase string, err error) {
+// GetUserConfigBundle returns the user packaged as a role=client context: a
+// bundle (cryptobox TWBOX1 framing, no passphrase) the client imports with
+// `tw config import <file> --activate`.
+func (o *Ops) GetUserConfigBundle(name string) (bundle []byte, err error) {
 	userDir := filepath.Join(config.UsersDir(), name)
 	if _, err := os.Stat(userDir); os.IsNotExist(err) {
-		return nil, "", fmt.Errorf("user %q not found", name)
+		return nil, fmt.Errorf("user %q not found", name)
 	}
 
 	// The exported user is a role=client context: a profile zip (the same shape
@@ -795,16 +795,16 @@ func (o *Ops) GetUserConfigBundle(name string) (bundle []byte, passphrase string
 	// client. The user's own config.yaml carries no mode.
 	userCfg, err := os.ReadFile(filepath.Join(userDir, "config.yaml"))
 	if err != nil {
-		return nil, "", fmt.Errorf("reading user config: %w", err)
+		return nil, fmt.Errorf("reading user config: %w", err)
 	}
 	clientCfg, err := injectMode(userCfg, "client")
 	if err != nil {
-		return nil, "", fmt.Errorf("setting client mode: %w", err)
+		return nil, fmt.Errorf("setting client mode: %w", err)
 	}
 	if w, err := zw.Create("config.yaml"); err != nil {
-		return nil, "", err
+		return nil, err
 	} else if _, err := w.Write(clientCfg); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	// The user's SSH identity and the per-server client cert/key (presented to
@@ -819,31 +819,34 @@ func (o *Ops) GetUserConfigBundle(name string) (bundle []byte, passphrase string
 	for _, e := range entries {
 		data, err := os.ReadFile(e.path)
 		if err != nil {
-			return nil, "", fmt.Errorf("reading %s for bundle: %w", e.name, err)
+			return nil, fmt.Errorf("reading %s for bundle: %w", e.name, err)
 		}
 		w, err := zw.Create(e.name)
 		if err != nil {
-			return nil, "", fmt.Errorf("adding %s to bundle: %w", e.name, err)
+			return nil, fmt.Errorf("adding %s to bundle: %w", e.name, err)
 		}
 		if _, err := w.Write(data); err != nil {
-			return nil, "", fmt.Errorf("writing %s to bundle: %w", e.name, err)
+			return nil, fmt.Errorf("writing %s to bundle: %w", e.name, err)
 		}
 	}
 
 	if err := zw.Close(); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
-	passphrase = generatePassphrase()
-	sealed, err := cryptobox.Encrypt(buf.Bytes(), passphrase)
+	// User-context bundles carry NO passphrase: the client imports them without
+	// a prompt. They're sealed with an empty passphrase (openable with "") only
+	// so the on-disk format matches other contexts. The bundle is as sensitive as
+	// the keys inside it — transfer it over a trusted channel.
+	sealed, err := cryptobox.Encrypt(buf.Bytes(), "")
 	if err != nil {
-		return nil, "", fmt.Errorf("sealing user context: %w", err)
+		return nil, fmt.Errorf("sealing user context: %w", err)
 	}
 
 	// Clear the mappings-dirty flag on download.
 	_ = os.Remove(filepath.Join(userDir, ".mappings-dirty"))
 
-	return sealed, passphrase, nil
+	return sealed, nil
 }
 
 // injectMode parses a config.yaml, sets its top-level mode, and re-marshals it,
@@ -859,24 +862,6 @@ func injectMode(cfgYAML []byte, mode string) ([]byte, error) {
 	}
 	m["mode"] = mode
 	return yaml.Marshal(m)
-}
-
-// passphraseGroups/passphraseGroupLen shape the generated export passphrase:
-// 4 dash-separated groups of 4 lowercase-alphanumeric chars (~80 bits).
-const (
-	passphraseGroups   = 4
-	passphraseGroupLen = 4
-)
-
-// generatePassphrase returns a random, human-typable passphrase used to seal an
-// exported user context. The admin shares it out-of-band; the client enters it
-// on import.
-func generatePassphrase() string {
-	groups := make([]string, passphraseGroups)
-	for i := range groups {
-		groups[i] = randomSuffix(passphraseGroupLen)
-	}
-	return strings.Join(groups, "-")
 }
 
 // appendAuthorizedKey adds a public key to the server's authorized_keys

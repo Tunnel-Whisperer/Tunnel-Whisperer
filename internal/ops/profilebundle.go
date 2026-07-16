@@ -86,8 +86,10 @@ func relPath(abs string) (string, error) {
 	return filepath.ToSlash(rel), nil
 }
 
-// sealProfile zips the active profile and cryptobox-encrypts it under passphrase.
-func sealProfile(passphrase string) ([]byte, error) {
+// sealProfile zips the active profile and cryptobox-encrypts it. Bundles carry
+// no passphrase (sealed with ""); the framing/magic is kept for format
+// stability. The bundle is as sensitive as the keys inside it.
+func sealProfile() ([]byte, error) {
 	files, err := profileFiles()
 	if err != nil {
 		return nil, err
@@ -114,7 +116,7 @@ func sealProfile(passphrase string) ([]byte, error) {
 	if err := zw.Close(); err != nil {
 		return nil, fmt.Errorf("finalizing profile zip: %w", err)
 	}
-	enc, err := cryptobox.Encrypt(buf.Bytes(), passphrase)
+	enc, err := cryptobox.Encrypt(buf.Bytes(), "")
 	if err != nil {
 		return nil, fmt.Errorf("encrypting profile: %w", err)
 	}
@@ -124,8 +126,8 @@ func sealProfile(passphrase string) ([]byte, error) {
 // unsealProfile decrypts and unzips a profile into config.Dir(), overwriting the
 // profile files. It refuses any zip entry that escapes config.Dir() (zip-slip)
 // or targets the contexts store.
-func unsealProfile(data []byte, passphrase string) error {
-	plain, err := cryptobox.Decrypt(data, passphrase)
+func unsealProfile(data []byte) error {
+	plain, err := cryptobox.Decrypt(data, "")
 	if err != nil {
 		return fmt.Errorf("decrypting profile: %w", err)
 	}

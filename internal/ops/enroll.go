@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/relay/caddy"
@@ -151,15 +152,30 @@ func (o *Ops) EnrollServer(req *JoinRequest, progress ProgressFunc) (*JoinRespon
 			return fmt.Errorf("reloading caddy: %w", err)
 		}
 
-		// Append the new server's SSH pubkey idempotently.
-		pubkey := req.SSHPubkey
+		// Append the new server's SSH pubkey, restricted: a tenant may ONLY
+		// establish its reverse forward on its own port — no shell, no exec, no
+		// sudo (management stays admin-only) — and only through the tunnel
+		// (from="127.0.0.1"). Strip any prior line for this key first so a
+		// re-enroll can't leave an unrestricted copy behind.
 		akPath := fmt.Sprintf("/home/%s/.ssh/authorized_keys", sshUser)
-		// grep -qxF matches the exact line; only append if not already present.
-		idempotentAppend := fmt.Sprintf(
-			"grep -qxF %q %s 2>/dev/null || echo %q | sudo tee -a %s >/dev/null",
-			pubkey, akPath, pubkey, akPath,
+		keyBody := req.SSHPubkey
+		if f := strings.Fields(req.SSHPubkey); len(f) >= 2 {
+			keyBody = f[1] // the base64 key material — no shell/regex metachars
+		}
+		// restrict = no shell/exec/sudo/agent/x11 and no forwarding; port-forwarding
+		// re-enables forwarding (restrict alone denies the tcpip-forward request);
+		// permitlisten limits the -R reverse forward to this tenant's own port;
+		// permitopen pins local (-L) forwarding to a dead sentinel port so a tenant
+		// can't reach the relay's Xray gRPC API (127.0.0.1:10085) or other loopback
+		// ports. The admin key is unrestricted, so admin -L (for gRPC) still works.
+		line := fmt.Sprintf(`from="127.0.0.1",restrict,port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:%d" %s`,
+			newServer.RemotePort, req.SSHPubkey)
+		lineB64 := base64.StdEncoding.EncodeToString([]byte(line))
+		writeKey := fmt.Sprintf(
+			"sudo touch %s && sudo sed -i '\\#%s#d' %s && echo %s | base64 -d | sudo tee -a %s >/dev/null",
+			akPath, keyBody, akPath, lineB64, akPath,
 		)
-		if err := runRelayCmd(client, idempotentAppend); err != nil {
+		if err := runRelayCmd(client, writeKey); err != nil {
 			return fmt.Errorf("appending ssh pubkey: %w", err)
 		}
 

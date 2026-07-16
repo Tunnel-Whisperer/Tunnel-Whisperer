@@ -186,8 +186,10 @@ func (rt *ReverseTunnel) connect() error {
 	// Start SSH keepalive in background.
 	go rt.keepalive(sshConn, kaStop)
 
-	// Request reverse port forward.
-	listener, err := rt.client.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", rt.RemotePort))
+	// Request reverse port forward. Bind localhost only: the relay reaches this
+	// port via loopback (Caddy/Xray), it must never be world-listening, and it
+	// matches the relay's per-key permitlisten="127.0.0.1:<port>" restriction.
+	listener, err := rt.client.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", rt.RemotePort))
 	if err != nil {
 		rt.client.Close()
 		return fmt.Errorf("requesting reverse forward on :%d: %w", rt.RemotePort, err)

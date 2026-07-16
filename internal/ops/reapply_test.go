@@ -22,7 +22,7 @@ func TestReapplyContextRefreshesLiveProfile(t *testing.T) {
 	writeFile(t, filepath.Join(ud, "config.yaml"), "xray:\n  relay_host: relay.example.com\n  relay_port: 8443\n")
 	writeFile(t, filepath.Join(ud, "id_ed25519"), "K")
 	writeFile(t, filepath.Join(ud, "id_ed25519.pub"), "ssh-ed25519 AAAA")
-	bundle, pass, err := o.GetUserConfigBundle("alice")
+	bundle, err := o.GetUserConfigBundle("alice")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestReapplyContextRefreshesLiveProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := o.ReapplyContext("ctx", pass, nil); err != nil {
+	if err := o.ReapplyContext("ctx", nil); err != nil {
 		t.Fatal(err)
 	}
 

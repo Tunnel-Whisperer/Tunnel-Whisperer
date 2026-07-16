@@ -53,8 +53,21 @@ func TestDecryptShortAndBadMagic(t *testing.T) {
 	}
 }
 
+// An empty passphrase is allowed (used for user-context bundles): it seals and
+// opens with "", and a non-empty passphrase must NOT open it.
 func TestEncryptEmptyPassphrase(t *testing.T) {
-	if _, err := Encrypt([]byte("x"), ""); err == nil {
-		t.Fatal("expected error for empty passphrase")
+	sealed, err := Encrypt([]byte("hello"), "")
+	if err != nil {
+		t.Fatalf("Encrypt with empty passphrase: %v", err)
+	}
+	plain, err := Decrypt(sealed, "")
+	if err != nil {
+		t.Fatalf("Decrypt with empty passphrase: %v", err)
+	}
+	if string(plain) != "hello" {
+		t.Fatalf("round-trip = %q, want hello", plain)
+	}
+	if _, err := Decrypt(sealed, "wrong"); err == nil {
+		t.Fatal("expected decrypt failure with a non-empty passphrase")
 	}
 }

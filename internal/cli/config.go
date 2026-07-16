@@ -80,29 +80,28 @@ var configExportCmd = &cobra.Command{
 	RunE:  runConfigExport,
 }
 
+var configViewCmd = &cobra.Command{
+	Use:   "view",
+	Short: "Print the active config file",
+	Args:  cobra.NoArgs,
+	RunE:  runConfigView,
+}
+
 func init() {
 	configImportCmd.Flags().StringVar(&configImportName, "name", "", "context name (default: relay domain)")
 	configImportCmd.Flags().BoolVar(&configImportActivate, "activate", false, "switch to the imported context immediately (applies its mode)")
 	configImportCmd.Flags().BoolVar(&configImportForce, "force", false, "replace an existing context of the same name without prompting")
 	configCmd.AddCommand(configGetContextsCmd, configCurrentContextCmd, configUseContextCmd,
-		configNewContextCmd, configRenameContextCmd, configDeleteContextCmd, configImportCmd, configExportCmd)
+		configNewContextCmd, configRenameContextCmd, configDeleteContextCmd, configImportCmd, configExportCmd,
+		configViewCmd)
 	rootCmd.AddCommand(configCmd)
 }
 
 // newContextSealingCurrent creates a fresh empty context named `name` and
-// switches to it, prompting for a passphrase to seal (and preserve) the current
-// context first. Shared by `tw config new-context` and `tw server join --new-context`.
+// switches to it, preserving the current context (sealed with no passphrase).
+// Shared by `tw config new-context` and `tw server join --new-context`.
 func newContextSealingCurrent(o *ops.Ops, name string) error {
-	cur, _ := o.CurrentContext()
-	if cur != "" {
-		fmt.Printf("  Set a passphrase to seal the current context %q (you'll need it to switch back):\n", cur)
-		pass, err := promptNewPassphrase()
-		if err != nil {
-			return err
-		}
-		return o.NewContext(name, pass)
-	}
-	return o.NewContext(name, "")
+	return o.NewContext(name)
 }
 
 func runConfigNewContext(cmd *cobra.Command, args []string) error {
@@ -160,25 +159,7 @@ func runConfigUseContext(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	pass, err := readSecret(fmt.Sprintf("Passphrase for context %q", args[0]))
-	if err != nil {
-		return err
-	}
-	// Try with no current-context passphrase first (the daemon may have it
-	// cached, or the current context may be empty). If sealing the current
-	// context needs a passphrase, prompt to set/enter it and retry — so a
-	// configured context is never silently dropped on switch.
-	err = o.UseContext(args[0], pass, "", cliProgress)
-	if errors.Is(err, ops.ErrCurrentNeedsPassphrase) {
-		cur, _ := o.CurrentContext()
-		fmt.Printf("  Set a passphrase to seal the current context %q (you'll need it to switch back):\n", cur)
-		curPass, perr := promptNewPassphrase()
-		if perr != nil {
-			return perr
-		}
-		err = o.UseContext(args[0], pass, curPass, cliProgress)
-	}
-	if err != nil {
+	if err := o.UseContext(args[0], cliProgress); err != nil {
 		return err
 	}
 	fmt.Printf("  Switched to context %q.\n", args[0])
@@ -206,6 +187,23 @@ func warnIfDaemonStale() {
 	if w := daemonContextMismatch(resp.Mode, resp.Relay.Domain); w != "" {
 		fmt.Println(w)
 	}
+}
+
+func runConfigView(cmd *cobra.Command, args []string) error {
+	path := config.FilePath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("no config file at %s (this machine is not set up yet)", path)
+		}
+		return fmt.Errorf("reading config: %w", err)
+	}
+	fmt.Printf("# %s\n", path)
+	if len(data) > 0 && data[len(data)-1] != '\n' {
+		data = append(data, '\n')
+	}
+	os.Stdout.Write(data)
+	return nil
 }
 
 func runConfigRenameContext(cmd *cobra.Command, args []string) error {
@@ -262,15 +260,12 @@ func runConfigImport(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("reading bundle: %w", err)
 	}
-	pass, err := readSecret("Bundle passphrase")
-	if err != nil {
-		return err
-	}
 	o, err := ops.New()
 	if err != nil {
 		return err
 	}
-	name, err := o.ImportContext(data, configImportName, pass, configImportForce)
+	// Bundles carry no passphrase — import is prompt-free.
+	name, err := o.ImportContext(data, configImportName, configImportForce)
 	if errors.Is(err, ops.ErrContextExists) {
 		// Don't rewrite an existing context unasked. Keep it by default; only
 		// replace on explicit confirmation (or --force).
@@ -279,7 +274,7 @@ func runConfigImport(cmd *cobra.Command, args []string) error {
 			fmt.Println("  Kept the existing context; nothing changed.")
 			return nil
 		}
-		name, err = o.ImportContext(data, configImportName, pass, true)
+		name, err = o.ImportContext(data, configImportName, true)
 	}
 	if err != nil {
 		return err
@@ -288,14 +283,14 @@ func runConfigImport(cmd *cobra.Command, args []string) error {
 	// the live config would keep the old content. Refresh the live profile from
 	// the new bundle so the next connection uses the updated config.
 	if cur, _ := o.CurrentContext(); name == cur {
-		if rerr := o.ReapplyContext(name, pass, cliProgress); rerr != nil {
+		if rerr := o.ReapplyContext(name, cliProgress); rerr != nil {
 			return rerr
 		}
 		fmt.Printf("  Updated the active context %q from the bundle.\n", name)
 		return nil
 	}
 	if configImportActivate {
-		if aerr := activateImported(o, name, pass); aerr != nil {
+		if aerr := o.UseContext(name, cliProgress); aerr != nil {
 			return aerr
 		}
 		fmt.Printf("  Imported and switched to context %q (mode applied from the bundle).\n", name)
@@ -303,23 +298,6 @@ func runConfigImport(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("  Imported context %q. Activate with: tw config use-context %s\n", name, name)
 	return nil
-}
-
-// activateImported switches to a freshly imported context, prompting for the
-// current context's passphrase if it must be re-sealed first (same retry the
-// use-context command does).
-func activateImported(o *ops.Ops, name, pass string) error {
-	err := o.UseContext(name, pass, "", cliProgress)
-	if errors.Is(err, ops.ErrCurrentNeedsPassphrase) {
-		cur, _ := o.CurrentContext()
-		fmt.Printf("  Set a passphrase to seal the current context %q (you'll need it to switch back):\n", cur)
-		curPass, perr := promptNewPassphrase()
-		if perr != nil {
-			return perr
-		}
-		err = o.UseContext(name, pass, curPass, cliProgress)
-	}
-	return err
 }
 
 func runConfigExport(cmd *cobra.Command, args []string) error {
@@ -348,15 +326,11 @@ func runConfigExport(cmd *cobra.Command, args []string) error {
 	return writeBundleFile(name, data)
 }
 
-// writeProfileBundle seals the active profile under a freshly-prompted passphrase
-// and writes it as tw_<name>.twctx. This is the single portable bundle format
-// (admin/server/client alike) — it supersedes the old admin bundle.
+// writeProfileBundle seals the active profile (no passphrase) and writes it as
+// tw_<name>.twctx. This is the single portable bundle format (admin/server/
+// client alike).
 func writeProfileBundle(o *ops.Ops, name string) error {
-	pass, err := promptNewPassphrase()
-	if err != nil {
-		return err
-	}
-	data, err := o.ExportCurrentContext(pass)
+	data, err := o.ExportCurrentContext()
 	if err != nil {
 		return err
 	}
@@ -377,7 +351,7 @@ func writeBundleFile(name string, data []byte) error {
 		abs = fname
 	}
 	fmt.Printf("\n  Bundle written: %s\n", abs)
-	fmt.Println("  IMPORTANT: back this up securely and remember its passphrase. It is the")
-	fmt.Println("  portable identity for this relay/context; there is no recovery if it is lost.")
+	fmt.Println("  IMPORTANT: this bundle carries no passphrase — it is the portable identity")
+	fmt.Println("  for this relay/context. Keep it secret and transfer it over a trusted channel.")
 	return nil
 }

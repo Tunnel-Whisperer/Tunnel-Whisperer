@@ -635,17 +635,15 @@ func (s *Server) apiUserSingleSession(w http.ResponseWriter, r *http.Request, na
 }
 
 func (s *Server) apiUserDownload(w http.ResponseWriter, r *http.Request, name string) {
-	data, passphrase, err := s.ops.GetUserConfigBundle(name)
+	data, err := s.ops.GetUserConfigBundle(name)
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
-	// The bundle is an encrypted client context; the passphrase opens it. The
-	// dashboard UI (deferred) should read this header and show it to the admin.
+	// The bundle is a client context that imports with no passphrase.
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+name+"-tw-context.twctx\"")
-	w.Header().Set("X-TW-Passphrase", passphrase)
 	w.Write(data)
 }
 
@@ -887,8 +885,7 @@ func (s *Server) apiUseContext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name       string `json:"name"`
-		Passphrase string `json:"passphrase"`
+		Name string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -904,7 +901,7 @@ func (s *Server) apiUseContext(w http.ResponseWriter, r *http.Request) {
 			slog.Error(e.Label, "step", e.Step, "total", e.Total, "error", e.Error)
 		}
 	}
-	if err := s.ops.UseContext(req.Name, req.Passphrase, "", progress); err != nil {
+	if err := s.ops.UseContext(req.Name, progress); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
