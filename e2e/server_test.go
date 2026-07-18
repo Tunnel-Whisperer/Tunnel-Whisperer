@@ -1,0 +1,130 @@
+//go:build e2e
+
+package e2e
+
+import (
+	"strings"
+	"testing"
+	"time"
+)
+
+// testServerJoin drives the real server-join wizard: the server generates a
+// join request (this also sets mode=server), the admin enrolls it over the
+// VLESS tunnel to the relay, and the server applies the enrollment response.
+// It then starts the echo target and the server daemon and proves the tunnel
+// is up via `tw server test`.
+func testServerJoin(t *testing.T) {
+	// The server container's /etc/tw-test may carry state from an earlier full
+	// suite run (this suite must be re-runnable); wipe it so `tw server join`
+	// always starts from a clean identity, same rationale as RelayInstall's
+	// admin seed wipe. A prior run's detached `tw server start`/`echo-server`
+	// processes also outlive the container across test invocations (nothing
+	// ever stops them) and keep holding the relay-side reverse-forward port —
+	// since the admin registry restarts allocation from the same first port
+	// after every fresh RelayInstall wipe, a leftover process from an earlier
+	// run collides with this run's server for that exact port ("tcpip-forward
+	// request denied by peer"). Kill any survivors first (skip our own PID —
+	// this script's own /proc/self/cmdline literally contains the search
+	// text, so it would otherwise match itself).
+	t.Log("killing any leftover tw server/echo-server processes and wiping server config dir for a clean identity before join")
+	execIn(t, "server", `for p in /proc/[0-9]*; do `+
+		`pid=${p#/proc/}; `+
+		`[ "$pid" = "$$" ] && continue; `+
+		`cmd=$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null) || continue; `+
+		`case "$cmd" in *"tw server start"*|*"echo-server"*) kill -9 "$pid" 2>/dev/null ;; esac; `+
+		`done; rm -rf /etc/tw-test`)
+
+	// 1. Server generates identity + join request (this also sets mode=server).
+	execIn(t, "server", "cd /shared && rm -f tw_join_*.json && tw server join "+domain)
+
+	// 2. Admin enrolls it (SSH to relay over the VLESS tunnel) and writes the
+	// response. `tw admin enroll` step 3 ("Apply relay config") fully
+	// re-renders and reloads the relay's Caddyfile from scratch (it rebuilds
+	// the whole per-tenant handle-block set), which wipes the local_certs
+	// shim RelayInstall applied. Caddy then falls back to real ACME for the
+	// fake "relay.tw.test" domain, which fails (not a public suffix) and
+	// leaves the site briefly without a servable certificate — the same
+	// class of issue relay_install_test.go's idempotency pass guards
+	// against, just triggered by a different relay-side command, and this
+	// time from *inside* a single CLI invocation with no seam for the
+	// harness to intervene between step 3's reload and step 4's fresh dial.
+	//
+	// Racing a fix into that seam (sub-20ms in practice) would be flaky. Ops
+	// already retries step 4's SSH dial 15x over ~15s (internal/ops/user.go)
+	// — real tolerance for exactly this kind of transient relay unavailability
+	// (e.g. a cert reissue in flight). So: run enroll detached, wait for its
+	// own step-3-complete log line (proving the reload already happened and
+	// the pubkey/config substeps that reuse the pre-reload SSH connection are
+	// done — reapplying the shim any earlier risks tearing down that
+	// still-in-use connection out from under step 3), reapply the shim, then
+	// let one of step 4's remaining retries land on a healthy relay.
+	execDetached(t, "admin",
+		"cd /shared && rm -f tw_join_response_*.json && tw admin enroll /shared/tw_join_*.json > /shared/enroll.log 2>&1")
+	waitFor(t, "admin enroll step 3 (Apply relay config) complete", 30*time.Second, func() (bool, string) {
+		out, _ := execInOK("admin", "cat /shared/enroll.log 2>/dev/null")
+		return strings.Contains(out, "Caddyfile reloaded"), out
+	})
+	localCertsShim(t)
+	waitFor(t, "caddy local root CA after enroll reload", 60*time.Second, func() (bool, string) {
+		out, err := execInOK("relay",
+			"cat /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt")
+		if err != nil || !strings.Contains(out, "BEGIN CERTIFICATE") {
+			return false, "root.crt not present yet"
+		}
+		return true, ""
+	})
+	waitFor(t, "admin enroll response file", 30*time.Second, func() (bool, string) {
+		out, _ := execInOK("admin", "ls /shared/tw_join_response_*.json 2>/dev/null")
+		if strings.Contains(out, "tw_join_response_") {
+			return true, ""
+		}
+		logOut, _ := execInOK("admin", "cat /shared/enroll.log 2>/dev/null")
+		return false, logOut
+	})
+
+	// 3. Server applies the response.
+	execIn(t, "server", "cd /shared && tw server join --apply /shared/tw_join_response_*.json")
+
+	// 4. Echo target + server daemon.
+	execDetached(t, "server", "echo-server -port "+echoPort)
+	execDetached(t, "server", "tw server start > /var/log/tw-server.log 2>&1")
+
+	waitFor(t, "server tunnel up", 120*time.Second, func() (bool, string) {
+		out, err := execInOK("server", "tw server test")
+		return err == nil && strings.Contains(out, "tunnel and shell working"), out
+	})
+	out := execIn(t, "server", "tw server status")
+	t.Logf("server status:\n%s", out)
+}
+
+// testMTLSGate proves the relay's Caddy client_auth gate rejects connections
+// that don't present an admitted client certificate, both with no cert at all
+// and with a foreign self-signed cert.
+func testMTLSGate(t *testing.T) {
+	// No client cert: TLS handshake must be rejected by the client_auth gate.
+	//
+	// --http1.1: over the default h2 ALPN, curl defers sending the request
+	// until after the (successful, TLS1.3) handshake, so the server's
+	// certificate-required alert arrives mid-stream and curl only reports a
+	// generic "getpeername() failed / Transport endpoint is not connected" /
+	// "Broken pipe" — no "certificate" or "handshake" substring, even though
+	// the rejection is real (confirmed directly with openssl s_client:
+	// "tlsv13 alert certificate required"). Forcing HTTP/1.1 makes curl
+	// surface the OpenSSL alert text directly instead.
+	out, err := execInOK("client", "curl -sS --max-time 10 --http1.1 https://"+domain+"/ 2>&1")
+	if err == nil {
+		fatalf(t, "HTTPS without a client cert unexpectedly succeeded:\n%s", out)
+	}
+	if !strings.Contains(out, "certificate") && !strings.Contains(out, "handshake") {
+		fatalf(t, "expected a TLS certificate error, got:\n%s", out)
+	}
+
+	// Foreign CA: a self-signed cert must be rejected too.
+	execIn(t, "client", `cd /tmp && openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 `+
+		`-keyout fake.key -out fake.crt -days 1 -nodes -subj /CN=intruder 2>/dev/null`)
+	out, err = execInOK("client",
+		"curl -sS --max-time 10 --http1.1 --cert /tmp/fake.crt --key /tmp/fake.key https://"+domain+"/ 2>&1")
+	if err == nil {
+		fatalf(t, "HTTPS with a foreign-CA cert unexpectedly succeeded:\n%s", out)
+	}
+}
