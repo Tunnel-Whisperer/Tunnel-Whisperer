@@ -1,0 +1,33 @@
+name: tw-e2e
+
+x-tw: &tw
+  build: ./images/tw
+  volumes:
+    - ./shared:/shared
+  networks:
+    twnet: {}
+
+services:
+  relay:
+    build: ./images/relay
+    privileged: true
+    volumes:
+      - ./shared:/shared
+    networks:
+      twnet:
+        ipv4_address: 172.28.0.10
+        aliases: [relay.tw.test]
+  admin:
+    <<: *tw
+  server:
+    <<: *tw
+  client:
+    <<: *tw
+  server2:
+    <<: *tw
+
+networks:
+  twnet:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
