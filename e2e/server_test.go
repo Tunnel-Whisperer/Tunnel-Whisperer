@@ -64,6 +64,17 @@ func testServerJoin(t *testing.T) {
 		out, _ := execInOK("admin", "cat /shared/enroll.log 2>/dev/null")
 		return strings.Contains(out, "Caddyfile reloaded"), out
 	})
+	// This reapply races the SSH-dial retry loop that enroll's step 4
+	// (Live enroll tenant, RelaySSH) is already inside: internal/ops/user.go's
+	// `for i := 0; i < 15; i++ { dial; sleep 1s }` — a fixed ~15s total
+	// budget, no backoff. The harness's own confirmation waitFor below is
+	// deliberately looser (60s) so it never itself times out a slow-but-live
+	// relay, which means it would NOT notice if the shim reapply were slow
+	// enough that step 4 exhausted its 15s and failed first. So: time the
+	// reapply-to-confirmed-live window here and flag it loudly if it starts
+	// eating into that 15s budget, rather than relying on the 60s waitFor
+	// (which has no opinion on the product's much tighter constant).
+	shimReapplyStart := time.Now()
 	localCertsShim(t)
 	waitFor(t, "caddy local root CA after enroll reload", 60*time.Second, func() (bool, string) {
 		out, err := execInOK("relay",
@@ -73,6 +84,11 @@ func testServerJoin(t *testing.T) {
 		}
 		return true, ""
 	})
+	shimReapplyElapsed := time.Since(shimReapplyStart)
+	t.Logf("shim reapply confirmed live after %s (racing enroll's 15x1s SSH-dial retry budget in internal/ops/user.go)", shimReapplyElapsed)
+	if shimReapplyElapsed > 10*time.Second {
+		t.Errorf("shim reapply took %s — less than 5s of margin left against enroll step 4's ~15s SSH-dial retry budget (internal/ops/user.go); this is a near-miss, not (yet) an observed failure, but the margin this test depends on is shrinking and should be investigated before it flakes", shimReapplyElapsed)
+	}
 	waitFor(t, "admin enroll response file", 30*time.Second, func() (bool, string) {
 		out, _ := execInOK("admin", "ls /shared/tw_join_response_*.json 2>/dev/null")
 		if strings.Contains(out, "tw_join_response_") {
@@ -97,6 +113,37 @@ func testServerJoin(t *testing.T) {
 	t.Logf("server status:\n%s", out)
 }
 
+// mtlsNoCertAlert and mtlsForeignCAAlert are the stable substrings of the
+// OpenSSL/curl error text actually observed (live, --http1.1) for each
+// rejection case — see /home/n/code/Tunnel-Whisperer/.superpowers/sdd/task-6-report.md
+// and the "Fix round 1" section appended there. They're deliberately the
+// *specific* alert wording, not generic words like "certificate" or
+// "handshake", which also show up in an unrelated server-trust failure
+// (e.g. "unable to get local issuer certificate") and would let this test
+// pass for the wrong reason.
+const (
+	mtlsNoCertAlert  = "certificate required"
+	mtlsForeignAlert = "unknown ca"
+)
+
+// assertMTLSRejection fails the test unless out contains the expected
+// client_auth-gate alert substring and does NOT contain any of the telltale
+// substrings of a server-trust failure (client not trusting the relay's own
+// server certificate) — a different, wrong reason for the connection to
+// fail that the earlier looser assertion (`contains "certificate" or
+// "handshake"`) could not tell apart from the real gate rejection.
+func assertMTLSRejection(t *testing.T, label, out, wantAlert string) {
+	t.Helper()
+	if !strings.Contains(out, wantAlert) {
+		fatalf(t, "%s: expected the client_auth gate's %q alert, got:\n%s", label, wantAlert, out)
+	}
+	for _, trustFailure := range []string{"unable to get local issuer", "self-signed certificate"} {
+		if strings.Contains(out, trustFailure) {
+			fatalf(t, "%s: output contains %q — this looks like a server-trust failure (client doesn't trust the relay's own cert), not the client_auth gate rejecting a bad/missing client cert:\n%s", label, trustFailure, out)
+		}
+	}
+}
+
 // testMTLSGate proves the relay's Caddy client_auth gate rejects connections
 // that don't present an admitted client certificate, both with no cert at all
 // and with a foreign self-signed cert.
@@ -115,9 +162,7 @@ func testMTLSGate(t *testing.T) {
 	if err == nil {
 		fatalf(t, "HTTPS without a client cert unexpectedly succeeded:\n%s", out)
 	}
-	if !strings.Contains(out, "certificate") && !strings.Contains(out, "handshake") {
-		fatalf(t, "expected a TLS certificate error, got:\n%s", out)
-	}
+	assertMTLSRejection(t, "no client cert", out, mtlsNoCertAlert)
 
 	// Foreign CA: a self-signed cert must be rejected too.
 	execIn(t, "client", `cd /tmp && openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 `+
@@ -127,4 +172,5 @@ func testMTLSGate(t *testing.T) {
 	if err == nil {
 		fatalf(t, "HTTPS with a foreign-CA cert unexpectedly succeeded:\n%s", out)
 	}
+	assertMTLSRejection(t, "foreign-CA cert", out, mtlsForeignAlert)
 }
