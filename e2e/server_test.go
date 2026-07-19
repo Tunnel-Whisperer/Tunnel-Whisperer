@@ -27,12 +27,9 @@ func testServerJoin(t *testing.T) {
 	// this script's own /proc/self/cmdline literally contains the search
 	// text, so it would otherwise match itself).
 	t.Log("killing any leftover tw server/echo-server processes and wiping server config dir for a clean identity before join")
-	execIn(t, "server", `for p in /proc/[0-9]*; do `+
-		`pid=${p#/proc/}; `+
-		`[ "$pid" = "$$" ] && continue; `+
-		`cmd=$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null) || continue; `+
-		`case "$cmd" in *"tw server start"*|*"echo-server"*) kill -9 "$pid" 2>/dev/null ;; esac; `+
-		`done; rm -rf /etc/tw-test`)
+	killMatching(t, "server", "tw server start")
+	killMatching(t, "server", "echo-server")
+	execIn(t, "server", "rm -rf /etc/tw-test")
 
 	// 1. Server generates identity + join request (this also sets mode=server).
 	execIn(t, "server", "cd /shared && rm -f tw_join_*.json && tw server join "+domain)

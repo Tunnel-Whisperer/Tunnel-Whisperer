@@ -78,6 +78,25 @@ func dumpDiagnostics(t *testing.T) {
 	}
 }
 
+// killMatching kills every process in service whose /proc/<pid>/cmdline
+// contains substr, skipping the shell script's own PID (its own
+// /proc/self/cmdline literally contains the search text when substr matches
+// the invoking command, so it would otherwise match itself). The tw image
+// ships no pkill/ps (no procps), so this walks /proc directly. Non-fatal: a
+// container with nothing to kill is the common case, not an error.
+func killMatching(t *testing.T, service, substr string) {
+	t.Helper()
+	script := `for p in /proc/[0-9]*; do ` +
+		`pid=${p#/proc/}; ` +
+		`[ "$pid" = "$$" ] && continue; ` +
+		`cmd=$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null) || continue; ` +
+		`case "$cmd" in *"` + substr + `"*) kill -9 "$pid" 2>/dev/null ;; esac; ` +
+		`done`
+	if out, err := execInOK(service, script); err != nil {
+		t.Logf("killMatching(%s, %q): %v\n%s", service, substr, err, out)
+	}
+}
+
 // twServices are the containers that run the tw binary.
 var twServices = []string{"admin", "server", "client", "server2"}
 

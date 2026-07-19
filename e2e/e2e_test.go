@@ -84,9 +84,6 @@ func testSmoke(t *testing.T) {
 	execIn(t, "relay", "systemctl is-active ssh || systemctl is-active sshd")
 }
 
-func testUserLifecycle(t *testing.T)   { t.Skip("implemented in Task 7") }
-func testPermitOpen(t *testing.T)      { t.Skip("implemented in Task 7") }
-func testRevocation(t *testing.T)      { t.Skip("implemented in Task 7") }
 func testContexts(t *testing.T)        { t.Skip("implemented in Task 8") }
 func testSecondTenant(t *testing.T)    { t.Skip("implemented in Task 8") }
 func testDashboard(t *testing.T)       { t.Skip("implemented in Task 9") }
