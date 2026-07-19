@@ -93,7 +93,7 @@ func testUserLifecycle(t *testing.T) {
 	if strings.Contains(out, "unable to authenticate") {
 		t.Logf("tw client test: step 3 (Xray+SSH) failed as expected (known pre-existing bug, see task-7-report.md):\n%s", out)
 	} else {
-		t.Logf("tw client test: step 3 (Xray+SSH) did NOT fail with the previously-observed auth error — behavior may have changed, worth a look:\n%s", out)
+		t.Errorf("tw client test step 3 changed behavior: expected the known client-role auth failure ('unable to authenticate', see task-7-report.md); got:\n%s", out)
 	}
 }
 
