@@ -14,6 +14,13 @@ import (
 // It then starts the echo target and the server daemon and proves the tunnel
 // is up via `tw server test`.
 func testServerJoin(t *testing.T) {
+	scenario(t, "a server joins the admin's relay non-disruptively and publishes its reverse tunnel",
+		"tw server join generates a join request (and sets mode=server)",
+		"tw admin enroll registers the tenant over the tunnel and re-renders + reloads the relay Caddyfile ('Caddyfile reloaded')",
+		"tw server join --apply applies the admin's enrollment response",
+		"tw server start + echo target come up and tw server test reports 'tunnel and shell working'",
+		"the local_certs shim reapply lands inside enroll's ~15s SSH-dial retry budget with >5s of margin")
+
 	// The server container's /etc/tw-test may carry state from an earlier full
 	// suite run (this suite must be re-runnable); wipe it so `tw server join`
 	// always starts from a clean identity, same rationale as RelayInstall's
@@ -145,6 +152,11 @@ func assertMTLSRejection(t *testing.T, label, out, wantAlert string) {
 // that don't present an admitted client certificate, both with no cert at all
 // and with a foreign self-signed cert.
 func testMTLSGate(t *testing.T) {
+	scenario(t, "the relay's Caddy client_auth gate admits only CA-issued client certs",
+		"an HTTPS request with NO client cert is rejected with the 'certificate required' TLS alert",
+		"an HTTPS request with a FOREIGN self-signed cert is rejected with the 'unknown ca' TLS alert",
+		"neither rejection is a server-trust failure (the client does trust the relay's own server cert) — proving the gate, not a misconfig, is what refuses them")
+
 	// No client cert: TLS handshake must be rejected by the client_auth gate.
 	//
 	// --http1.1: over the default h2 ALPN, curl defers sending the request

@@ -50,7 +50,7 @@ e2e-down:
 	docker compose -f e2e/docker-compose.yaml down -v
 
 e2e: e2e-up
-	cd e2e && go test -tags e2e -timeout 30m -v . ; status=$$?; \
+	cd e2e && go test -tags e2e -count=1 -timeout 30m -v . ; status=$$?; \
 	cd ..; \
 	if [ -z "$$E2E_KEEP" ]; then $(MAKE) e2e-down; fi; \
 	exit $$status

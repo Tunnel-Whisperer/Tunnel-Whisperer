@@ -12,6 +12,13 @@ import (
 // context bundle, imports it on the client, connects, and proves byte-for-byte
 // traffic through the relay + tunnel.
 func testUserLifecycle(t *testing.T) {
+	scenario(t, "a user is created on the server, shipped to a client as a context bundle, and moves real bytes through the tunnel",
+		"tw server user create/apply/list registers alice with her port mapping",
+		"tw config export-user packages her as a .twctx bundle; the client imports + activates it",
+		"tw client connect opens the local tunnel port",
+		"a byte-for-byte echo round-trip (hello-tw-e2e) succeeds through relay + tunnel",
+		"tw client test steps 1-2 (DNS, HTTPS/mTLS) pass; step 3's known client-role auth failure is asserted stable (loud if it changes)")
+
 	// Re-runnability: a prior full-suite run may have left a live
 	// `tw client connect` and an old /etc/tw-test on the client, and a
 	// leftover `alice` on the server (e.g. if a later scenario in that run
@@ -103,6 +110,11 @@ func testUserLifecycle(t *testing.T) {
 // single-session mechanism (verified from the server's own log, not just
 // inferred from the client's exit status).
 func testPermitOpen(t *testing.T) {
+	scenario(t, "the server-side SSH gate confines a user to exactly their granted target and one session",
+		"alice's authorized_keys entry carries permitopen for ONLY her granted port (not the server SSH port 2222)",
+		"the entry carries the single-session option",
+		"a second concurrent connect for alice is rejected — confirmed from the server log's 'single-session: rejecting duplicate connection', not just the client's exit code")
+
 	// Deviation from the brief: `tw server user create` hardcodes
 	// singleSession=false (internal/ops/user.go, CreateUser's
 	// appendAuthorizedKey call) and there is currently no CLI command that
@@ -179,6 +191,10 @@ func testPermitOpen(t *testing.T) {
 // re-read on every auth attempt). Leaves the client disconnected and alice
 // deleted — later scenarios must not assume alice works.
 func testRevocation(t *testing.T) {
+	scenario(t, "revoking a user takes effect live, with no server restart",
+		"tw server user unregister + delete removes alice",
+		"a fresh tw client connect for alice never opens its tunnel port across a full 30s poll — proving authorized_keys is re-read on every auth attempt (no restart needed)")
+
 	// Unregister from the relay, then delete. Both prompt [y/N].
 	execIn(t, "server", "printf 'y\\n' | tw server user unregister alice")
 	execIn(t, "server", "printf 'y\\n' | tw server user delete alice")

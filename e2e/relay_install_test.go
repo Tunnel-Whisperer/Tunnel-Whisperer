@@ -39,6 +39,13 @@ func localCertsShim(t *testing.T) {
 }
 
 func testRelayInstall(t *testing.T) {
+	scenario(t, "an admin provisions a relay from scratch using the REAL tw-generated install script",
+		"tw admin create (Manual provider) drives the wizard to completion and emits the install script + admin bundle",
+		"the generated install script provisions the relay VM (Caddy + Xray + sshd + firewall) and prints 'Setup complete'",
+		"tw admin test confirms the tunnel and shell work end-to-end (DNS + mTLS handshake + SSH over the VLESS tunnel)",
+		"tw admin status reports the manual relay",
+		"re-running the install script is idempotent (its documented clean-then-reinstall contract) and the relay still passes tw admin test")
+
 	// Admin identity: mode must be "admin" before the wizard so the relay
 	// handle is rendered with the admin role. Seeding the config file is a
 	// harness-only shim (there is no CLI mode command yet). We wipe the config
