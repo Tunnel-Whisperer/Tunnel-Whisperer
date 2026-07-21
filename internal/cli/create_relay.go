@@ -22,7 +22,26 @@ var createRelayServerCmd = &cobra.Command{
 func init() {
 	createRelayServerCmd.Flags().Bool("ssh-open", false,
 		"manual install: open the relay's SSH port (22) to the internet (default: SSH reachable only through the tunnel)")
+	createRelayServerCmd.Flags().String("provider", "",
+		`provider selection; currently only "manual" — with --domain and --ip, runs fully non-interactive`)
+	createRelayServerCmd.Flags().String("domain", "",
+		"relay domain (skips the domain prompt)")
+	createRelayServerCmd.Flags().String("ip", "",
+		"relay public IP (manual provider only; skips the IP prompt)")
 	adminCmd.AddCommand(createRelayServerCmd)
+}
+
+// validateCreateFlags is the pure decision behind the non-interactive create
+// flags: it rejects combinations that can never work and reports whether the
+// flags fully specify a manual relay, i.e. the run needs no prompts at all.
+func validateCreateFlags(provider, domain, ip string) (bool, error) {
+	if provider != "" && provider != "manual" {
+		return false, fmt.Errorf("unsupported --provider %q: non-interactive create currently supports only \"manual\"", provider)
+	}
+	if ip != "" && provider != "manual" {
+		return false, fmt.Errorf("--ip requires --provider manual")
+	}
+	return provider == "manual" && domain != "" && ip != "", nil
 }
 
 // cliProgress prints ProgressEvents to stdout.
@@ -50,6 +69,13 @@ func runCreateRelayServer(cmd *cobra.Command, args []string) error {
 	if err := requireMode("admin"); err != nil {
 		return err
 	}
+	flagProvider, _ := cmd.Flags().GetString("provider")
+	flagDomain, _ := cmd.Flags().GetString("domain")
+	flagIP, _ := cmd.Flags().GetString("ip")
+	nonInteractive, err := validateCreateFlags(flagProvider, flagDomain, flagIP)
+	if err != nil {
+		return err
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 
 	fmt.Println()
@@ -63,8 +89,12 @@ func runCreateRelayServer(cmd *cobra.Command, args []string) error {
 
 	cfg := o.Config()
 
-	// Check if relay was already provisioned.
+	// Check if relay was already provisioned. Scripted runs never destroy
+	// infrastructure implicitly — they fail instead of prompting.
 	status := o.GetRelayStatus()
+	if status.Provisioned && nonInteractive {
+		return fmt.Errorf("relay already provisioned (provider: %s) — run 'tw admin destroy' first", status.Provider)
+	}
 	if status.Provisioned {
 		fmt.Printf("  Relay already provisioned (provider: %s).\n", status.Provider)
 		fmt.Print("  Destroy and recreate? [y/N]: ")
@@ -97,6 +127,13 @@ func runCreateRelayServer(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Fully flag-specified manual relay: no prompts at all. --ssh-open's
+	// default (false) applies without the usual prompt.
+	if nonInteractive {
+		sshOpen, _ := cmd.Flags().GetBool("ssh-open")
+		return runManualRelayNonInteractive(o, flagDomain, flagIP, sshOpen)
+	}
+
 	// Public SSH exposure — asked up front, applies to every provider (cloud or
 	// manual). tw's own key is tunnel-only regardless (from="127.0.0.1"); this
 	// only controls whether a human can reach port 22 from the internet with
@@ -105,24 +142,28 @@ func runCreateRelayServer(cmd *cobra.Command, args []string) error {
 
 	// ── Step 3: Relay Domain ────────────────────────────────────────────
 	fmt.Println("[3/9] Relay domain")
-	if cfg.Xray.RelayHost != "" {
-		fmt.Printf("      Current: %s\n", cfg.Xray.RelayHost)
-		fmt.Print("      Keep? [Y/n]: ")
-		scanner.Scan()
-		if answer := strings.TrimSpace(strings.ToLower(scanner.Text())); answer == "n" {
-			cfg.Xray.RelayHost = ""
-		}
-	}
 	var domain string
-	if cfg.Xray.RelayHost == "" {
-		fmt.Print("      Enter relay domain (e.g. relay.example.com): ")
-		scanner.Scan()
-		domain = strings.TrimSpace(scanner.Text())
-		if domain == "" {
-			return fmt.Errorf("relay domain is required")
-		}
+	if flagDomain != "" {
+		domain = flagDomain
 	} else {
-		domain = cfg.Xray.RelayHost
+		if cfg.Xray.RelayHost != "" {
+			fmt.Printf("      Current: %s\n", cfg.Xray.RelayHost)
+			fmt.Print("      Keep? [Y/n]: ")
+			scanner.Scan()
+			if answer := strings.TrimSpace(strings.ToLower(scanner.Text())); answer == "n" {
+				cfg.Xray.RelayHost = ""
+			}
+		}
+		if cfg.Xray.RelayHost == "" {
+			fmt.Print("      Enter relay domain (e.g. relay.example.com): ")
+			scanner.Scan()
+			domain = strings.TrimSpace(scanner.Text())
+			if domain == "" {
+				return fmt.Errorf("relay domain is required")
+			}
+		} else {
+			domain = cfg.Xray.RelayHost
+		}
 	}
 	fmt.Printf("      Domain: %s\n", domain)
 	fmt.Println()
@@ -130,22 +171,27 @@ func runCreateRelayServer(cmd *cobra.Command, args []string) error {
 	// ── Step 4: Cloud Provider ──────────────────────────────────────────
 	fmt.Println("[4/9] Cloud provider")
 	providers := ops.CloudProviders()
-	for i, p := range providers {
-		fmt.Printf("      %d) %s\n", i+1, p.Name)
-	}
 	manualIdx := len(providers) + 1
-	fmt.Printf("      %d) Manual (bring your own VM)\n", manualIdx)
-	fmt.Printf("      Select [1-%d]: ", manualIdx)
-	scanner.Scan()
-	providerIdx := strings.TrimSpace(scanner.Text())
-	choice, err := strconv.Atoi(providerIdx)
-	if err != nil || choice < 1 || choice > manualIdx {
-		return fmt.Errorf("invalid choice: %s", providerIdx)
+	var choice int
+	if flagProvider == "manual" {
+		choice = manualIdx
+	} else {
+		for i, p := range providers {
+			fmt.Printf("      %d) %s\n", i+1, p.Name)
+		}
+		fmt.Printf("      %d) Manual (bring your own VM)\n", manualIdx)
+		fmt.Printf("      Select [1-%d]: ", manualIdx)
+		scanner.Scan()
+		providerIdx := strings.TrimSpace(scanner.Text())
+		choice, err = strconv.Atoi(providerIdx)
+		if err != nil || choice < 1 || choice > manualIdx {
+			return fmt.Errorf("invalid choice: %s", providerIdx)
+		}
 	}
 
 	// Manual (bring-your-own-VM) relay: no Terraform, no cloud credentials.
 	if choice == manualIdx {
-		return runManualRelay(o, scanner, domain, sshOpen)
+		return runManualRelay(o, scanner, domain, flagIP, sshOpen)
 	}
 
 	if !ops.TerraformAvailable() {
@@ -215,7 +261,7 @@ func runCreateRelayServer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Emit the password-protected bundle (the portable identity for this relay).
+	// Emit the relay bundle (the portable identity for this relay).
 	fmt.Println()
 	fmt.Println("  Creating relay bundle...")
 	if err := writeProfileBundle(o, domain); err != nil {
@@ -256,7 +302,8 @@ func resolveSSHOpen(cmd *cobra.Command, scanner *bufio.Scanner) bool {
 // runManualRelay drives the bring-your-own-VM relay flow: it prints an install
 // script the admin runs on their own server (no Terraform, no cloud
 // credentials), then records the relay marker and emits the profile bundle.
-func runManualRelay(o *ops.Ops, scanner *bufio.Scanner, domain string, sshOpen bool) error {
+// A non-empty flagIP pre-answers the public-IP prompt.
+func runManualRelay(o *ops.Ops, scanner *bufio.Scanner, domain, flagIP string, sshOpen bool) error {
 	fmt.Println("      Provider: Manual (bring your own VM)")
 	fmt.Println()
 
@@ -287,11 +334,16 @@ func runManualRelay(o *ops.Ops, scanner *bufio.Scanner, domain string, sshOpen b
 	fmt.Println("----------------------------------------------------------------")
 	fmt.Println()
 
-	fmt.Print("      Relay public IP address: ")
-	scanner.Scan()
-	ip := strings.TrimSpace(scanner.Text())
+	ip := flagIP
 	if ip == "" {
-		return fmt.Errorf("relay public IP is required")
+		fmt.Print("      Relay public IP address: ")
+		scanner.Scan()
+		ip = strings.TrimSpace(scanner.Text())
+		if ip == "" {
+			return fmt.Errorf("relay public IP is required")
+		}
+	} else {
+		fmt.Printf("      Relay public IP address: %s (from --ip)\n", ip)
 	}
 
 	fmt.Print("      Have you run the script on the VM? [y/N]: ")
@@ -301,11 +353,58 @@ func runManualRelay(o *ops.Ops, scanner *bufio.Scanner, domain string, sshOpen b
 		return nil
 	}
 
+	return finishManualRelay(o, domain, ip, sshOpen)
+}
+
+// runManualRelayNonInteractive is the fully flag-specified manual relay flow
+// (`--provider manual --domain --ip`): it writes the install script and records
+// the relay immediately — running the script on the VM happens afterwards.
+func runManualRelayNonInteractive(o *ops.Ops, domain, ip string, sshOpen bool) error {
+	fmt.Println("      Provider: Manual (bring your own VM)")
+	fmt.Printf("      Domain:   %s\n", domain)
+	fmt.Printf("      IP:       %s\n", ip)
+	fmt.Println()
+
+	script, err := o.GenerateManualInstallScript(domain, sshOpen)
+	if err != nil {
+		return fmt.Errorf("generating install script: %w", err)
+	}
+
+	scriptPath, werr := writeManualInstallScript(domain, script)
+	if werr != nil {
+		// Without the file there is nothing for the admin to run — print the
+		// script itself as the fallback.
+		fmt.Printf("      Warning: could not write install script to a file: %v\n", werr)
+		fmt.Println()
+		fmt.Println("----------------------------------------------------------------")
+		fmt.Println(script)
+		fmt.Println("----------------------------------------------------------------")
+	}
+
+	if err := finishManualRelay(o, domain, ip, sshOpen); err != nil {
+		return err
+	}
+
+	fmt.Println("  The relay is recorded but not yet installed. Next steps:")
+	fmt.Printf("    1. Point a DNS A record:  %s  ->  %s\n", domain, ip)
+	fmt.Println("    2. Open ports 80 and 443 in the VM's firewall.")
+	if scriptPath != "" {
+		fmt.Printf("    3. Run %s on the VM as root.\n", scriptPath)
+	} else {
+		fmt.Println("    3. Run the install script above on the VM as root.")
+	}
+	fmt.Println()
+	return nil
+}
+
+// finishManualRelay records the manual relay marker and emits the profile
+// bundle — the shared tail of the wizard and non-interactive flows.
+func finishManualRelay(o *ops.Ops, domain, ip string, sshOpen bool) error {
 	if err := o.SaveManualRelay(domain, ip, sshOpen); err != nil {
 		return fmt.Errorf("recording manual relay: %w", err)
 	}
 
-	// Emit the password-protected bundle (the portable identity for this relay).
+	// Emit the relay bundle (the portable identity for this relay).
 	fmt.Println()
 	fmt.Println("  Creating relay bundle...")
 	if err := writeProfileBundle(o, domain); err != nil {

@@ -40,33 +40,30 @@ func localCertsShim(t *testing.T) {
 
 func testRelayInstall(t *testing.T) {
 	scenario(t, "an admin provisions a relay from scratch using the REAL tw-generated install script",
-		"tw admin create (Manual provider) drives the wizard to completion and emits the install script + admin bundle",
+		"the flag-based one-liner `tw admin create --provider manual --domain --ip` completes without prompts and emits the install script + admin bundle",
 		"the generated install script provisions the relay VM (Caddy + Xray + sshd + firewall) and prints 'Setup complete'",
 		"tw admin test confirms the tunnel and shell work end-to-end (DNS + mTLS handshake + SSH over the VLESS tunnel)",
 		"tw admin status reports the manual relay",
 		"re-running the install script is idempotent (its documented clean-then-reinstall contract) and the relay still passes tw admin test")
 
-	// Admin identity: mode must be "admin" before the wizard so the relay
-	// handle is rendered with the admin role. Seeding the config file is a
-	// harness-only shim (there is no CLI mode command yet). We wipe the config
-	// dir first so the wizard always starts from a clean identity — otherwise a
-	// re-run against an already-provisioned /etc/tw-test makes GetRelayStatus
-	// find the manual-relay marker and the wizard branches to "already
-	// provisioned", changing the scripted prompt order. On a fresh container
-	// the dir does not exist, so the rm is a no-op.
-	execIn(t, "admin", `rm -rf /etc/tw-test && mkdir -p /etc/tw-test && printf 'mode: admin\n' > /etc/tw-test/config.yaml`)
+	// Start from a clean identity: `tw admin create` itself stamps mode admin
+	// on a fresh profile (no seeding shim — the Contexts scenario later asserts
+	// the admin role landed). The wipe matters on re-runs: an already-provisioned
+	// /etc/tw-test makes GetRelayStatus find the manual-relay marker and the
+	// non-interactive create errors out with "relay already provisioned". On a
+	// fresh container the dir does not exist, so the rm is a no-op.
+	execIn(t, "admin", `rm -rf /etc/tw-test`)
 
-	// Drive the wizard non-interactively. Prompt order (create_relay.go):
-	// domain, provider number (Manual is 4 = 3 cloud providers + 1),
-	// relay public IP, "have you run the script? [y/N]".
-	// --ssh-open=false suppresses the SSH prompt.
+	// Flag-based non-interactive create: with --provider/--domain/--ip all set,
+	// create must run to completion with no prompts (stdin is not a tty here, so
+	// any leftover prompt would read EOF and fail loudly).
 	out := execIn(t, "admin",
-		`cd /shared && printf '`+domain+`\n4\n`+relayIP+`\ny\n' | tw admin create --ssh-open=false`)
-	if !strings.Contains(out, "Select [1-4]") {
-		fatalf(t, "wizard provider list changed — update the scripted stdin (got:\n%s)", out)
-	}
+		`cd /shared && tw admin create --provider manual --domain `+domain+` --ip `+relayIP+` --ssh-open=false`)
 	if !strings.Contains(out, "Relay server setup complete") {
-		fatalf(t, "wizard did not complete:\n%s", out)
+		fatalf(t, "non-interactive create did not complete:\n%s", out)
+	}
+	if !strings.Contains(out, "not yet installed") {
+		fatalf(t, "non-interactive create did not print the install next-steps:\n%s", out)
 	}
 
 	// The wizard wrote the install script and the admin bundle into /shared.

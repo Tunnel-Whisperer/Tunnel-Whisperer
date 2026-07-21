@@ -210,12 +210,22 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 	}
 	progress(ProgressEvent{Step: 1, Total: 9, Label: "SSH keys", Status: "completed"})
 
-	// Step 2: Xray UUID.
+	// Step 2: Xray UUID (also stamps the admin mode — creating a relay makes
+	// this profile the admin identity; only an unset mode is stamped, and
+	// requireMode("admin") already blocks server/client profiles).
 	progress(ProgressEvent{Step: 2, Total: 9, Label: "Xray UUID", Status: "running"})
 	o.mu.Lock()
 	cfg := o.cfg
+	changed := false
+	if cfg.Mode == "" {
+		cfg.Mode = "admin"
+		changed = true
+	}
 	if cfg.Xray.UUID == "" {
 		cfg.Xray.UUID = uuid.New().String()
+		changed = true
+	}
+	if changed {
 		if err := config.Save(cfg); err != nil {
 			o.mu.Unlock()
 			progress(ProgressEvent{Step: 2, Total: 9, Label: "Xray UUID", Status: "failed", Error: err.Error()})
@@ -400,15 +410,24 @@ func (o *Ops) GenerateManualInstallScript(domain string, sshOpen bool) (string, 
 
 	o.mu.Lock()
 	cfg := o.cfg
+	changed := false
+	// Creating a relay makes this profile the admin identity: the mode gates
+	// commands (requireMode) and renders the relay handle with the admin role.
+	// Only an unset mode is stamped — requireMode("admin") already blocks
+	// server/client profiles from reaching this point.
+	if cfg.Mode == "" {
+		cfg.Mode = "admin"
+		changed = true
+	}
 	if cfg.Xray.UUID == "" {
 		cfg.Xray.UUID = uuid.New().String()
-		if err := config.Save(cfg); err != nil {
-			o.mu.Unlock()
-			return "", fmt.Errorf("saving config: %w", err)
-		}
+		changed = true
 	}
 	if domain != "" {
 		cfg.Xray.RelayHost = domain
+		changed = true
+	}
+	if changed {
 		if err := config.Save(cfg); err != nil {
 			o.mu.Unlock()
 			return "", fmt.Errorf("saving config: %w", err)
