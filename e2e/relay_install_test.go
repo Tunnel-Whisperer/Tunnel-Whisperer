@@ -40,13 +40,13 @@ func localCertsShim(t *testing.T) {
 
 func testRelayInstall(t *testing.T) {
 	scenario(t, "an admin provisions a relay from scratch using the REAL tw-generated install script",
-		"the flag-based one-liner `tw admin create --provider manual --domain --ip` completes without prompts and emits the install script + admin bundle",
+		"the flag-based one-liner `tw relay create --provider manual --domain --ip` completes without prompts and emits the install script + admin bundle",
 		"the generated install script provisions the relay VM (Caddy + Xray + sshd + firewall) and prints 'Setup complete'",
-		"tw admin test confirms the tunnel and shell work end-to-end (DNS + mTLS handshake + SSH over the VLESS tunnel)",
-		"tw admin status reports the manual relay",
-		"re-running the install script is idempotent (its documented clean-then-reinstall contract) and the relay still passes tw admin test")
+		"tw relay test confirms the tunnel and shell work end-to-end (DNS + mTLS handshake + SSH over the VLESS tunnel)",
+		"tw relay status reports the manual relay",
+		"re-running the install script is idempotent (its documented clean-then-reinstall contract) and the relay still passes tw relay test")
 
-	// Start from a clean identity: `tw admin create` itself stamps mode admin
+	// Start from a clean identity: `tw relay create` itself stamps mode admin
 	// on a fresh profile (no seeding shim — the Contexts scenario later asserts
 	// the admin role landed). The wipe matters on re-runs: an already-provisioned
 	// /etc/tw-test makes GetRelayStatus find the manual-relay marker and the
@@ -58,7 +58,7 @@ func testRelayInstall(t *testing.T) {
 	// create must run to completion with no prompts (stdin is not a tty here, so
 	// any leftover prompt would read EOF and fail loudly).
 	out := execIn(t, "admin",
-		`cd /shared && tw admin create --provider manual --domain `+domain+` --ip `+relayIP+` --ssh-open=false`)
+		`cd /shared && tw relay create --provider manual --domain `+domain+` --ip `+relayIP+` --ssh-open=false`)
 	if !strings.Contains(out, "Relay server setup complete") {
 		fatalf(t, "non-interactive create did not complete:\n%s", out)
 	}
@@ -101,8 +101,8 @@ func testRelayInstall(t *testing.T) {
 	}
 
 	// End-to-end admin check: DNS + mTLS handshake + SSH over the VLESS tunnel.
-	waitFor(t, "tw admin test", 120*time.Second, func() (bool, string) {
-		out, err := execInOK("admin", "tw admin test")
+	waitFor(t, "tw relay test", 120*time.Second, func() (bool, string) {
+		out, err := execInOK("admin", "tw relay test")
 		if err != nil {
 			return false, out
 		}
@@ -113,7 +113,7 @@ func testRelayInstall(t *testing.T) {
 	})
 
 	// Status shows the manual relay.
-	statusOut := execIn(t, "admin", "tw admin status")
+	statusOut := execIn(t, "admin", "tw relay status")
 	if !strings.Contains(statusOut, domain) {
 		fatalf(t, "admin status does not mention the relay:\n%s", statusOut)
 	}
@@ -122,8 +122,8 @@ func testRelayInstall(t *testing.T) {
 	// prior state. Re-run, re-apply the local_certs shim, re-verify.
 	installShim(t)
 	localCertsShim(t)
-	waitFor(t, "tw admin test after re-install", 120*time.Second, func() (bool, string) {
-		out, err := execInOK("admin", "tw admin test")
+	waitFor(t, "tw relay test after re-install", 120*time.Second, func() (bool, string) {
+		out, err := execInOK("admin", "tw relay test")
 		return err == nil && strings.Contains(out, "tunnel and shell working"), out
 	})
 }

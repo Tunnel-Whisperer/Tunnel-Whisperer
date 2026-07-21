@@ -20,7 +20,7 @@ var destroyRelayServerCmd = &cobra.Command{
 }
 
 func init() {
-	adminCmd.AddCommand(destroyRelayServerCmd)
+	relayCmd.AddCommand(destroyRelayServerCmd)
 }
 
 func runDestroyRelayServer(cmd *cobra.Command, args []string) error {

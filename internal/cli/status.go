@@ -11,8 +11,8 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
-// adminStatusCmd is the admin-mode status command; gated to admin.
-var adminStatusCmd = &cobra.Command{
+// relayStatusCmd is the admin-mode status command; gated to admin.
+var relayStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show current relay and tunnel status",
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -48,7 +48,7 @@ var clientStatusCmd = &cobra.Command{
 }
 
 func init() {
-	adminCmd.AddCommand(adminStatusCmd)
+	relayCmd.AddCommand(relayStatusCmd)
 	serverCmd.AddCommand(serverStatusCmd)
 	clientCmd.AddCommand(clientStatusCmd)
 }

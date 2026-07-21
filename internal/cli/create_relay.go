@@ -28,7 +28,7 @@ func init() {
 		"relay domain (skips the domain prompt)")
 	createRelayServerCmd.Flags().String("ip", "",
 		"relay public IP (manual provider only; skips the IP prompt)")
-	adminCmd.AddCommand(createRelayServerCmd)
+	relayCmd.AddCommand(createRelayServerCmd)
 }
 
 // validateCreateFlags is the pure decision behind the non-interactive create
@@ -93,7 +93,7 @@ func runCreateRelayServer(cmd *cobra.Command, args []string) error {
 	// infrastructure implicitly — they fail instead of prompting.
 	status := o.GetRelayStatus()
 	if status.Provisioned && nonInteractive {
-		return fmt.Errorf("relay already provisioned (provider: %s) — run 'tw admin destroy' first", status.Provider)
+		return fmt.Errorf("relay already provisioned (provider: %s) — run 'tw relay destroy' first", status.Provider)
 	}
 	if status.Provisioned {
 		fmt.Printf("  Relay already provisioned (provider: %s).\n", status.Provider)

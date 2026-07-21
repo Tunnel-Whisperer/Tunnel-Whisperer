@@ -2,13 +2,13 @@
 # or carry an explicit {exempt: "reason"}. Enforced by
 # internal/cli/coverage_test.go (fails `go test ./...` on drift).
 commands:
-  "admin create":            [TestE2E/RelayInstall]
-  "admin test":              [TestE2E/RelayInstall]
-  "admin status":            [TestE2E/RelayInstall, TestE2E/Teardown]
-  "admin enroll":            [TestE2E/ServerJoin, TestE2E/SecondTenant]
-  "admin servers":           [TestE2E/SecondTenant]
-  "admin destroy":           [TestE2E/Teardown]
-  "admin ssh":               {exempt: "interactive relay terminal; no scriptable assertion yet"}
+  "relay create":            [TestE2E/RelayInstall]
+  "relay test":              [TestE2E/RelayInstall]
+  "relay status":            [TestE2E/RelayInstall, TestE2E/Teardown]
+  "relay enroll-server":            [TestE2E/ServerJoin, TestE2E/SecondTenant]
+  "relay get-servers":           [TestE2E/SecondTenant]
+  "relay destroy":           [TestE2E/Teardown]
+  "relay ssh":               {exempt: "interactive relay terminal; no scriptable assertion yet"}
   "server join":             [TestE2E/ServerJoin, TestE2E/SecondTenant]
   "server start":            [TestE2E/ServerJoin]
   "server test":             [TestE2E/ServerJoin]

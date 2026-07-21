@@ -48,7 +48,7 @@ var clientTestCmd = &cobra.Command{
 }
 
 func init() {
-	adminCmd.AddCommand(testRelayCmd)
+	relayCmd.AddCommand(testRelayCmd)
 	serverCmd.AddCommand(serverTestCmd)
 	clientCmd.AddCommand(clientTestCmd)
 }
@@ -104,7 +104,7 @@ func runTestRelayLocal() error {
 
 	status := o.GetRelayStatus()
 	if !status.Provisioned {
-		return fmt.Errorf("no relay provisioned — run `tw admin create` first")
+		return fmt.Errorf("no relay provisioned — run `tw relay create` first")
 	}
 
 	fmt.Println()

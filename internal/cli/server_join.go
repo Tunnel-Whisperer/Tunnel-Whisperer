@@ -68,7 +68,7 @@ func runServerJoin(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("writing %s: %w", fname, err)
 	}
 	fmt.Printf("  Join request written: %s\n", fname)
-	fmt.Println("  Send it to the relay admin, who runs: tw admin enroll <this file>")
+	fmt.Println("  Send it to the relay admin, who runs: tw relay enroll-server <this file>")
 	fmt.Println("  Then apply their response: tw server join --apply <response file>")
 	return nil
 }

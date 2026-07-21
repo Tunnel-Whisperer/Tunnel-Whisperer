@@ -8,13 +8,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var adminCmd = &cobra.Command{
-	Use:   "admin",
-	Short: "Admin-mode relay ownership commands",
+// relayCmd groups everything the relay owner (admin profile) does to the
+// relay: provision, destroy, inspect, and register server tenants. The
+// commands are gated to the admin mode; the group is named after the object
+// they manage.
+var relayCmd = &cobra.Command{
+	Use:   "relay",
+	Short: "Manage the relay server (admin role)",
 }
 
 func init() {
-	rootCmd.AddCommand(adminCmd)
+	rootCmd.AddCommand(relayCmd)
 }
 
 // sharedScanner backs non-interactive (piped) input. A single shared scanner

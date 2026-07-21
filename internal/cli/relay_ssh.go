@@ -17,7 +17,7 @@ var relaySSHCmd = &cobra.Command{
 }
 
 func init() {
-	adminCmd.AddCommand(relaySSHCmd)
+	relayCmd.AddCommand(relaySSHCmd)
 }
 
 func runRelaySSH(cmd *cobra.Command, args []string) error {
@@ -31,7 +31,7 @@ func runRelaySSH(cmd *cobra.Command, args []string) error {
 
 	status := o.GetRelayStatus()
 	if !status.Provisioned {
-		return fmt.Errorf("no relay provisioned — run `tw admin create` first")
+		return fmt.Errorf("no relay provisioned — run `tw relay create` first")
 	}
 
 	fmt.Printf("  Connecting to relay (%s)...\n", status.Domain)

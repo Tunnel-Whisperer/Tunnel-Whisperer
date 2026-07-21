@@ -9,25 +9,25 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
-var adminEnrollCmd = &cobra.Command{
-	Use:   "enroll <join-request.json>",
+var relayEnrollServerCmd = &cobra.Command{
+	Use:   "enroll-server <join-request.json>",
 	Short: "Enroll a joining server onto the relay and write a join-response",
 	Args:  cobra.ExactArgs(1),
-	RunE:  runAdminEnroll,
+	RunE:  runRelayEnrollServer,
 }
 
-var adminServersCmd = &cobra.Command{
-	Use:   "servers",
-	Short: "List enrolled servers",
-	RunE:  runAdminServers,
+var relayGetServersCmd = &cobra.Command{
+	Use:   "get-servers",
+	Short: "List servers registered on the relay",
+	RunE:  runRelayGetServers,
 }
 
 func init() {
-	adminCmd.AddCommand(adminEnrollCmd)
-	adminCmd.AddCommand(adminServersCmd)
+	relayCmd.AddCommand(relayEnrollServerCmd)
+	relayCmd.AddCommand(relayGetServersCmd)
 }
 
-func runAdminEnroll(cmd *cobra.Command, args []string) error {
+func runRelayEnrollServer(cmd *cobra.Command, args []string) error {
 	if err := requireMode("admin"); err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func runAdminEnroll(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runAdminServers(cmd *cobra.Command, args []string) error {
+func runRelayGetServers(cmd *cobra.Command, args []string) error {
 	if err := requireMode("admin"); err != nil {
 		return err
 	}

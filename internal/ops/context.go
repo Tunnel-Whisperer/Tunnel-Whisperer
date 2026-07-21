@@ -63,7 +63,7 @@ func (o *Ops) ListContexts() ([]ContextInfo, error) {
 	for name, m := range idx.Contexts {
 		role, relay, user, id := m.Role, m.Relay, m.User, m.ID
 		// The index metadata is only refreshed on a context switch, so for the
-		// active context it can be stale (e.g. after `tw admin create` sets admin
+		// active context it can be stale (e.g. after `tw relay create` sets admin
 		// mode + relay on the live config without touching the cache). The live
 		// config is authoritative for the current context.
 		if name == idx.CurrentContext {

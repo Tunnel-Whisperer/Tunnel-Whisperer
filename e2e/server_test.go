@@ -16,7 +16,7 @@ import (
 func testServerJoin(t *testing.T) {
 	scenario(t, "a server joins the admin's relay non-disruptively and publishes its reverse tunnel",
 		"tw server join generates a join request (and sets mode=server)",
-		"tw admin enroll registers the tenant over the tunnel and re-renders + reloads the relay Caddyfile ('Caddyfile reloaded')",
+		"tw relay enroll-server registers the tenant over the tunnel and re-renders + reloads the relay Caddyfile ('Caddyfile reloaded')",
 		"tw server join --apply applies the admin's enrollment response",
 		"tw server start + echo target come up and tw server test reports 'tunnel and shell working'",
 		"the local_certs shim reapply lands inside enroll's ~15s SSH-dial retry budget with >5s of margin")
@@ -42,7 +42,7 @@ func testServerJoin(t *testing.T) {
 	execIn(t, "server", "cd /shared && rm -f tw_join_*.json && tw server join "+domain)
 
 	// 2. Admin enrolls it (SSH to relay over the VLESS tunnel) and writes the
-	// response. `tw admin enroll` step 3 ("Apply relay config") fully
+	// response. `tw relay enroll-server` step 3 ("Apply relay config") fully
 	// re-renders and reloads the relay's Caddyfile from scratch (it rebuilds
 	// the whole per-tenant handle-block set), which wipes the local_certs
 	// shim RelayInstall applied. Caddy then falls back to real ACME for the
@@ -63,7 +63,7 @@ func testServerJoin(t *testing.T) {
 	// still-in-use connection out from under step 3), reapply the shim, then
 	// let one of step 4's remaining retries land on a healthy relay.
 	execDetached(t, "admin",
-		"cd /shared && rm -f tw_join_response_*.json && tw admin enroll /shared/tw_join_*.json > /shared/enroll.log 2>&1")
+		"cd /shared && rm -f tw_join_response_*.json && tw relay enroll-server /shared/tw_join_*.json > /shared/enroll.log 2>&1")
 	waitFor(t, "admin enroll step 3 (Apply relay config) complete", 30*time.Second, func() (bool, string) {
 		out, _ := execInOK("admin", "cat /shared/enroll.log 2>/dev/null")
 		return strings.Contains(out, "Caddyfile reloaded"), out
@@ -125,10 +125,10 @@ func testServerJoin(t *testing.T) {
 func testSecondTenant(t *testing.T) {
 	scenario(t, "a second server enrolls on the same relay (third tenant) non-disruptively",
 		"tw server join on server2 generates its join request",
-		"tw admin enroll live-adds the tenant (Caddyfile reloaded, no xray restart); tw admin servers lists both tenants",
+		"tw relay enroll-server live-adds the tenant (Caddyfile reloaded, no xray restart); tw relay get-servers lists both tenants",
 		"tw server join --apply applies the response on server2",
 		"server2's tw server test reports 'tunnel and shell working'",
-		"server-1's tw server test and the admin's tw admin test still pass (non-disruptive)")
+		"server-1's tw server test and the admin's tw relay test still pass (non-disruptive)")
 
 	// Clean identity on server2 (same rationale as ServerJoin's wipe).
 	killMatching(t, "server2", "tw server start")
@@ -151,7 +151,7 @@ func testSecondTenant(t *testing.T) {
 	// shim, so it must be reapplied before enroll's step-4 SSH-dial retries
 	// exhaust their ~15s budget.
 	execDetached(t, "admin",
-		"cd /shared && tw admin enroll "+joinGlob+" > /shared/enroll2.log 2>&1")
+		"cd /shared && tw relay enroll-server "+joinGlob+" > /shared/enroll2.log 2>&1")
 	waitFor(t, "admin enroll (server2) step 3 complete", 30*time.Second, func() (bool, string) {
 		out, _ := execInOK("admin", "cat /shared/enroll2.log 2>/dev/null")
 		return strings.Contains(out, "Caddyfile reloaded"), out
@@ -168,7 +168,7 @@ func testSecondTenant(t *testing.T) {
 
 	// The admin registry lists both servers.
 	serverHost := strings.TrimSpace(execIn(t, "server", "hostname"))
-	regOut := execIn(t, "admin", "tw admin servers")
+	regOut := execIn(t, "admin", "tw relay get-servers")
 	if !strings.Contains(regOut, host+"-") || !strings.Contains(regOut, serverHost+"-") {
 		fatalf(t, "admin servers does not list both tenants (%s-*, %s-*):\n%s", host, serverHost, regOut)
 	}
@@ -188,7 +188,7 @@ func testSecondTenant(t *testing.T) {
 	if !strings.Contains(out, "tunnel and shell working") {
 		fatalf(t, "server-1 tunnel broken after server2 enroll:\n%s", out)
 	}
-	out = execIn(t, "admin", "tw admin test")
+	out = execIn(t, "admin", "tw relay test")
 	if !strings.Contains(out, "tunnel and shell working") {
 		fatalf(t, "admin tunnel broken after server2 enroll:\n%s", out)
 	}

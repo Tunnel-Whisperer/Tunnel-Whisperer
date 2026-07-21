@@ -158,5 +158,5 @@ func testRelayResilience(t *testing.T) {
 	t.Skip("NOT YET IMPLEMENTED (Task 9): the tunnel recovers after the relay's caddy/xray are restarted (reverse tunnel + client reconnect)")
 }
 func testTeardown(t *testing.T) {
-	t.Skip("NOT YET IMPLEMENTED (Task 9): tw admin destroy tears the relay down and tw admin status reflects it")
+	t.Skip("NOT YET IMPLEMENTED (Task 9): tw relay destroy tears the relay down and tw relay status reflects it")
 }

@@ -14,7 +14,7 @@ import (
 func TestGenerateManualInstallScriptStampsAdminMode(t *testing.T) {
 	t.Setenv("TW_CONFIG_DIR", t.TempDir())
 
-	// Fresh profile: no config.yaml at all, the state `tw admin create` runs in.
+	// Fresh profile: no config.yaml at all, the state `tw relay create` runs in.
 	o, err := New()
 	if err != nil {
 		t.Fatalf("ops.New: %v", err)
