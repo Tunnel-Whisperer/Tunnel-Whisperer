@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
@@ -18,9 +20,36 @@ import (
 // ContextInfo is one row of `tw config get-contexts`.
 type ContextInfo struct {
 	Name    string
+	ID      string // ShortID of the profile's xray.uuid ("" until configured)
 	Role    string
+	User    string // client contexts only: client.ssh_user
 	Relay   string
 	Current bool
+}
+
+// resolveContextName maps a user-supplied selector (context name or short ID)
+// to a stored context name. An exact name match wins; otherwise a unique
+// case-insensitive match on the 8-char ID resolves. Two contexts sharing an
+// ID (the same bundle imported under two names) is ambiguous.
+func resolveContextName(sel string, contexts map[string]config.ContextMeta) (string, error) {
+	if _, ok := contexts[sel]; ok {
+		return sel, nil
+	}
+	var matches []string
+	for name, m := range contexts {
+		if m.ID != "" && strings.EqualFold(m.ID, sel) {
+			matches = append(matches, name)
+		}
+	}
+	sort.Strings(matches)
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("no such context: %s", sel)
+	case 1:
+		return matches[0], nil
+	default:
+		return "", fmt.Errorf("context ID %q is ambiguous (matches %s) — use the name", sel, strings.Join(matches, ", "))
+	}
 }
 
 // ListContexts returns the stored contexts (migrating a legacy install first).
@@ -29,23 +58,43 @@ func (o *Ops) ListContexts() ([]ContextInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	dirty := false
 	var out []ContextInfo
 	for name, m := range idx.Contexts {
-		role, relay := m.Role, m.Relay
+		role, relay, user, id := m.Role, m.Relay, m.User, m.ID
 		// The index metadata is only refreshed on a context switch, so for the
 		// active context it can be stale (e.g. after `tw admin create` sets admin
 		// mode + relay on the live config without touching the cache). The live
 		// config is authoritative for the current context.
 		if name == idx.CurrentContext {
-			cfg := o.Config()
-			role, relay = cfg.Mode, cfg.Xray.RelayHost
+			role, relay, user, id = config.MetaForConfig(o.Config())
+		} else if id == "" {
+			// Backfill entries written before user/id existed by reading the
+			// stored bundle once (bundles carry no passphrase).
+			if bundle, rerr := os.ReadFile(config.ContextBundlePath(name)); rerr == nil {
+				if plain, derr := cryptobox.Decrypt(bundle, ""); derr == nil {
+					if bm := readBundleMeta(plain); bm.ID != "" || bm.User != "" {
+						m.User, m.ID = bm.User, bm.ID
+						idx.Contexts[name] = m
+						user, id = bm.User, bm.ID
+						dirty = true
+					}
+				}
+			}
 		}
 		out = append(out, ContextInfo{
 			Name:    name,
+			ID:      id,
 			Role:    role,
+			User:    user,
 			Relay:   relay,
 			Current: name == idx.CurrentContext,
 		})
+	}
+	if dirty {
+		if err := config.SaveContextIndex(idx); err != nil {
+			return nil, fmt.Errorf("persisting backfilled context metadata: %w", err)
+		}
 	}
 	return out, nil
 }
@@ -59,16 +108,18 @@ func (o *Ops) CurrentContext() (string, error) {
 	return idx.CurrentContext, nil
 }
 
-// RenameContext renames a stored context (and its bundle file).
+// RenameContext renames a stored context (and its bundle file). oldName may be
+// a context name or short ID.
 func (o *Ops) RenameContext(oldName, newName string) error {
 	idx, err := config.EnsureContextIndex()
 	if err != nil {
 		return err
 	}
-	meta, ok := idx.Contexts[oldName]
-	if !ok {
-		return fmt.Errorf("no such context: %s", oldName)
+	oldName, err = resolveContextName(oldName, idx.Contexts)
+	if err != nil {
+		return err
 	}
+	meta := idx.Contexts[oldName]
 	if _, exists := idx.Contexts[newName]; exists {
 		return fmt.Errorf("context already exists: %s", newName)
 	}
@@ -94,8 +145,9 @@ func (o *Ops) DeleteContext(name string) error {
 	if err != nil {
 		return err
 	}
-	if _, ok := idx.Contexts[name]; !ok {
-		return fmt.Errorf("no such context: %s", name)
+	name, err = resolveContextName(name, idx.Contexts)
+	if err != nil {
+		return err
 	}
 	if idx.CurrentContext == name {
 		if len(idx.Contexts) > 1 {
@@ -138,9 +190,9 @@ func (o *Ops) ImportContext(bundle []byte, name string, replace bool) (string, e
 	if err != nil {
 		return "", fmt.Errorf("reading bundle (corrupted?): %w", err)
 	}
-	role, relay := readBundleMeta(plain)
+	bm := readBundleMeta(plain)
 	if name == "" {
-		name = sanitizeHostname(relay)
+		name = sanitizeHostname(bm.Relay)
 	}
 	if _, exists := idx.Contexts[name]; exists && !replace {
 		return name, fmt.Errorf("%w: %s", ErrContextExists, name)
@@ -152,8 +204,10 @@ func (o *Ops) ImportContext(bundle []byte, name string, replace bool) (string, e
 		return "", fmt.Errorf("storing context bundle: %w", err)
 	}
 	idx.Contexts[name] = config.ContextMeta{
-		Role:    role,
-		Relay:   relay,
+		Role:    bm.Role,
+		Relay:   bm.Relay,
+		User:    bm.User,
+		ID:      bm.ID,
 		Created: time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := config.SaveContextIndex(idx); err != nil {
@@ -163,9 +217,18 @@ func (o *Ops) ImportContext(bundle []byte, name string, replace bool) (string, e
 }
 
 // ExportContext returns the encrypted bundle bytes for a stored (non-current)
-// context. To export the active context, use ExportCurrentContext (it seals the
-// live profile, which may have no on-disk snapshot yet).
+// context, selected by name or short ID. To export the active context, use
+// ExportCurrentContext (it seals the live profile, which may have no on-disk
+// snapshot yet).
 func (o *Ops) ExportContext(name string) ([]byte, error) {
+	idx, err := config.EnsureContextIndex()
+	if err != nil {
+		return nil, err
+	}
+	name, err = resolveContextName(name, idx.Contexts)
+	if err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(config.ContextBundlePath(name))
 	if err != nil {
 		return nil, fmt.Errorf("reading context %q (not sealed yet?): %w", name, err)
@@ -179,31 +242,48 @@ func (o *Ops) ExportCurrentContext() ([]byte, error) {
 	return sealProfile()
 }
 
-// readBundleMeta extracts mode + relay host from a decrypted profile zip's
-// config.yaml for indexing. Best-effort: returns ("","") if not parseable.
-func readBundleMeta(plainZip []byte) (role, relay string) {
+// bundleMeta is the index metadata extracted from a profile bundle.
+type bundleMeta struct {
+	Role  string
+	Relay string
+	User  string
+	ID    string
+}
+
+// readBundleMeta extracts the index metadata from a decrypted profile zip's
+// config.yaml. Best-effort: returns a zero bundleMeta if not parseable.
+func readBundleMeta(plainZip []byte) bundleMeta {
 	type miniXray struct {
+		UUID      string `yaml:"uuid"`
 		RelayHost string `yaml:"relay_host"`
 	}
+	type miniClient struct {
+		SSHUser string `yaml:"ssh_user"`
+	}
 	type miniCfg struct {
-		Mode string   `yaml:"mode"`
-		Xray miniXray `yaml:"xray"`
+		Mode   string     `yaml:"mode"`
+		Xray   miniXray   `yaml:"xray"`
+		Client miniClient `yaml:"client"`
 	}
 	data, err := readZipEntry(plainZip, "config.yaml")
 	if err != nil {
-		return "", ""
+		return bundleMeta{}
 	}
 	var c miniCfg
 	if yaml.Unmarshal(data, &c) != nil {
-		return "", ""
+		return bundleMeta{}
 	}
-	return c.Mode, c.Xray.RelayHost
+	m := bundleMeta{Role: c.Mode, Relay: c.Xray.RelayHost, ID: config.ShortID(c.Xray.UUID)}
+	if c.Mode == "client" {
+		m.User = c.Client.SSHUser
+	}
+	return m
 }
 
-// UseContext switches the active context to name: it re-seals the current
-// profile (if changed), unseals the target over the live config dir, reconciles
-// the relay marker, reloads config, and reconnects under the new mode. Bundles
-// carry no passphrase.
+// UseContext switches the active context to name (a context name or short ID):
+// it re-seals the current profile (if changed), unseals the target over the
+// live config dir, reconciles the relay marker, reloads config, and reconnects
+// under the new mode. Bundles carry no passphrase.
 func (o *Ops) UseContext(name string, progress ProgressFunc) error {
 	if progress == nil {
 		progress = func(ProgressEvent) {}
@@ -212,19 +292,19 @@ func (o *Ops) UseContext(name string, progress ProgressFunc) error {
 	if err != nil {
 		return err
 	}
-	if _, ok := idx.Contexts[name]; !ok {
-		return fmt.Errorf("no such context: %s", name)
+	name, err = resolveContextName(name, idx.Contexts)
+	if err != nil {
+		return err
 	}
 	if name == idx.CurrentContext {
 		return nil // already active
 	}
-	// Capture the departing context's role/relay (from its live config) before we
-	// unseal the target over it, so the index metadata stays in sync.
+	// Capture the departing context's metadata (from its live config) before we
+	// unseal the target over it, so the index stays in sync.
 	oldCur := idx.CurrentContext
-	var oldRole, oldRelay string
+	var oldRole, oldRelay, oldUser, oldID string
 	if oldCur != "" {
-		c := o.Config()
-		oldRole, oldRelay = c.Mode, c.Xray.RelayHost
+		oldRole, oldRelay, oldUser, oldID = config.MetaForConfig(o.Config())
 	}
 	target, err := os.ReadFile(config.ContextBundlePath(name))
 	if err != nil {
@@ -255,7 +335,7 @@ func (o *Ops) UseContext(name string, progress ProgressFunc) error {
 	//    and cache the new passphrase.
 	if oldCur != "" {
 		if m, ok := idx.Contexts[oldCur]; ok {
-			m.Role, m.Relay = oldRole, oldRelay
+			m.Role, m.Relay, m.User, m.ID = oldRole, oldRelay, oldUser, oldID
 			idx.Contexts[oldCur] = m
 		}
 	}
@@ -356,8 +436,7 @@ func (o *Ops) NewContext(name string) error {
 		return fmt.Errorf("context already exists: %s", name)
 	}
 	if cur := idx.CurrentContext; cur != "" {
-		c := o.Config()
-		oldRole, oldRelay := c.Mode, c.Xray.RelayHost
+		oldRole, oldRelay, oldUser, oldID := config.MetaForConfig(o.Config())
 		if err := o.resealCurrent(cur); err != nil {
 			return err
 		}
@@ -368,7 +447,7 @@ func (o *Ops) NewContext(name string) error {
 			return fmt.Errorf("refusing to create a new context: the current context %q could not be sealed", cur)
 		}
 		if m, ok := idx.Contexts[cur]; ok {
-			m.Role, m.Relay = oldRole, oldRelay
+			m.Role, m.Relay, m.User, m.ID = oldRole, oldRelay, oldUser, oldID
 			idx.Contexts[cur] = m
 		}
 	}

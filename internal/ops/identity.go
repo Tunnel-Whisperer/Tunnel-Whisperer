@@ -3,6 +3,8 @@ package ops
 import (
 	"fmt"
 	"strings"
+
+	"github.com/tunnelwhisperer/tw/internal/config"
 )
 
 // portRange caps tenants per relay; bump if ever needed.
@@ -31,11 +33,7 @@ func sanitizeHostname(s string) string {
 }
 
 func first8(uuid string) string {
-	u := strings.ReplaceAll(uuid, "-", "")
-	if len(u) > 8 {
-		return u[:8]
-	}
-	return u
+	return config.ShortID(uuid)
 }
 
 // deriveServerID is the canonical tenant identity: <sanitized-hostname>-<first8-uuid>.

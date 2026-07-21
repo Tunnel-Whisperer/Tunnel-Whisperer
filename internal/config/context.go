@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -13,7 +14,28 @@ import (
 type ContextMeta struct {
 	Role    string `yaml:"role"`
 	Relay   string `yaml:"relay"`
+	User    string `yaml:"user,omitempty"` // client contexts only: client.ssh_user
+	ID      string `yaml:"id,omitempty"`   // ShortID of the profile's xray.uuid
 	Created string `yaml:"created"`
+}
+
+// ShortID is the 8-hex-char short form of a profile UUID ("" if unset) — the
+// same convention deriveServerID uses for tenant identities.
+func ShortID(uuid string) string {
+	u := strings.ReplaceAll(uuid, "-", "")
+	if len(u) > 8 {
+		return u[:8]
+	}
+	return u
+}
+
+// MetaForConfig derives the context-index metadata for a live config.
+func MetaForConfig(cfg *Config) (role, relay, user, id string) {
+	role, relay = cfg.Mode, cfg.Xray.RelayHost
+	if cfg.Mode == "client" {
+		user = cfg.Client.SSHUser
+	}
+	return role, relay, user, ShortID(cfg.Xray.UUID)
 }
 
 // ContextIndex is the plaintext catalogue of contexts and the active one.
@@ -82,10 +104,13 @@ func EnsureContextIndex() (*ContextIndex, error) {
 	if err != nil {
 		return nil, fmt.Errorf("loading config for migration: %w", err)
 	}
+	role, relay, user, id := MetaForConfig(cfg)
 	idx.CurrentContext = "default"
 	idx.Contexts["default"] = ContextMeta{
-		Role:    cfg.Mode,
-		Relay:   cfg.Xray.RelayHost,
+		Role:    role,
+		Relay:   relay,
+		User:    user,
+		ID:      id,
 		Created: time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := SaveContextIndex(idx); err != nil {

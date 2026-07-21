@@ -33,7 +33,7 @@ var configCurrentContextCmd = &cobra.Command{
 }
 
 var configUseContextCmd = &cobra.Command{
-	Use:   "use-context <name>",
+	Use:   "use-context <name|id>",
 	Short: "Switch the active context (re-seals current, reconnects)",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runConfigUseContext,
@@ -47,14 +47,14 @@ var configNewContextCmd = &cobra.Command{
 }
 
 var configRenameContextCmd = &cobra.Command{
-	Use:   "rename-context <old> <new>",
+	Use:   "rename-context <old-name|id> <new>",
 	Short: "Rename a context",
 	Args:  cobra.ExactArgs(2),
 	RunE:  runConfigRenameContext,
 }
 
 var configDeleteContextCmd = &cobra.Command{
-	Use:   "delete-context <name>",
+	Use:   "delete-context <name|id>",
 	Short: "Delete a stored context",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runConfigDeleteContext,
@@ -74,7 +74,7 @@ var (
 )
 
 var configExportCmd = &cobra.Command{
-	Use:   "export [name]",
+	Use:   "export [name|id]",
 	Short: "Export a context as a portable bundle",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runConfigExport,
@@ -127,13 +127,13 @@ func runConfigGetContexts(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "CURRENT\tNAME\tROLE\tRELAY")
+	fmt.Fprintln(w, "CURRENT\tNAME\tID\tROLE\tUSER\tRELAY")
 	for _, c := range list {
 		cur := ""
 		if c.Current {
 			cur = "*"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", cur, c.Name, c.Role, c.Relay)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", cur, c.Name, c.ID, c.Role, c.User, c.Relay)
 	}
 	return w.Flush()
 }

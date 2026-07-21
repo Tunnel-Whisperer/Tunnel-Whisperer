@@ -37,12 +37,12 @@ func TestGetUserConfigBundleProducesClientContext(t *testing.T) {
 	}
 
 	// Indexes as a client context with the user's relay.
-	role, relay := readBundleMeta(plain)
-	if role != "client" {
-		t.Errorf("role = %q, want client", role)
+	bm := readBundleMeta(plain)
+	if bm.Role != "client" {
+		t.Errorf("role = %q, want client", bm.Role)
 	}
-	if relay != "relay.example.com" {
-		t.Errorf("relay = %q, want relay.example.com", relay)
+	if bm.Relay != "relay.example.com" {
+		t.Errorf("relay = %q, want relay.example.com", bm.Relay)
 	}
 
 	// The full client profile is present.

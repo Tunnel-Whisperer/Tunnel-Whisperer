@@ -186,6 +186,103 @@ func TestUseContextSwitchesActive(t *testing.T) {
 	}
 }
 
+func TestResolveContextName(t *testing.T) {
+	contexts := map[string]config.ContextMeta{
+		"prod":  {ID: "aabbccdd"},
+		"stage": {ID: "11223344"},
+		"copy":  {ID: "aabbccdd"}, // same bundle imported twice
+		"fresh": {},               // unconfigured, no ID yet
+	}
+	// Exact name match wins, even when it could look like an ID.
+	if got, err := resolveContextName("prod", contexts); err != nil || got != "prod" {
+		t.Errorf("name match = (%q, %v), want (prod, nil)", got, err)
+	}
+	// Unique ID resolves (case-insensitive).
+	if got, err := resolveContextName("11223344", contexts); err != nil || got != "stage" {
+		t.Errorf("id match = (%q, %v), want (stage, nil)", got, err)
+	}
+	if got, err := resolveContextName("AABBCCDD", contexts); err == nil {
+		t.Errorf("ambiguous id resolved to %q, want error", got)
+	}
+	if _, err := resolveContextName("deadbeef", contexts); err == nil {
+		t.Error("unknown selector should error")
+	}
+}
+
+func TestReadBundleMetaUserAndID(t *testing.T) {
+	scratch := t.TempDir()
+	t.Setenv("TW_CONFIG_DIR", scratch)
+	writeFile(t, config.FilePath(),
+		"mode: client\nxray:\n  uuid: 12345678-9abc-def0-1234-56789abcdef0\n  relay_host: b.example.com\nclient:\n  ssh_user: alice\n")
+	blob, err := sealProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := cryptobox.Decrypt(blob, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := readBundleMeta(plain)
+	if m.Role != "client" || m.Relay != "b.example.com" {
+		t.Errorf("role/relay = %q/%q, want client/b.example.com", m.Role, m.Relay)
+	}
+	if m.User != "alice" {
+		t.Errorf("user = %q, want alice", m.User)
+	}
+	if m.ID != "12345678" {
+		t.Errorf("id = %q, want 12345678 (first 8 hex of uuid)", m.ID)
+	}
+}
+
+func TestListContextsBackfillsUserAndID(t *testing.T) {
+	activeDir := t.TempDir()
+	t.Setenv("TW_CONFIG_DIR", activeDir)
+	o := newOpsForTest(t)
+	seedContext(t, "current", "admin", "a.example.com", "") // becomes current
+
+	// Seed a legacy-style context: bundle carries uuid + ssh_user, but the
+	// index entry (written by seedContext) has no user/id fields.
+	scratch := t.TempDir()
+	t.Setenv("TW_CONFIG_DIR", scratch)
+	writeFile(t, config.FilePath(),
+		"mode: client\nxray:\n  uuid: cafef00d-9abc-def0-1234-56789abcdef0\n  relay_host: b.example.com\nclient:\n  ssh_user: bob\n")
+	blob, err := sealProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TW_CONFIG_DIR", activeDir)
+	if err := os.WriteFile(config.ContextBundlePath("legacy"), blob, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	idx, _ := config.LoadContextIndex()
+	idx.Contexts["legacy"] = config.ContextMeta{Role: "client", Relay: "b.example.com"}
+	if err := config.SaveContextIndex(idx); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := o.ListContexts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacy *ContextInfo
+	for i := range list {
+		if list[i].Name == "legacy" {
+			legacy = &list[i]
+		}
+	}
+	if legacy == nil {
+		t.Fatal("legacy context missing from list")
+	}
+	if legacy.User != "bob" || legacy.ID != "cafef00d" {
+		t.Errorf("backfilled user/id = %q/%q, want bob/cafef00d", legacy.User, legacy.ID)
+	}
+	// The backfill must be persisted so the next list needs no decrypt.
+	idx, _ = config.LoadContextIndex()
+	if m := idx.Contexts["legacy"]; m.User != "bob" || m.ID != "cafef00d" {
+		t.Errorf("index not backfilled: user/id = %q/%q", m.User, m.ID)
+	}
+}
+
 func TestImportContext(t *testing.T) {
 	activeDir := t.TempDir()
 	t.Setenv("TW_CONFIG_DIR", activeDir)
