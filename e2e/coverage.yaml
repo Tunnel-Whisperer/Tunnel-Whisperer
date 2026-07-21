@@ -9,7 +9,6 @@ commands:
   "admin servers":           [TestE2E/SecondTenant]
   "admin destroy":           [TestE2E/Teardown]
   "admin ssh":               {exempt: "interactive relay terminal; no scriptable assertion yet"}
-  "admin reconcile":         {exempt: "rewrites relay to a single tenant; needs a dedicated scenario before it can run mid-suite"}
   "server join":             [TestE2E/ServerJoin, TestE2E/SecondTenant]
   "server start":            [TestE2E/ServerJoin]
   "server test":             [TestE2E/ServerJoin]
