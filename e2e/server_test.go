@@ -117,6 +117,83 @@ func testServerJoin(t *testing.T) {
 	t.Logf("server status:\n%s", out)
 }
 
+// testSecondTenant enrolls a SECOND server (the relay's third tenant, after
+// the admin and server-1) and proves the enrollment is live and non-disruptive:
+// server2 passes `tw server test`, and server-1 + admin still pass theirs.
+// This mirrors the real-world multi-server flow; tenant ISOLATION (server A's
+// client cannot reach server B) is still deferred to a later scenario.
+func testSecondTenant(t *testing.T) {
+	scenario(t, "a second server enrolls on the same relay (third tenant) non-disruptively",
+		"tw server join on server2 generates its join request",
+		"tw admin enroll live-adds the tenant (Caddyfile reloaded, no xray restart); tw admin servers lists both tenants",
+		"tw server join --apply applies the response on server2",
+		"server2's tw server test reports 'tunnel and shell working'",
+		"server-1's tw server test and the admin's tw admin test still pass (non-disruptive)")
+
+	// Clean identity on server2 (same rationale as ServerJoin's wipe).
+	killMatching(t, "server2", "tw server start")
+	execIn(t, "server2", "rm -rf /etc/tw-test")
+
+	// The ServerID (and so the join/response filenames) is prefixed with the
+	// container's hostname — a random Docker ID here, NOT the compose service
+	// name — so capture it to address server2's files without glob-colliding
+	// with server-1's leftovers in /shared.
+	host := strings.TrimSpace(execIn(t, "server2", "hostname"))
+	joinGlob := "/shared/tw_join_" + host + "-*.json"
+	respGlob := "/shared/tw_join_response_" + host + "-*.json"
+
+	// 1. server2 generates identity + join request.
+	execIn(t, "server2", "cd /shared && rm -f "+joinGlob+" "+respGlob+" && tw server join "+domain)
+	execIn(t, "server2", "ls "+joinGlob) // fail loudly here if the naming assumption breaks
+
+	// 2. Admin enrolls it — same detached + shim-reapply dance as ServerJoin:
+	// enroll's step 3 re-renders the relay Caddyfile, wiping the local_certs
+	// shim, so it must be reapplied before enroll's step-4 SSH-dial retries
+	// exhaust their ~15s budget.
+	execDetached(t, "admin",
+		"cd /shared && tw admin enroll "+joinGlob+" > /shared/enroll2.log 2>&1")
+	waitFor(t, "admin enroll (server2) step 3 complete", 30*time.Second, func() (bool, string) {
+		out, _ := execInOK("admin", "cat /shared/enroll2.log 2>/dev/null")
+		return strings.Contains(out, "Caddyfile reloaded"), out
+	})
+	localCertsShim(t)
+	waitFor(t, "admin enroll (server2) response file", 30*time.Second, func() (bool, string) {
+		out, _ := execInOK("admin", "ls "+respGlob+" 2>/dev/null")
+		if strings.Contains(out, "tw_join_response_"+host+"-") {
+			return true, ""
+		}
+		logOut, _ := execInOK("admin", "cat /shared/enroll2.log 2>/dev/null")
+		return false, logOut
+	})
+
+	// The admin registry lists both servers.
+	serverHost := strings.TrimSpace(execIn(t, "server", "hostname"))
+	regOut := execIn(t, "admin", "tw admin servers")
+	if !strings.Contains(regOut, host+"-") || !strings.Contains(regOut, serverHost+"-") {
+		fatalf(t, "admin servers does not list both tenants (%s-*, %s-*):\n%s", host, serverHost, regOut)
+	}
+
+	// 3. server2 applies the response.
+	execIn(t, "server2", "cd /shared && tw server join --apply "+respGlob)
+
+	// 4. The new tenant's own tunnel works — this is the exact path reported
+	// broken in the field for a third tenant (VLESS dials, SSH never lands).
+	waitFor(t, "server2 tunnel up", 120*time.Second, func() (bool, string) {
+		out, err := execInOK("server2", "tw server test")
+		return err == nil && strings.Contains(out, "tunnel and shell working"), out
+	})
+
+	// 5. Non-disruptive: the existing tenants still work.
+	out := execIn(t, "server", "tw server test")
+	if !strings.Contains(out, "tunnel and shell working") {
+		fatalf(t, "server-1 tunnel broken after server2 enroll:\n%s", out)
+	}
+	out = execIn(t, "admin", "tw admin test")
+	if !strings.Contains(out, "tunnel and shell working") {
+		fatalf(t, "admin tunnel broken after server2 enroll:\n%s", out)
+	}
+}
+
 // mtlsNoCertAlert and mtlsForeignCAAlert are the stable substrings of the
 // OpenSSL/curl error text actually observed (live, --http1.1) for each
 // rejection case — see /home/n/code/Tunnel-Whisperer/.superpowers/sdd/task-6-report.md

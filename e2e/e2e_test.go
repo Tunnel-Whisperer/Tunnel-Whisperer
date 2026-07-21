@@ -3,6 +3,8 @@
 package e2e
 
 import (
+	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -94,14 +96,61 @@ func testSmoke(t *testing.T) {
 	execIn(t, "relay", "systemctl is-active ssh || systemctl is-active sshd")
 }
 
+// testContexts drives the kubectl-style context store: identity columns in
+// get-contexts and the short-ID selector, plus the new/rename/delete/use
+// lifecycle. Runs on the admin container (its "default" context is restored
+// as current at the end) and reads the client container's context imported in
+// UserLifecycle. Still deferred to full Task 8: export/import round-trip and
+// a running client reconnecting on switch.
+func testContexts(t *testing.T) {
+	scenario(t, "contexts are listable with identity columns and switchable by short ID",
+		"tw config get-contexts shows ID/ROLE/USER/RELAY; the client's context row shows USER alice and an 8-hex ID",
+		"tw config new-context creates and switches to a fresh empty context (the admin's original is preserved)",
+		"tw config use-context <id> switches back by the short ID alone",
+		"tw config rename-context and delete-context clean up the scratch context",
+		"tw config current-context reflects each switch")
+
+	// Client: the context imported from alice's user bundle must show the ssh
+	// user and a stable short ID (USER column is filled for client contexts).
+	out := execIn(t, "client", "tw config get-contexts")
+	if !regexp.MustCompile(`(?m)^\*\s+\S+\s+[0-9a-f]{8}\s+client\s+alice\s+`).MatchString(out) {
+		fatalf(t, "client current-context row does not show an 8-hex ID and USER alice:\n%s", out)
+	}
+
+	// Admin: capture the current context's name and short ID from the listing.
+	out = execIn(t, "admin", "tw config get-contexts")
+	row := regexp.MustCompile(`(?m)^\*\s+(\S+)\s+([0-9a-f]{8})\s+admin\s+`).FindStringSubmatch(out)
+	if row == nil {
+		fatalf(t, "admin current-context row missing name or 8-hex ID:\n%s", out)
+	}
+	name, id := row[1], row[2]
+
+	// New empty context becomes current; the original is preserved (sealed).
+	execIn(t, "admin", "tw config new-context scratch")
+	if cur := execIn(t, "admin", "tw config current-context"); !strings.Contains(cur, "scratch") {
+		fatalf(t, "current-context after new-context = %q, want scratch", cur)
+	}
+
+	// Switch back by short ID alone — the point of the ID column.
+	execIn(t, "admin", "tw config use-context "+id)
+	if cur := execIn(t, "admin", "tw config current-context"); !strings.Contains(cur, name) {
+		fatalf(t, "use-context %s did not switch back to %q:\n%s", id, name, cur)
+	}
+
+	// Rename and delete the scratch context; the listing must end clean.
+	execIn(t, "admin", "tw config rename-context scratch scratch2")
+	execIn(t, "admin", "tw config delete-context scratch2")
+	out = execIn(t, "admin", "tw config get-contexts")
+	if strings.Contains(out, "scratch") {
+		fatalf(t, "scratch context still listed after rename+delete:\n%s", out)
+	}
+	// The admin's context must still hold its identity after the round-trip.
+	if !strings.Contains(out, id) {
+		fatalf(t, "admin context lost its ID %s after the switch round-trip:\n%s", id, out)
+	}
+}
 // The scenarios below are not yet implemented. Their Skip messages state the
 // behaviour they will verify, so `go test -v` documents the intended coverage.
-func testContexts(t *testing.T) {
-	t.Skip("NOT YET IMPLEMENTED (Task 8): kubectl-style context switching — new/rename/delete/use-context, export/import round-trip, and current-context reflected by the running client")
-}
-func testSecondTenant(t *testing.T) {
-	t.Skip("NOT YET IMPLEMENTED (Task 8): multi-tenancy — a second server enrolls on the same admin relay non-disruptively (no xray restart, admin not locked out), each tenant isolated (server A's client cannot reach server B)")
-}
 func testDashboard(t *testing.T) {
 	t.Skip("NOT YET IMPLEMENTED (Task 9): the in-server dashboard serves, shows live status/logs over SSE, and the relay terminal works")
 }

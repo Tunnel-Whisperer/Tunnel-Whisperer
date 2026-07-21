@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
@@ -12,13 +13,36 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 )
 
+// renderRelayAuthorizedKeys composes the relay's tw-managed authorized_keys
+// file: the admin's tunnel-only key first, then one forward-only line per
+// enrolled server. Every line is newline-terminated and the file is fully
+// rewritten on each enroll (same philosophy as the Caddyfile and the relay
+// config.json), so a stale or corrupted file self-heals.
+//
+// Server lines: restrict = no shell/exec/sudo/agent/x11 and no forwarding;
+// port-forwarding re-enables forwarding (restrict alone denies the
+// tcpip-forward request); permitlisten limits the -R reverse forward to this
+// tenant's own port; permitopen pins local (-L) forwarding to a dead sentinel
+// port so a tenant can't reach the relay's Xray gRPC API (127.0.0.1:10085) or
+// other loopback ports. The admin key is unrestricted (beyond tunnel-only
+// from=), so admin -L (for gRPC) still works.
+func renderRelayAuthorizedKeys(adminPubKey string, servers []RegisteredServer) string {
+	lines := []string{fmt.Sprintf(`from="127.0.0.1" %s`, strings.TrimSpace(adminPubKey))}
+	for _, s := range servers {
+		lines = append(lines, fmt.Sprintf(
+			`from="127.0.0.1",restrict,port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:%d" %s`,
+			s.RemotePort, strings.TrimSpace(s.SSHPubkey)))
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
 // EnrollServer registers a joining server onto the admin's relay non-disruptively:
 //  1. AddServer — allocates a RemotePort and records the server in the registry.
 //  2. Builds the FULL tenant list: the admin's own entry + every registered server.
 //  3. Over RelaySSH:
 //     - writes each CA cert to /etc/caddy/ca/<id>.crt
 //     - re-renders + validates + reloads the Caddyfile (graceful; no xray restart)
-//     - appends the new server's SSH pubkey to authorized_keys idempotently
+//     - rewrites authorized_keys in full (admin key + every tenant's key)
 //     - writes the full Xray config.json for persistence
 //     - calls liveAddTenant for only the new tenant (no xray restart)
 //  4. Returns a JoinResponse with the admin-assigned coordinates.
@@ -121,6 +145,13 @@ func (o *Ops) EnrollServer(req *JoinRequest, progress ProgressFunc) (*JoinRespon
 
 	sshUser := cfg.Server.RelaySSHUser
 
+	adminPubKey, err := os.ReadFile(filepath.Join(config.Dir(), "id_ed25519.pub"))
+	if err != nil {
+		progress(ProgressEvent{Step: 3, Total: total, Label: "Apply relay config", Status: "failed", Error: err.Error()})
+		return nil, fmt.Errorf("reading admin public key: %w", err)
+	}
+	akContent := renderRelayAuthorizedKeys(string(adminPubKey), allServers)
+
 	err = o.RelaySSH(func(client *gossh.Client) error {
 		// Ensure CA directory exists.
 		if err := runRelayCmd(client, "sudo mkdir -p /etc/caddy/ca"); err != nil {
@@ -152,31 +183,21 @@ func (o *Ops) EnrollServer(req *JoinRequest, progress ProgressFunc) (*JoinRespon
 			return fmt.Errorf("reloading caddy: %w", err)
 		}
 
-		// Append the new server's SSH pubkey, restricted: a tenant may ONLY
-		// establish its reverse forward on its own port — no shell, no exec, no
-		// sudo (management stays admin-only) — and only through the tunnel
-		// (from="127.0.0.1"). Strip any prior line for this key first so a
-		// re-enroll can't leave an unrestricted copy behind.
+		// Rewrite the relay's authorized_keys in full from the tenant list —
+		// same philosophy as the Caddyfile and config.json above. A previous
+		// version APPENDED the new line without a trailing newline, so the
+		// second enroll glued its line onto the first server's, corrupting
+		// both entries (sshd rejects the merged line). Rewriting is idempotent
+		// and self-heals such a file. The file is tw-managed: admin key first,
+		// then one line per enrolled server.
 		akPath := fmt.Sprintf("/home/%s/.ssh/authorized_keys", sshUser)
-		keyBody := req.SSHPubkey
-		if f := strings.Fields(req.SSHPubkey); len(f) >= 2 {
-			keyBody = f[1] // the base64 key material — no shell/regex metachars
-		}
-		// restrict = no shell/exec/sudo/agent/x11 and no forwarding; port-forwarding
-		// re-enables forwarding (restrict alone denies the tcpip-forward request);
-		// permitlisten limits the -R reverse forward to this tenant's own port;
-		// permitopen pins local (-L) forwarding to a dead sentinel port so a tenant
-		// can't reach the relay's Xray gRPC API (127.0.0.1:10085) or other loopback
-		// ports. The admin key is unrestricted, so admin -L (for gRPC) still works.
-		line := fmt.Sprintf(`from="127.0.0.1",restrict,port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:%d" %s`,
-			newServer.RemotePort, req.SSHPubkey)
-		lineB64 := base64.StdEncoding.EncodeToString([]byte(line))
-		writeKey := fmt.Sprintf(
-			"sudo touch %s && sudo sed -i '\\#%s#d' %s && echo %s | base64 -d | sudo tee -a %s >/dev/null",
-			akPath, keyBody, akPath, lineB64, akPath,
+		akB64 := base64.StdEncoding.EncodeToString([]byte(akContent))
+		writeKeys := fmt.Sprintf(
+			"echo %s | base64 -d | sudo tee %s >/dev/null && sudo chown %s:%s %s && sudo chmod 600 %s",
+			akB64, akPath, sshUser, sshUser, akPath, akPath,
 		)
-		if err := runRelayCmd(client, writeKey); err != nil {
-			return fmt.Errorf("appending ssh pubkey: %w", err)
+		if err := runRelayCmd(client, writeKeys); err != nil {
+			return fmt.Errorf("writing authorized_keys: %w", err)
 		}
 
 		// Write the full Xray config.json for persistence (survives xray restarts/reboots).
