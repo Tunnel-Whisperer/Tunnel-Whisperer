@@ -92,3 +92,20 @@ Server-only commands (like `tw create user`) cannot run in client mode, and vice
 The dashboard shows "Configuration has changed. Restart/Reconnect to apply." when the config file on disk differs from what was loaded at startup.
 
 **Fix:** Click the Restart (server) or Reconnect (client) button to apply changes.
+
+### "VLESS (with no Flow, etc.) is deprecated" Warning on the Relay
+
+The relay's Xray logs (`journalctl -u xray`) may show this at startup:
+
+```
+[Warning] common/errors: The feature VLESS (with no Flow, etc.) is deprecated, not recommended for using and might be removed. Please migrate to VLESS with Flow & Seed as soon as possible.
+```
+
+This is **normal and harmless**. It is an upstream xray-core advisory aimed at setups where VLESS is the only encryption layer. Tunnel Whisperer intentionally runs "plain" VLESS:
+
+- **Flow** (XTLS Vision) requires a raw TCP+TLS transport. Tunnel Whisperer runs VLESS over XHTTP behind Caddy, where Flow does not apply by design.
+- **Seed** (VLESS Encryption) would add encryption at the VLESS layer, but the stream is already wrapped in Caddy's TLS 1.3 with mutual TLS, and the payload inside is end-to-end SSH-encrypted. A third encryption layer adds nothing.
+
+Upstream explicitly keeps plain VLESS working (it is their "non-removal" deprecation class), so no configuration change is needed.
+
+**Fix:** None required — safe to ignore.
