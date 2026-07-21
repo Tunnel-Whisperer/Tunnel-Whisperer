@@ -2,7 +2,6 @@ package ops
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
 )
@@ -11,25 +10,10 @@ import (
 const portRange = 1000
 
 func sanitizeHostname(s string) string {
-	var b strings.Builder
-	prevDash := false
-	for _, r := range strings.ToLower(s) {
-		switch {
-		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
-			b.WriteRune(r)
-			prevDash = false
-		default:
-			if !prevDash {
-				b.WriteByte('-')
-				prevDash = true
-			}
-		}
+	if out := config.SanitizeName(s); out != "" {
+		return out
 	}
-	out := strings.Trim(b.String(), "-")
-	if out == "" {
-		return "tw"
-	}
-	return out
+	return "tw"
 }
 
 func first8(uuid string) string {

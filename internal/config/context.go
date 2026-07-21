@@ -29,6 +29,44 @@ func ShortID(uuid string) string {
 	return u
 }
 
+// SanitizeName lowercases s and collapses every non-alphanumeric run into a
+// single dash ("" stays ""). Used for context names and server IDs.
+func SanitizeName(s string) string {
+	var b strings.Builder
+	prevDash := false
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			b.WriteRune(r)
+			prevDash = false
+		default:
+			if !prevDash {
+				b.WriteByte('-')
+				prevDash = true
+			}
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+// DefaultContextName derives a self-explanatory context name from profile
+// metadata: a client context is named after its user, an admin context
+// admin-<relay's first DNS label>, anything else after the relay domain.
+// Returns "" when there is nothing to derive from — callers pick their own
+// fallback ("default" for the migration, "tw" for imports).
+func DefaultContextName(role, relay, user string) string {
+	switch {
+	case role == "client" && user != "":
+		return SanitizeName(user)
+	case role == "admin":
+		if relay != "" {
+			return "admin-" + SanitizeName(strings.SplitN(relay, ".", 2)[0])
+		}
+		return "admin"
+	}
+	return SanitizeName(relay)
+}
+
 // MetaForConfig derives the context-index metadata for a live config.
 func MetaForConfig(cfg *Config) (role, relay, user, id string) {
 	role, relay = cfg.Mode, cfg.Xray.RelayHost
@@ -105,8 +143,12 @@ func EnsureContextIndex() (*ContextIndex, error) {
 		return nil, fmt.Errorf("loading config for migration: %w", err)
 	}
 	role, relay, user, id := MetaForConfig(cfg)
-	idx.CurrentContext = "default"
-	idx.Contexts["default"] = ContextMeta{
+	name := DefaultContextName(role, relay, user)
+	if name == "" {
+		name = "default"
+	}
+	idx.CurrentContext = name
+	idx.Contexts[name] = ContextMeta{
 		Role:    role,
 		Relay:   relay,
 		User:    user,

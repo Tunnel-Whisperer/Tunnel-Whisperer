@@ -45,6 +45,12 @@ func testUserLifecycle(t *testing.T) {
 	// Export as a client context bundle; import + activate on the client.
 	execIn(t, "server", "cd /shared && rm -f alice-tw-context.twctx && tw config export-user alice")
 	execIn(t, "client", "tw config import /shared/alice-tw-context.twctx --activate")
+	// Without --name, a client bundle's context is named after its user — the
+	// self-explanatory default (not the relay domain).
+	curCtx := execIn(t, "client", "tw config current-context")
+	if !strings.Contains(curCtx, "alice") {
+		fatalf(t, "imported context not named after the user: current-context = %q, want alice", curCtx)
+	}
 	execIn(t, "client", "tw client listen") // prints current listen address; covers the command
 
 	// Connect and prove byte-for-byte traffic through relay + tunnel.

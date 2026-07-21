@@ -54,14 +54,34 @@ func TestEnsureContextIndexMigratesLegacyConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if idx.CurrentContext != "default" {
-		t.Fatalf("current = %q, want default", idx.CurrentContext)
+	// Migration names the context from the live config (admin + relay), not
+	// the old hardcoded "default".
+	if idx.CurrentContext != "admin-a" {
+		t.Fatalf("current = %q, want admin-a", idx.CurrentContext)
 	}
-	m, ok := idx.Contexts["default"]
+	m, ok := idx.Contexts["admin-a"]
 	if !ok || m.Role != "admin" || m.Relay != "a.example.com" {
-		t.Fatalf("default meta wrong: %+v", idx.Contexts)
+		t.Fatalf("admin-a meta wrong: %+v", idx.Contexts)
 	}
 	if _, err := os.Stat(filepath.Join(Dir(), "contexts.yaml")); err != nil {
 		t.Errorf("index not written: %v", err)
+	}
+}
+
+func TestDefaultContextName(t *testing.T) {
+	cases := []struct{ role, relay, user, want string }{
+		{"client", "hds-t2.mint-tunnel.com", "server-1-user", "server-1-user"},
+		{"client", "hds-t2.mint-tunnel.com", "Alice B", "alice-b"}, // sanitized
+		{"client", "hds-t2.mint-tunnel.com", "", "hds-t2-mint-tunnel-com"},
+		{"admin", "hds-t2.mint-tunnel.com", "", "admin-hds-t2"},
+		{"admin", "", "", "admin"},
+		{"server", "hds-t2.mint-tunnel.com", "", "hds-t2-mint-tunnel-com"},
+		{"", "hds-t2.mint-tunnel.com", "", "hds-t2-mint-tunnel-com"},
+		{"", "", "", ""},
+	}
+	for _, c := range cases {
+		if got := DefaultContextName(c.role, c.relay, c.user); got != c.want {
+			t.Errorf("DefaultContextName(%q,%q,%q) = %q, want %q", c.role, c.relay, c.user, got, c.want)
+		}
 	}
 }

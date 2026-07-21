@@ -134,16 +134,18 @@ func TestDeleteCurrentWithOthersRefused(t *testing.T) {
 func TestNewContextPreservesCurrent(t *testing.T) {
 	t.Setenv("TW_CONFIG_DIR", t.TempDir())
 	o := newOpsForTest(t)
-	if _, err := config.EnsureContextIndex(); err != nil { // migrate "default"
+	// Migration derives the name from the live config: mode admin, no relay
+	// → "admin".
+	if _, err := config.EnsureContextIndex(); err != nil {
 		t.Fatal(err)
 	}
-	// Create a fresh empty context, preserving "default" (sealed, no passphrase).
+	// Create a fresh empty context, preserving "admin" (sealed, no passphrase).
 	if err := o.NewContext("srv"); err != nil {
 		t.Fatal(err)
 	}
 	// The previous context is preserved as a sealed snapshot.
-	if _, err := os.Stat(config.ContextBundlePath("default")); err != nil {
-		t.Errorf("default context not sealed/preserved: %v", err)
+	if _, err := os.Stat(config.ContextBundlePath("admin")); err != nil {
+		t.Errorf("admin context not sealed/preserved: %v", err)
 	}
 	// The new context is current and its live profile is empty.
 	if cur, _ := o.CurrentContext(); cur != "srv" {
@@ -161,19 +163,18 @@ func TestNewContextPreservesCurrent(t *testing.T) {
 func TestUseContextSwitchesActive(t *testing.T) {
 	t.Setenv("TW_CONFIG_DIR", t.TempDir())
 	o := newOpsForTest(t)
-	idx, _ := config.EnsureContextIndex() // migrates "default"
+	idx, _ := config.EnsureContextIndex() // migrates as "admin" (mode admin, no relay)
 	_ = idx
 	// Seed a second context to switch to.
 	seedContext(t, "relay-b", "client", "b.example.com", "pw")
 
-	// Switching preserves the content-bearing "default" (sealed, no passphrase)
-	// and proceeds without any prompt.
+	// Switching preserves the content-bearing "admin" context (sealed, no
+	// passphrase) and proceeds without any prompt.
 	if err := o.UseContext("relay-b", func(ProgressEvent) {}); err != nil {
 		t.Fatal(err)
 	}
-	// "default" is preserved as a sealed snapshot.
-	if _, err := os.Stat(config.ContextBundlePath("default")); err != nil {
-		t.Errorf("default context not preserved on switch: %v", err)
+	if _, err := os.Stat(config.ContextBundlePath("admin")); err != nil {
+		t.Errorf("admin context not preserved on switch: %v", err)
 	}
 	cur, _ := o.CurrentContext()
 	if cur != "relay-b" {

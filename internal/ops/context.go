@@ -192,7 +192,10 @@ func (o *Ops) ImportContext(bundle []byte, name string, replace bool) (string, e
 	}
 	bm := readBundleMeta(plain)
 	if name == "" {
-		name = sanitizeHostname(bm.Relay)
+		name = config.DefaultContextName(bm.Role, bm.Relay, bm.User)
+		if name == "" {
+			name = "tw"
+		}
 	}
 	if _, exists := idx.Contexts[name]; exists && !replace {
 		return name, fmt.Errorf("%w: %s", ErrContextExists, name)
