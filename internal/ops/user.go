@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/cryptobox"
+	"github.com/tunnelwhisperer/tw/internal/ops/modeauth"
 	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
 	twxray "github.com/tunnelwhisperer/tw/internal/xray"
 	proxymanCmd "github.com/xtls/xray-core/app/proxyman/command"
@@ -801,6 +802,14 @@ func (o *Ops) GetUserConfigBundle(name string) (bundle []byte, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("setting client mode: %w", err)
 	}
+	userPub, err := os.ReadFile(filepath.Join(userDir, "id_ed25519.pub"))
+	if err != nil {
+		return nil, fmt.Errorf("reading user public key: %w", err)
+	}
+	clientCfg, err = injectClientModeAuth(clientCfg, userPub)
+	if err != nil {
+		return nil, fmt.Errorf("signing client mode: %w", err)
+	}
 	if w, err := zw.Create("config.yaml"); err != nil {
 		return nil, err
 	} else if _, err := w.Write(clientCfg); err != nil {
@@ -861,6 +870,30 @@ func injectMode(cfgYAML []byte, mode string) ([]byte, error) {
 		m = map[string]interface{}{}
 	}
 	m["mode"] = mode
+	return yaml.Marshal(m)
+}
+
+// injectClientModeAuth signs (client, <user pubkey>) with the server's own key
+// and writes a mode_auth block into the user's client config.yaml, making the
+// exported client's mode tamper-evident. Best-effort: on any signing error the
+// bundle is emitted without a signature (legacy-tolerated on import).
+func injectClientModeAuth(cfgYAML, userPubAuthorized []byte) ([]byte, error) {
+	priv, err := profilePrivPEM()
+	if err != nil {
+		return cfgYAML, nil
+	}
+	sig, issuer, err := modeauth.Sign(priv, "client", strings.TrimSpace(string(userPubAuthorized)))
+	if err != nil {
+		return cfgYAML, nil
+	}
+	var m map[string]interface{}
+	if err := yaml.Unmarshal(cfgYAML, &m); err != nil {
+		return nil, err
+	}
+	if m == nil {
+		m = map[string]interface{}{}
+	}
+	m["mode_auth"] = map[string]string{"sig": sig, "issuer": issuer}
 	return yaml.Marshal(m)
 }
 
