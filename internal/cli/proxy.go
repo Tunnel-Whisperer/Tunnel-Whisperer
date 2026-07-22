@@ -47,7 +47,7 @@ func init() {
 }
 
 func runProxyShow(cmd *cobra.Command, args []string) error {
-	if err := requireMode("server", "client"); err != nil {
+	if err := requireMode("server", "client", "relay"); err != nil {
 		return err
 	}
 	cfg, err := config.Load()
@@ -63,7 +63,7 @@ func runProxyShow(cmd *cobra.Command, args []string) error {
 }
 
 func runProxySet(cmd *cobra.Command, args []string) error {
-	if err := requireMode("server", "client"); err != nil {
+	if err := requireMode("server", "client", "relay"); err != nil {
 		return err
 	}
 	o, err := ops.New()
@@ -79,7 +79,7 @@ func runProxySet(cmd *cobra.Command, args []string) error {
 }
 
 func runProxyClear(cmd *cobra.Command, args []string) error {
-	if err := requireMode("server", "client"); err != nil {
+	if err := requireMode("server", "client", "relay"); err != nil {
 		return err
 	}
 	o, err := ops.New()

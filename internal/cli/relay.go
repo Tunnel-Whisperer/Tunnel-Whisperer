@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// relayCmd groups everything the relay owner (admin profile) does to the
+// relayCmd groups everything the relay owner (relay profile) does to the
 // relay: provision, destroy, inspect, and register server tenants. The
 // commands are gated to the relay mode; the group is named after the object
 // they manage.

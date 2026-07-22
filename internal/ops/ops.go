@@ -118,6 +118,7 @@ func (o *Ops) Mode() string {
 
 // SetMode persists the operating mode to config.
 func (o *Ops) SetMode(mode string) error {
+	mode = config.CanonicalMode(mode)
 	if !config.ValidMode(mode) {
 		return fmt.Errorf("invalid mode: %q (must be \"server\", \"client\", or \"relay\")", mode)
 	}

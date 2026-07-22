@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
+	"github.com/tunnelwhisperer/tw/internal/ops/modeauth"
 )
 
 // joinServerIDRe is the server-id shape the relay renderers also enforce
@@ -158,12 +160,24 @@ func (o *Ops) ApplyJoinResponse(r *JoinResponse) error {
 		return fmt.Errorf("persisting remote port: %w", err)
 	}
 	if r.ModeSig != "" && r.ModeIssuer != "" {
-		o.mu.Lock()
-		o.cfg.ModeAuth = &config.ModeAuth{Sig: r.ModeSig, Issuer: r.ModeIssuer}
-		cfg := o.cfg
-		o.mu.Unlock()
-		if err := config.Save(cfg); err != nil {
-			return fmt.Errorf("persisting mode signature: %w", err)
+		id, err := profileIdentity()
+		if err == nil {
+			err = modeauth.Verify("server", id, r.ModeSig, r.ModeIssuer)
+		}
+		if err != nil {
+			// A signature that doesn't verify against THIS server's own
+			// identity would brick the server (every command would then fail
+			// "mode signature invalid"). Degrade to legacy-unsigned instead
+			// of persisting it — the rest of ApplyJoinResponse already ran.
+			slog.Warn("received mode signature does not verify; storing profile unsigned", "error", err)
+		} else {
+			o.mu.Lock()
+			o.cfg.ModeAuth = &config.ModeAuth{Sig: r.ModeSig, Issuer: r.ModeIssuer}
+			cfg := o.cfg
+			o.mu.Unlock()
+			if err := config.Save(cfg); err != nil {
+				return fmt.Errorf("persisting mode signature: %w", err)
+			}
 		}
 	}
 	return nil

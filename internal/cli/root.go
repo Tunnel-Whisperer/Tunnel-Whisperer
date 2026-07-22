@@ -113,6 +113,7 @@ func verifyModeAuth(cfg *config.Config) error {
 	}
 	// mode_auth ABSENT (legacy / pre-setup):
 	if cfg.Mode == "relay" {
+		slog.Warn("relay profile unsigned; self-signing mode_auth", "mode", cfg.Mode)
 		if o, err := ops.New(); err == nil {
 			_ = o.StampAndSaveModeAuth() // best-effort self-heal
 		}
