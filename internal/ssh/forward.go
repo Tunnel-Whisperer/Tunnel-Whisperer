@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +23,21 @@ type connectedError struct{ err error }
 
 func (e *connectedError) Error() string { return e.err.Error() }
 func (e *connectedError) Unwrap() error { return e.err }
+
+// explainTunnelError translates low-level tunnel dial errors into an
+// operator-readable explanation, or "" when there is nothing to add. An SSH
+// handshake ending in EOF means the byte-pipe through the relay closed before
+// the handshake finished. The client cannot tell WHY it closed — the server's
+// tunnel may be down (daemon stopped, restarting, or un-enrolled), or the
+// relay's xray rejected this user's VLESS UUID (not applied yet, or revoked).
+// Both look identical here, as opposed to an SSH authentication failure,
+// which reports "unable to authenticate".
+func explainTunnelError(err error) string {
+	if strings.Contains(err.Error(), "handshake failed: EOF") {
+		return "cannot reach the server through the relay — either the server's tunnel is down (not running, restarting, or un-enrolled) or this user's access is not active on the relay (not applied yet, or revoked); retrying"
+	}
+	return ""
+}
 
 // Mapping defines a single local-port → remote-host:port forwarding rule.
 type Mapping struct {
@@ -86,7 +102,11 @@ func (ft *ForwardTunnel) Run() error {
 
 		err := ft.connect()
 		if err != nil {
-			slog.Warn("forward tunnel connection failed", "error", err)
+			if reason := explainTunnelError(err); reason != "" {
+				slog.Warn(reason, "error", err)
+			} else {
+				slog.Warn("forward tunnel connection failed", "error", err)
+			}
 			ft.mu.Lock()
 			ft.connected = false
 			ft.lastErr = err.Error()
