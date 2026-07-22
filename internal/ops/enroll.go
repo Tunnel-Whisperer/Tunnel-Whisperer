@@ -36,6 +36,52 @@ func renderRelayAuthorizedKeys(adminPubKey string, servers []RegisteredServer) s
 	return strings.Join(lines, "\n") + "\n"
 }
 
+// relayTenantState builds the relay-side tenant state — Caddy server blocks,
+// xray tenants, and the CA certs to install — from the admin's own entry
+// plus the given registered servers.
+func (o *Ops) relayTenantState(registered []RegisteredServer) ([]caddy.Server, []relayxray.Tenant, map[string][]byte, error) {
+	cfg := o.Config()
+	osHost, _ := os.Hostname()
+	adminID := deriveServerID(osHost, cfg.Xray.UUID)
+	adminRemotePort := cfg.Server.RemotePort
+
+	adminCAPEM, err := os.ReadFile(config.CACertPath())
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("reading admin CA cert: %w", err)
+	}
+
+	servers := []caddy.Server{{
+		ID:         adminID,
+		Path:       "/tw/" + adminID,
+		CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", adminID),
+		Upstream:   fmt.Sprintf("h2c://127.0.0.1:%d", adminRemotePort+10000),
+		Role:       "admin",
+	}}
+	tenants := []relayxray.Tenant{{
+		ServerID:   adminID,
+		UUID:       cfg.Xray.UUID,
+		RemotePort: adminRemotePort,
+	}}
+	caCerts := map[string][]byte{adminID: adminCAPEM}
+
+	for _, s := range registered {
+		servers = append(servers, caddy.Server{
+			ID:         s.ServerID,
+			Path:       "/tw/" + s.ServerID,
+			CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", s.ServerID),
+			Upstream:   fmt.Sprintf("h2c://127.0.0.1:%d", s.RemotePort+10000),
+			Role:       "server",
+		})
+		tenants = append(tenants, relayxray.Tenant{
+			ServerID:   s.ServerID,
+			UUID:       s.UUID,
+			RemotePort: s.RemotePort,
+		})
+		caCerts[s.ServerID] = []byte(s.CACertPEM)
+	}
+	return servers, tenants, caCerts, nil
+}
+
 // EnrollServer registers a joining server onto the admin's relay non-disruptively:
 //  1. AddServer — allocates a RemotePort and records the server in the registry.
 //  2. Builds the FULL tenant list: the admin's own entry + every registered server.
@@ -67,54 +113,15 @@ func (o *Ops) EnrollServer(req *JoinRequest, progress ProgressFunc) (*JoinRespon
 	progress(ProgressEvent{Step: 2, Total: total, Label: "Build tenant list", Status: "running"})
 	cfg := o.Config()
 
-	osHost, _ := os.Hostname()
-	adminID := deriveServerID(osHost, cfg.Xray.UUID)
-	adminRemotePort := cfg.Server.RemotePort
-
-	// Read admin's own CA cert.
-	adminCAPEM, err := os.ReadFile(config.CACertPath())
-	if err != nil {
-		progress(ProgressEvent{Step: 2, Total: total, Label: "Build tenant list", Status: "failed", Error: err.Error()})
-		return nil, fmt.Errorf("reading admin CA cert: %w", err)
-	}
-
-	// Seed with the admin's own entry.
-	servers := []caddy.Server{{
-		ID:         adminID,
-		Path:       "/tw/" + adminID,
-		CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", adminID),
-		Upstream:   fmt.Sprintf("h2c://127.0.0.1:%d", adminRemotePort+10000),
-		Role:       "admin",
-	}}
-	tenants := []relayxray.Tenant{{
-		ServerID:   adminID,
-		UUID:       cfg.Xray.UUID,
-		RemotePort: adminRemotePort,
-	}}
-	caCerts := map[string][]byte{
-		adminID: adminCAPEM,
-	}
-
-	// All registered servers (includes the one just added).
 	allServers, err := o.ListServers()
 	if err != nil {
 		progress(ProgressEvent{Step: 2, Total: total, Label: "Build tenant list", Status: "failed", Error: err.Error()})
 		return nil, fmt.Errorf("listing registered servers: %w", err)
 	}
-	for _, s := range allServers {
-		servers = append(servers, caddy.Server{
-			ID:         s.ServerID,
-			Path:       "/tw/" + s.ServerID,
-			CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", s.ServerID),
-			Upstream:   fmt.Sprintf("h2c://127.0.0.1:%d", s.RemotePort+10000),
-			Role:       "server",
-		})
-		tenants = append(tenants, relayxray.Tenant{
-			ServerID:   s.ServerID,
-			UUID:       s.UUID,
-			RemotePort: s.RemotePort,
-		})
-		caCerts[s.ServerID] = []byte(s.CACertPEM)
+	servers, tenants, caCerts, err := o.relayTenantState(allServers)
+	if err != nil {
+		progress(ProgressEvent{Step: 2, Total: total, Label: "Build tenant list", Status: "failed", Error: err.Error()})
+		return nil, err
 	}
 
 	newTenant := relayxray.Tenant{
