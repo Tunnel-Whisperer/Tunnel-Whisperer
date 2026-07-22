@@ -19,3 +19,18 @@ func TestKillRelayListenerCmd(t *testing.T) {
 		t.Errorf("command must end in 'true' so no-match is not an error:\n%s", cmd)
 	}
 }
+
+func TestExcludeServer(t *testing.T) {
+	in := []RegisteredServer{
+		{ServerID: "a-1", RemotePort: 20000},
+		{ServerID: "b-2", RemotePort: 20001},
+		{ServerID: "c-3", RemotePort: 20002},
+	}
+	out := excludeServer(in, "b-2")
+	if len(out) != 2 || out[0].ServerID != "a-1" || out[1].ServerID != "c-3" {
+		t.Errorf("excludeServer(b-2) = %+v, want a-1 and c-3 in order", out)
+	}
+	if got := excludeServer(in, "nope"); len(got) != 3 {
+		t.Errorf("excluding an absent id must keep all %d servers, got %d", len(in), len(got))
+	}
+}
