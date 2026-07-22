@@ -40,6 +40,8 @@ type JoinResponse struct {
 	Path       string `json:"path"`
 	RemotePort int    `json:"remote_port"`
 	SSHUser    string `json:"ssh_user"`
+	ModeSig    string `json:"mode_sig,omitempty"`
+	ModeIssuer string `json:"mode_issuer,omitempty"`
 }
 
 func (r *JoinRequest) Encode() ([]byte, error)  { return json.MarshalIndent(r, "", "  ") }
@@ -154,6 +156,15 @@ func (o *Ops) ApplyJoinResponse(r *JoinResponse) error {
 	}
 	if err := o.SetServerSettings(config.ServerConfig{RemotePort: r.RemotePort, RelaySSHUser: r.SSHUser}); err != nil {
 		return fmt.Errorf("persisting remote port: %w", err)
+	}
+	if r.ModeSig != "" && r.ModeIssuer != "" {
+		o.mu.Lock()
+		o.cfg.ModeAuth = &config.ModeAuth{Sig: r.ModeSig, Issuer: r.ModeIssuer}
+		cfg := o.cfg
+		o.mu.Unlock()
+		if err := config.Save(cfg); err != nil {
+			return fmt.Errorf("persisting mode signature: %w", err)
+		}
 	}
 	return nil
 }

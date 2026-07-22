@@ -3,15 +3,28 @@ package ops
 import (
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
+	"github.com/tunnelwhisperer/tw/internal/ops/modeauth"
 	"github.com/tunnelwhisperer/tw/internal/relay/caddy"
 	relayxray "github.com/tunnelwhisperer/tw/internal/relay/xray"
 	gossh "golang.org/x/crypto/ssh"
 )
+
+// signServerMode signs (mode=server, identity=<server's SSH pubkey>) with the
+// relay's own key, for the join response. The server's identity comes from the
+// join request, binding the token to that server's keypair.
+func (o *Ops) signServerMode(req *JoinRequest) (sig, issuer string, err error) {
+	priv, err := profilePrivPEM()
+	if err != nil {
+		return "", "", fmt.Errorf("reading relay key: %w", err)
+	}
+	return modeauth.Sign(priv, "server", strings.TrimSpace(req.SSHPubkey))
+}
 
 // renderRelayAuthorizedKeys composes the relay's tw-managed authorized_keys
 // file: the admin's tunnel-only key first, then one forward-only line per
@@ -238,12 +251,22 @@ func (o *Ops) EnrollServer(req *JoinRequest, progress ProgressFunc) (*JoinRespon
 	progress(ProgressEvent{Step: 5, Total: total, Label: "Done", Status: "completed",
 		Message: fmt.Sprintf("%s enrolled on relay %s", req.ServerID, cfg.Xray.RelayHost)})
 
-	return &JoinResponse{
+	resp := &JoinResponse{
 		Version:    1,
 		ServerID:   req.ServerID,
 		RelayHost:  cfg.Xray.RelayHost,
 		Path:       "/tw/" + req.ServerID,
 		RemotePort: newServer.RemotePort,
 		SSHUser:    sshUser,
-	}, nil
+	}
+	// Sign the server's mode into the response so it can verify its own
+	// identity later. Signing failure is legacy-tolerated: the enroll itself
+	// already succeeded, so return the response unsigned rather than fail it.
+	if sig, issuer, err := o.signServerMode(req); err != nil {
+		slog.Warn("signing server mode for join response failed; returning unsigned", "server_id", req.ServerID, "error", err)
+	} else {
+		resp.ModeSig = sig
+		resp.ModeIssuer = issuer
+	}
+	return resp, nil
 }
