@@ -10,11 +10,11 @@ import (
 
 // relayCmd groups everything the relay owner (admin profile) does to the
 // relay: provision, destroy, inspect, and register server tenants. The
-// commands are gated to the admin mode; the group is named after the object
+// commands are gated to the relay mode; the group is named after the object
 // they manage.
 var relayCmd = &cobra.Command{
 	Use:   "relay",
-	Short: "Manage the relay server (admin role)",
+	Short: "Manage the relay server (relay role)",
 }
 
 func init() {

@@ -11,7 +11,7 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
-// testRelayCmd is the admin-mode relay test; gated to admin.
+// testRelayCmd is the relay-mode relay test; gated to relay.
 var testRelayCmd = &cobra.Command{
 	Use:   "test",
 	Short: "Test connectivity to the relay server",
@@ -54,7 +54,7 @@ func init() {
 }
 
 // sharedTestRelay contains the shared relay-test logic used by all three role
-// variants (admin, server, client).
+// variants (relay, server, client).
 func sharedTestRelay() error {
 	cfg, _ := config.Load()
 	addr := fmt.Sprintf("localhost:%d", cfg.Server.APIPort)

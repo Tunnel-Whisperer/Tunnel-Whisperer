@@ -6,7 +6,7 @@
   <div class="mode-cards">
     <div class="mode-card" onclick="selectMode('server')">
       <h2>Server</h2>
-      <p class="text-dim">Run behind a firewall. Connects to an admin-owned relay, starts SSH + Xray, and lets clients connect in.</p>
+      <p class="text-dim">Run behind a firewall. Connects to a relay owned by a Relay instance, starts SSH + Xray, and lets clients connect in.</p>
       <ul class="mode-features">
         <li>Connect through a relay</li>
         <li>Reverse tunnel through Xray</li>
@@ -26,15 +26,15 @@
       <button class="btn btn-primary" style="margin-top:auto">Set up as Client</button>
     </div>
 
-    <div class="mode-card" onclick="selectMode('admin')">
-      <h2>Admin</h2>
+    <div class="mode-card" onclick="selectMode('relay')">
+      <h2>Relay</h2>
       <p class="text-dim">Own and manage the relay. Create it, hold the admin bundle, SSH in, and admit servers.</p>
       <ul class="mode-features">
         <li>Provision &amp; manage the relay</li>
         <li>Hold the admin bundle</li>
         <li>Admit and observe servers</li>
       </ul>
-      <button class="btn btn-primary" style="margin-top:auto">Set up as Admin</button>
+      <button class="btn btn-primary" style="margin-top:auto">Set up as Relay</button>
     </div>
   </div>
 </div>

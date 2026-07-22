@@ -11,7 +11,7 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
-// relayStatusCmd is the admin-mode status command; gated to admin.
+// relayStatusCmd is the relay-mode status command; gated to relay.
 var relayStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show current relay and tunnel status",
