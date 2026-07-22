@@ -99,7 +99,7 @@ func init() {
 
 // newContextSealingCurrent creates a fresh empty context named `name` and
 // switches to it, preserving the current context (sealed with no passphrase).
-// Shared by `tw config new-context` and `tw server join --new-context`.
+// Shared by `tw config new-context` and `tw server join-relay --new-context`.
 func newContextSealingCurrent(o *ops.Ops, name string) error {
 	return o.NewContext(name)
 }
@@ -112,7 +112,7 @@ func runConfigNewContext(cmd *cobra.Command, args []string) error {
 	if err := newContextSealingCurrent(o, args[0]); err != nil {
 		return err
 	}
-	fmt.Printf("  Created context %q and switched to it. Configure it (e.g. tw server join / a relay), then\n", args[0])
+	fmt.Printf("  Created context %q and switched to it. Configure it (e.g. tw server join-relay / a relay), then\n", args[0])
 	fmt.Println("  switch back any time with: tw config use-context <name>")
 	return nil
 }

@@ -429,7 +429,7 @@ func liveProfileEmpty() bool {
 
 // NewContext seals the current context (preserving it), then starts a FRESH
 // EMPTY context and switches to it. The new context is unconfigured — the caller
-// sets it up next (e.g. `tw server join`). Bundles carry no passphrase.
+// sets it up next (e.g. `tw server join-relay`). Bundles carry no passphrase.
 func (o *Ops) NewContext(name string) error {
 	idx, err := config.EnsureContextIndex()
 	if err != nil {

@@ -14,8 +14,8 @@ var (
 )
 
 var serverJoinCmd = &cobra.Command{
-	Use:   "join <relay-host>",
-	Short: "Generate this server's identity and a join-request for the relay admin",
+	Use:   "join-relay <relay-host>",
+	Short: "Join this server to a relay: generate a join-request for its admin, then --apply the enrollment response",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runServerJoin,
 }
@@ -53,7 +53,7 @@ func runServerJoin(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	if len(args) != 1 {
-		return fmt.Errorf("relay host required: tw server join <relay-host>")
+		return fmt.Errorf("relay host required: tw server join-relay <relay-host>")
 	}
 	req, err := o.GenerateJoinRequest(args[0])
 	if err != nil {
@@ -69,6 +69,6 @@ func runServerJoin(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("  Join request written: %s\n", fname)
 	fmt.Println("  Send it to the relay admin, who runs: tw relay enroll-server <this file>")
-	fmt.Println("  Then apply their response: tw server join --apply <response file>")
+	fmt.Println("  Then apply their response: tw server join-relay --apply <response file>")
 	return nil
 }

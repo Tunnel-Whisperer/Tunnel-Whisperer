@@ -10,7 +10,7 @@ commands:
   "relay get-servers":           [TestE2E/SecondTenant]
   "relay destroy":           [TestE2E/Teardown]
   "relay ssh":               {exempt: "interactive relay terminal; no scriptable assertion yet"}
-  "server join":             [TestE2E/ServerJoin, TestE2E/SecondTenant]
+  "server join-relay":       [TestE2E/ServerJoin, TestE2E/SecondTenant]
   "server start":            [TestE2E/ServerJoin]
   "server test":             [TestE2E/ServerJoin]
   "server status":           [TestE2E/ServerJoin]

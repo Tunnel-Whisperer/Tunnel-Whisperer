@@ -18,14 +18,14 @@ import (
 // is up via `tw server test`.
 func testServerJoin(t *testing.T) {
 	scenario(t, "a server joins the admin's relay non-disruptively and publishes its reverse tunnel",
-		"tw server join generates a join request (and sets mode=server)",
+		"tw server join-relay generates a join request (and sets mode=server)",
 		"tw relay enroll-server registers the tenant over the tunnel and re-renders + reloads the relay Caddyfile ('Caddyfile reloaded')",
-		"tw server join --apply applies the admin's enrollment response",
+		"tw server join-relay --apply applies the admin's enrollment response",
 		"tw server start + echo target come up and tw server test reports 'tunnel and shell working'",
 		"the local_certs shim reapply lands inside enroll's ~15s SSH-dial retry budget with >5s of margin")
 
 	// The server container's /etc/tw-test may carry state from an earlier full
-	// suite run (this suite must be re-runnable); wipe it so `tw server join`
+	// suite run (this suite must be re-runnable); wipe it so `tw server join-relay`
 	// always starts from a clean identity, same rationale as RelayInstall's
 	// admin seed wipe. A prior run's detached `tw server start`/`echo-server`
 	// processes also outlive the container across test invocations (nothing
@@ -42,7 +42,7 @@ func testServerJoin(t *testing.T) {
 	execIn(t, "server", "rm -rf /etc/tw-test")
 
 	// 1. Server generates identity + join request (this also sets mode=server).
-	execIn(t, "server", "cd /shared && rm -f tw_join_*.json && tw server join "+domain)
+	execIn(t, "server", "cd /shared && rm -f tw_join_*.json && tw server join-relay "+domain)
 
 	// 2. Admin enrolls it (SSH to relay over the VLESS tunnel) and writes the
 	// response. `tw relay enroll-server` step 3 ("Apply relay config") fully
@@ -106,7 +106,7 @@ func testServerJoin(t *testing.T) {
 	})
 
 	// 3. Server applies the response.
-	execIn(t, "server", "cd /shared && tw server join --apply /shared/tw_join_response_*.json")
+	execIn(t, "server", "cd /shared && tw server join-relay --apply /shared/tw_join_response_*.json")
 
 	// 4. Echo target + server daemon.
 	execDetached(t, "server", "echo-server -port "+echoPort)
@@ -128,9 +128,9 @@ func testServerJoin(t *testing.T) {
 // (server A's client cannot reach server B) is still deferred.
 func testSecondTenant(t *testing.T) {
 	scenario(t, "a second server enrolls on the same relay (third tenant) non-disruptively",
-		"tw server join on server2 generates its join request",
+		"tw server join-relay on server2 generates its join request",
 		"tw relay enroll-server live-adds the tenant (Caddyfile reloaded, no xray restart); tw relay get-servers lists both tenants",
-		"tw server join --apply applies the response on server2",
+		"tw server join-relay --apply applies the response on server2",
 		"server2's tw server test reports 'tunnel and shell working'",
 		"server-1's tw server test and the admin's tw relay test still pass (non-disruptive)",
 		"tw relay un-enroll-server --yes removes the LIVE server2: registry row gone, relay listener gone, its tunnel test fails",
@@ -149,7 +149,7 @@ func testSecondTenant(t *testing.T) {
 	respGlob := "/shared/tw_join_response_" + host + "-*.json"
 
 	// 1. server2 generates identity + join request.
-	execIn(t, "server2", "cd /shared && rm -f "+joinGlob+" "+respGlob+" && tw server join "+domain)
+	execIn(t, "server2", "cd /shared && rm -f "+joinGlob+" "+respGlob+" && tw server join-relay "+domain)
 	execIn(t, "server2", "ls "+joinGlob) // fail loudly here if the naming assumption breaks
 
 	// 2. Admin enrolls it — same detached + shim-reapply dance as ServerJoin:
@@ -188,7 +188,7 @@ func testSecondTenant(t *testing.T) {
 	server2ID, server2Port := row[1], row[2]
 
 	// 3. server2 applies the response.
-	execIn(t, "server2", "cd /shared && tw server join --apply "+respGlob)
+	execIn(t, "server2", "cd /shared && tw server join-relay --apply "+respGlob)
 
 	// 4. The new tenant's own tunnel works — this is the exact path reported
 	// broken in the field for a third tenant (VLESS dials, SSH never lands).
