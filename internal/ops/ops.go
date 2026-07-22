@@ -109,7 +109,7 @@ func (o *Ops) ReloadConfig() error {
 	return nil
 }
 
-// Mode returns the current operating mode ("server", "client", "admin", or "").
+// Mode returns the current operating mode ("server", "client", "relay", or "").
 func (o *Ops) Mode() string {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -119,7 +119,7 @@ func (o *Ops) Mode() string {
 // SetMode persists the operating mode to config.
 func (o *Ops) SetMode(mode string) error {
 	if !config.ValidMode(mode) {
-		return fmt.Errorf("invalid mode: %q (must be \"server\", \"client\", or \"admin\")", mode)
+		return fmt.Errorf("invalid mode: %q (must be \"server\", \"client\", or \"relay\")", mode)
 	}
 	o.mu.Lock()
 	o.cfg.Mode = mode

@@ -13,7 +13,7 @@ import (
 
 // Config holds all Tunnel Whisperer settings.
 type Config struct {
-	Mode      string          `yaml:"mode,omitempty"`       // "server", "client", or "admin"
+	Mode      string          `yaml:"mode,omitempty"`       // "server", "client", or "relay"
 	LogLevel  string          `yaml:"log_level,omitempty"`  // debug, info, warn, error
 	LogFormat string          `yaml:"log_format,omitempty"` // "text" (default) or "json"
 	Proxy     string          `yaml:"proxy,omitempty"`      // e.g. "socks5://user:pass@host:port" or "http://host:port"
@@ -23,10 +23,19 @@ type Config struct {
 	Analytics AnalyticsConfig `yaml:"analytics,omitempty"`
 }
 
-// ValidMode reports whether m is a recognized operating mode. It is the single
-// source of truth for the set of modes tw supports.
+// ValidMode reports whether m is a recognized canonical operating mode.
 func ValidMode(m string) bool {
-	return m == "server" || m == "client" || m == "admin"
+	return m == "server" || m == "client" || m == "relay"
+}
+
+// CanonicalMode maps legacy mode names to their canonical form. The relay
+// role was historically called "admin"; it is accepted on read and rewritten
+// to "relay". Any other value is returned unchanged.
+func CanonicalMode(m string) string {
+	if m == "admin" {
+		return "relay"
+	}
+	return m
 }
 
 // AnalyticsConfig controls bandwidth statistics collection.
@@ -205,6 +214,11 @@ func Load() (*Config, error) {
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
+	}
+
+	if canon := CanonicalMode(cfg.Mode); canon != cfg.Mode {
+		cfg.Mode = canon
+		_ = Save(cfg) // best-effort in-place migration; read-only dir is not fatal
 	}
 
 	return cfg, nil
