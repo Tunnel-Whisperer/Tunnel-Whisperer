@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
+	gossh "golang.org/x/crypto/ssh"
 )
 
 // RegisteredServer is one enrolled tenant in the admin registry.
@@ -17,6 +21,7 @@ type RegisteredServer struct {
 	RemotePort int    `json:"remote_port"`
 	CACertPEM  string `json:"ca_cert_pem"`
 	SSHPubkey  string `json:"ssh_pubkey"`
+	EnrolledAt string `json:"enrolled_at,omitempty"` // UTC RFC3339; "" on pre-existing entries
 }
 
 // RegistryDir holds one JSON file per enrolled server.
@@ -68,6 +73,7 @@ func (o *Ops) AddServer(req *JoinRequest) (RegisteredServer, error) {
 	s := RegisteredServer{
 		ServerID: req.ServerID, UUID: req.UUID, Hostname: req.Hostname,
 		RemotePort: port, CACertPEM: req.CACertPEM, SSHPubkey: req.SSHPubkey,
+		EnrolledAt: time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := os.MkdirAll(RegistryDir(), 0o755); err != nil {
 		return RegisteredServer{}, err
@@ -77,4 +83,76 @@ func (o *Ops) AddServer(req *JoinRequest) (RegisteredServer, error) {
 		return RegisteredServer{}, fmt.Errorf("writing registry entry: %w", err)
 	}
 	return s, nil
+}
+
+// ServerDetail is one row of `tw relay get-servers`: registry facts plus the
+// live tunnel state observed on the relay.
+type ServerDetail struct {
+	RegisteredServer
+	Path     string // /tw/<server-id>
+	TunnelUp bool   // the relay listens on 127.0.0.1:<RemotePort> (its reverse forward)
+}
+
+// GetServerDetails combines the registry with ONE live query against the
+// relay: `ss -tln` over the tunnelled SSH session. A server's reverse tunnel
+// is up iff the relay holds a listener on its allocated port. An empty
+// registry returns without dialing; a relay failure is returned as an error
+// (no stale table).
+func (o *Ops) GetServerDetails() ([]ServerDetail, error) {
+	servers, err := o.ListServers()
+	if err != nil {
+		return nil, err
+	}
+	if len(servers) == 0 {
+		return nil, nil
+	}
+	var listening map[int]bool
+	err = o.RelaySSH(func(client *gossh.Client) error {
+		session, err := client.NewSession()
+		if err != nil {
+			return fmt.Errorf("opening ssh session: %w", err)
+		}
+		defer session.Close()
+		// /proc/net/tcp{,6} instead of `ss`: always present on Linux, no
+		// dependency on iproute2 being installed on the relay.
+		out, err := session.Output("cat /proc/net/tcp /proc/net/tcp6")
+		if err != nil {
+			return fmt.Errorf("listing relay listeners (/proc/net/tcp): %w", err)
+		}
+		listening = parseListeningPorts(string(out))
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying relay: %w", err)
+	}
+	out := make([]ServerDetail, 0, len(servers))
+	for _, s := range servers {
+		out = append(out, ServerDetail{
+			RegisteredServer: s,
+			Path:             "/tw/" + s.ServerID,
+			TunnelUp:         listening[s.RemotePort],
+		})
+	}
+	return out, nil
+}
+
+// parseListeningPorts extracts the LISTEN local ports from concatenated
+// /proc/net/tcp and /proc/net/tcp6 content: column 2 is hexIP:hexPORT,
+// column 4 the state (0A = LISTEN). Header lines don't parse and are skipped.
+func parseListeningPorts(procNetTCP string) map[int]bool {
+	ports := map[int]bool{}
+	for _, line := range strings.Split(procNetTCP, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 4 || f[3] != "0A" {
+			continue
+		}
+		i := strings.LastIndex(f[1], ":")
+		if i < 0 {
+			continue
+		}
+		if p, err := strconv.ParseInt(f[1][i+1:], 16, 32); err == nil {
+			ports[int(p)] = true
+		}
+	}
+	return ports
 }

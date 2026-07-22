@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -166,11 +167,17 @@ func testSecondTenant(t *testing.T) {
 		return false, logOut
 	})
 
-	// The admin registry lists both servers.
+	// get-servers queries the relay live: both tenants listed with their /tw/
+	// paths; server-1's reverse tunnel is up (its daemon runs since
+	// ServerJoin), server2's is down (nothing started yet — the enrollment
+	// response isn't even applied at this point).
 	serverHost := strings.TrimSpace(execIn(t, "server", "hostname"))
 	regOut := execIn(t, "admin", "tw relay get-servers")
-	if !strings.Contains(regOut, host+"-") || !strings.Contains(regOut, serverHost+"-") {
-		fatalf(t, "admin servers does not list both tenants (%s-*, %s-*):\n%s", host, serverHost, regOut)
+	if !regexp.MustCompile(`(?m)^` + serverHost + `\S*\s+/tw/` + serverHost + `\S*\s+\d+\s+\S+\s+up\s*$`).MatchString(regOut) {
+		fatalf(t, "get-servers does not show server-1 (%s-*) with its path and TUNNEL up:\n%s", serverHost, regOut)
+	}
+	if !regexp.MustCompile(`(?m)^` + host + `\S*\s+/tw/` + host + `\S*\s+\d+\s+\S+\s+down\s*$`).MatchString(regOut) {
+		fatalf(t, "get-servers does not show server2 (%s-*) with its path and TUNNEL down:\n%s", host, regOut)
 	}
 
 	// 3. server2 applies the response.
