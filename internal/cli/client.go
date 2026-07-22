@@ -39,6 +39,9 @@ func init() {
 }
 
 func runClientListen(cmd *cobra.Command, args []string) error {
+	if err := requireMode("client"); err != nil {
+		return err
+	}
 	if len(args) == 0 {
 		cfg, err := config.Load()
 		if err != nil {

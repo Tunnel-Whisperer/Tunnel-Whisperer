@@ -27,6 +27,9 @@ func init() {
 }
 
 func runServerJoin(cmd *cobra.Command, args []string) error {
+	if err := requireMode("server"); err != nil {
+		return err
+	}
 	o, err := ops.New()
 	if err != nil {
 		return err

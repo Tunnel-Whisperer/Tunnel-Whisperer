@@ -14,7 +14,7 @@ import (
 
 var exportUserCmd = &cobra.Command{
 	Use:   "export-user <name>",
-	Short: "Issue a user as an encrypted client context bundle (server only)",
+	Short: "Issue a user as a client context bundle (server only; unprotected — send over a trusted channel)",
 	Long: `Package one of this server's users as a role=client context (the same
 format as tw config export). The client imports it with: tw config import <file>
 
