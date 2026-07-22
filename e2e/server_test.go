@@ -3,7 +3,9 @@
 package e2e
 
 import (
+	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -119,17 +121,20 @@ func testServerJoin(t *testing.T) {
 }
 
 // testSecondTenant enrolls a SECOND server (the relay's third tenant, after
-// the admin and server-1) and proves the enrollment is live and non-disruptive:
-// server2 passes `tw server test`, and server-1 + admin still pass theirs.
-// This mirrors the real-world multi-server flow; tenant ISOLATION (server A's
-// client cannot reach server B) is still deferred to a later scenario.
+// the admin and server-1), proves the enrollment is live and non-disruptive,
+// then UN-enrolls it while its tunnel is live and proves the removal is
+// total (registry row gone, relay listener killed, fresh tunnel test fails)
+// and equally non-disruptive to the remaining tenants. Tenant ISOLATION
+// (server A's client cannot reach server B) is still deferred.
 func testSecondTenant(t *testing.T) {
 	scenario(t, "a second server enrolls on the same relay (third tenant) non-disruptively",
 		"tw server join on server2 generates its join request",
 		"tw relay enroll-server live-adds the tenant (Caddyfile reloaded, no xray restart); tw relay get-servers lists both tenants",
 		"tw server join --apply applies the response on server2",
 		"server2's tw server test reports 'tunnel and shell working'",
-		"server-1's tw server test and the admin's tw relay test still pass (non-disruptive)")
+		"server-1's tw server test and the admin's tw relay test still pass (non-disruptive)",
+		"tw relay un-enroll-server --yes removes the LIVE server2: registry row gone, relay listener gone, its tunnel test fails",
+		"server-1 and the admin remain unaffected after the un-enroll (non-disruptive removal)")
 
 	// Clean identity on server2 (same rationale as ServerJoin's wipe).
 	killMatching(t, "server2", "tw server start")
@@ -176,9 +181,11 @@ func testSecondTenant(t *testing.T) {
 	if !regexp.MustCompile(`(?m)^` + serverHost + `\S*\s+/tw/` + serverHost + `\S*\s+\d+\s+\S+\s+up\s*$`).MatchString(regOut) {
 		fatalf(t, "get-servers does not show server-1 (%s-*) with its path and TUNNEL up:\n%s", serverHost, regOut)
 	}
-	if !regexp.MustCompile(`(?m)^` + host + `\S*\s+/tw/` + host + `\S*\s+\d+\s+\S+\s+down\s*$`).MatchString(regOut) {
+	row := regexp.MustCompile(`(?m)^(` + host + `\S*)\s+/tw/` + host + `\S*\s+(\d+)\s+\S+\s+down\s*$`).FindStringSubmatch(regOut)
+	if row == nil {
 		fatalf(t, "get-servers does not show server2 (%s-*) with its path and TUNNEL down:\n%s", host, regOut)
 	}
+	server2ID, server2Port := row[1], row[2]
 
 	// 3. server2 applies the response.
 	execIn(t, "server2", "cd /shared && tw server join --apply "+respGlob)
@@ -198,6 +205,53 @@ func testSecondTenant(t *testing.T) {
 	out = execIn(t, "admin", "tw relay test")
 	if !strings.Contains(out, "tunnel and shell working") {
 		fatalf(t, "admin tunnel broken after server2 enroll:\n%s", out)
+	}
+
+	// 6. Un-enroll server2 while its daemon runs and its tunnel is LIVE —
+	// removal must be total: config gone AND live connections killed. The
+	// --yes flag skips the confirmation prompt (no TTY here).
+	out = execIn(t, "admin", "tw relay un-enroll-server "+server2ID+" --yes")
+	if !strings.Contains(out, "Un-enrolled "+server2ID) {
+		fatalf(t, "un-enroll did not report success:\n%s", out)
+	}
+	// The un-enroll re-rendered the Caddyfile, wiping the local_certs shim —
+	// reapply before anything opens a fresh TLS connection to the relay.
+	localCertsShim(t)
+
+	// The reverse-tunnel listener is gone: no LISTEN (state 0A) row on
+	// server2's port in the relay's /proc/net/tcp{,6}. This proves the kill,
+	// not just the config removal — the sshd session would survive the
+	// authorized_keys rewrite alone.
+	portN, err := strconv.Atoi(server2Port)
+	if err != nil {
+		fatalf(t, "unparseable PORT column %q", server2Port)
+	}
+	proc := execIn(t, "relay", "cat /proc/net/tcp /proc/net/tcp6")
+	if regexp.MustCompile(fmt.Sprintf(`(?m)^\s*\d+: [0-9A-F]+:%04X\s+\S+\s+0A\b`, portN)).MatchString(proc) {
+		fatalf(t, "relay still LISTENs on server2's port %s after un-enroll:\n%s", server2Port, proc)
+	}
+
+	// The registry no longer lists it.
+	regOut = execIn(t, "admin", "tw relay get-servers")
+	if regexp.MustCompile(`(?m)^` + host).MatchString(regOut) {
+		fatalf(t, "get-servers still lists server2 after un-enroll:\n%s", regOut)
+	}
+
+	// server2 is dark: a fresh tunnel test must FAIL (its inbound and its CA
+	// trust are gone from the relay).
+	if testOut, testErr := execInOK("server2", "tw server test"); testErr == nil && strings.Contains(testOut, "tunnel and shell working") {
+		fatalf(t, "server2 tunnel still works after un-enroll:\n%s", testOut)
+	}
+	killMatching(t, "server2", "tw server start") // stop its reconnect spam
+
+	// 7. Still non-disruptive: server-1 and the admin are unaffected.
+	out = execIn(t, "server", "tw server test")
+	if !strings.Contains(out, "tunnel and shell working") {
+		fatalf(t, "server-1 tunnel broken after server2 un-enroll:\n%s", out)
+	}
+	out = execIn(t, "admin", "tw relay test")
+	if !strings.Contains(out, "tunnel and shell working") {
+		fatalf(t, "admin tunnel broken after server2 un-enroll:\n%s", out)
 	}
 }
 
