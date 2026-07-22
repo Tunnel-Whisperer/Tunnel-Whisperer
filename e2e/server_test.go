@@ -118,6 +118,22 @@ func testServerJoin(t *testing.T) {
 	})
 	out := execIn(t, "server", "tw server status")
 	t.Logf("server status:\n%s", out)
+
+	// Tamper-evidence: flip mode: server -> mode: relay in the active config
+	// (TW_CONFIG_DIR=/etc/tw-test in the e2e images, see e2e/images/tw/Dockerfile,
+	// so the active file is /etc/tw-test/config.yaml — config.FilePath()).
+	// A relay-gated command must now be refused by the mode-signature check,
+	// not merely by the plain role gate, since the signed mode no longer
+	// matches the profile's identity.
+	execIn(t, "server", `sed -i 's/^mode: server/mode: relay/' /etc/tw-test/config.yaml`)
+	if tamperOut, tamperErr := execInOK("server", "tw relay get-servers"); tamperErr == nil {
+		fatalf(t, "relay command succeeded on a tampered server profile:\n%s", tamperOut)
+	} else if !strings.Contains(tamperOut, "mode signature invalid") {
+		fatalf(t, "expected a mode-signature error after tampering mode: server -> relay, got:\n%s", tamperOut)
+	}
+	// Restore so later scenarios (PermitOpen, Revocation, SecondTenant) are unaffected.
+	execIn(t, "server", `sed -i 's/^mode: relay/mode: server/' /etc/tw-test/config.yaml`)
+	t.Logf("server config restored after tamper test; status:\n%s", execIn(t, "server", "tw server status"))
 }
 
 // testSecondTenant enrolls a SECOND server (the relay's third tenant, after

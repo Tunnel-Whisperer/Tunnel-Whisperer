@@ -118,12 +118,19 @@ func testContexts(t *testing.T) {
 	}
 
 	// Admin: capture the current context's name and short ID from the listing.
+	// The relay role is now named "relay" (renamed from "admin" — see
+	// docs/superpowers/specs/2026-07-18-mode-integrity spec).
 	out = execIn(t, "admin", "tw config get-contexts")
-	row := regexp.MustCompile(`(?m)^\*\s+(\S+)\s+([0-9a-f]{8})\s+admin\s+`).FindStringSubmatch(out)
+	row := regexp.MustCompile(`(?m)^\*\s+(\S+)\s+([0-9a-f]{8})\s+relay\s+`).FindStringSubmatch(out)
 	if row == nil {
 		fatalf(t, "admin current-context row missing name or 8-hex ID:\n%s", out)
 	}
 	name, id := row[1], row[2]
+
+	// The relay profile's mode is tamper-evidently signed (mode_auth block).
+	if viewOut := execIn(t, "admin", "tw config view"); !strings.Contains(viewOut, "mode_auth:") {
+		fatalf(t, "relay profile is not mode-signed (no mode_auth: block):\n%s", viewOut)
+	}
 
 	// New empty context becomes current; the original is preserved (sealed).
 	execIn(t, "admin", "tw config new-context scratch")

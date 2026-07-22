@@ -51,6 +51,21 @@ func testUserLifecycle(t *testing.T) {
 	if !strings.Contains(curCtx, "alice") {
 		fatalf(t, "imported context not named after the user: current-context = %q, want alice", curCtx)
 	}
+
+	// The imported client bundle's mode is tamper-evidently signed.
+	if viewOut := execIn(t, "client", "tw config view"); !strings.Contains(viewOut, "mode_auth:") {
+		fatalf(t, "imported client profile is not mode-signed (no mode_auth: block):\n%s", viewOut)
+	}
+
+	// The client-role gate refuses a server-only command outright — proving
+	// requireMode's cross-role check, not just the mode-signature check
+	// exercised in ServerJoin's tamper test.
+	if gateOut, gateErr := execInOK("client", "tw server join-relay relay.example"); gateErr == nil {
+		fatalf(t, "client profile was allowed to run a server-mode command:\n%s", gateOut)
+	} else if !strings.Contains(gateOut, "requires server mode") {
+		fatalf(t, "expected a server-mode gate error (root.go modeError), got:\n%s", gateOut)
+	}
+
 	execIn(t, "client", "tw client listen") // prints current listen address; covers the command
 
 	// Connect and prove byte-for-byte traffic through relay + tunnel.
