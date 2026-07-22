@@ -21,6 +21,14 @@ type Config struct {
 	Server    ServerConfig    `yaml:"server"`
 	Client    ClientConfig    `yaml:"client"`
 	Analytics AnalyticsConfig `yaml:"analytics,omitempty"`
+	ModeAuth  *ModeAuth       `yaml:"mode_auth,omitempty"`
+}
+
+// ModeAuth is a detached signature over the profile's (mode, identity),
+// making the mode field tamper-evident. See internal/ops/modeauth.
+type ModeAuth struct {
+	Sig    string `yaml:"sig"`
+	Issuer string `yaml:"issuer"`
 }
 
 // ValidMode reports whether m is a recognized canonical operating mode.
