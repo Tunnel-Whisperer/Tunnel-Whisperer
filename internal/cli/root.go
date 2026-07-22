@@ -96,22 +96,25 @@ func requireMode(allowed ...string) error {
 // this is tamper-evidence, not a security wall.
 func verifyModeAuth(cfg *config.Config) error {
 	if cfg.Mode == "" {
-		return nil
-	}
-	id, err := ops.ProfileIdentity()
-	if err != nil {
-		return nil // no identity yet (pre-setup) — nothing to verify
+		return nil // bootstrap: no mode set yet
 	}
 	if cfg.ModeAuth != nil {
+		// A present signature must verify. If the identity is missing we
+		// cannot verify it — fail closed rather than letting a deleted
+		// id_ed25519.pub bypass a present (possibly tampered) signature.
+		id, err := ops.ProfileIdentity()
+		if err != nil {
+			return fmt.Errorf("mode signature present but profile identity is unreadable; the profile is inconsistent")
+		}
 		if err := modeauth.Verify(cfg.Mode, id, cfg.ModeAuth.Sig, cfg.ModeAuth.Issuer); err != nil {
 			return fmt.Errorf("mode signature invalid — the 'mode' field was modified or the profile is inconsistent; re-enroll (server) / re-import (client) / re-create (relay)")
 		}
 		return nil
 	}
-	// Missing signature: relay self-heals; others are legacy-tolerated.
+	// mode_auth ABSENT (legacy / pre-setup):
 	if cfg.Mode == "relay" {
 		if o, err := ops.New(); err == nil {
-			_ = o.StampAndSaveModeAuth() // best-effort re-sign
+			_ = o.StampAndSaveModeAuth() // best-effort self-heal
 		}
 		return nil
 	}

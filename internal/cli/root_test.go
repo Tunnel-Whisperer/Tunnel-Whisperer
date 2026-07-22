@@ -122,3 +122,36 @@ func TestRequireModeAllowsUnsignedLegacy(t *testing.T) {
 		t.Errorf("legacy unsigned profile should be tolerated: %v", err)
 	}
 }
+
+func TestRequireModeRejectsPresentSigWithMissingIdentity(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	writeCLIProfileKey(t)
+	id := readCLIIdentity(t)
+	priv := readCLIPriv(t)
+	sig, issuer, _ := modeauth.Sign(priv, "server", id)
+	writeCLIConfig(t, "server", sig, issuer)
+	// Delete the identity file: a present signature must not be bypassable
+	// by simply removing the file needed to verify it.
+	if err := os.Remove(filepath.Join(config.Dir(), "id_ed25519.pub")); err != nil {
+		t.Fatal(err)
+	}
+	if err := requireMode("server"); err == nil {
+		t.Error("requireMode accepted a present signature when the profile identity is missing")
+	}
+}
+
+func TestRequireModeRelaySelfHeals(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	writeCLIProfileKey(t)
+	writeCLIConfig(t, "relay", "", "") // no mode_auth
+	if err := requireMode("relay"); err != nil {
+		t.Errorf("requireMode should self-heal a relay with no mode_auth: %v", err)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ModeAuth == nil {
+		t.Error("requireMode did not self-heal: config still has no mode_auth after a relay call")
+	}
+}
