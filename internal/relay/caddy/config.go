@@ -15,13 +15,13 @@ var caddyfileTmpl string
 // Server describes one tunnel-whisperer server published on the relay. The
 // fields are deliberately generic so the data model carries the forward-compat
 // seams from the design spec: Role distinguishes "server" from a future
-// "admin", and Upstream is a field rather than a hardcoded SSH-port assumption.
+// "relay", and Upstream is a field rather than a hardcoded SSH-port assumption.
 type Server struct {
 	ID         string // common name; names the CA file and the route matcher
 	Path       string // xhttp path, e.g. "/tw"
 	CACertPath string // path to this server's CA PEM on the relay, e.g. /etc/caddy/ca/<id>.crt
 	Upstream   string // reverse_proxy upstream, e.g. "h2c://127.0.0.1:10000"
-	Role       string // "server" (future: "admin")
+	Role       string // "server" (future: "relay")
 }
 
 // Config holds everything needed to render the relay Caddyfile.

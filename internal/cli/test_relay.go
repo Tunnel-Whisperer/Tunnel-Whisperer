@@ -16,7 +16,7 @@ var testRelayCmd = &cobra.Command{
 	Use:   "test",
 	Short: "Test connectivity to the relay server",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireMode("admin"); err != nil {
+		if err := requireMode("relay"); err != nil {
 			return err
 		}
 		return sharedTestRelay()

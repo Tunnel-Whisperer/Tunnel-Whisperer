@@ -55,7 +55,7 @@ func (o *Ops) relayTenantState(registered []RegisteredServer) ([]caddy.Server, [
 		Path:       "/tw/" + adminID,
 		CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", adminID),
 		Upstream:   fmt.Sprintf("h2c://127.0.0.1:%d", adminRemotePort+10000),
-		Role:       "admin",
+		Role:       "relay",
 	}}
 	tenants := []relayxray.Tenant{{
 		ServerID:   adminID,

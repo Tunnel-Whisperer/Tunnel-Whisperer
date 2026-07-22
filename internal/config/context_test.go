@@ -45,7 +45,7 @@ func TestEnsureContextIndexMigratesLegacyConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := Default()
-	cfg.Mode = "admin"
+	cfg.Mode = "admin" // legacy on-disk value; Load() canonicalizes to "relay"
 	cfg.Xray.RelayHost = "a.example.com"
 	if err := Save(cfg); err != nil {
 		t.Fatal(err)
@@ -54,14 +54,14 @@ func TestEnsureContextIndexMigratesLegacyConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Migration names the context from the live config (admin + relay), not
-	// the old hardcoded "default".
-	if idx.CurrentContext != "admin-a" {
-		t.Fatalf("current = %q, want admin-a", idx.CurrentContext)
+	// Migration names the context from the live config (relay + relay host),
+	// not the old hardcoded "default".
+	if idx.CurrentContext != "relay-a" {
+		t.Fatalf("current = %q, want relay-a", idx.CurrentContext)
 	}
-	m, ok := idx.Contexts["admin-a"]
-	if !ok || m.Role != "admin" || m.Relay != "a.example.com" {
-		t.Fatalf("admin-a meta wrong: %+v", idx.Contexts)
+	m, ok := idx.Contexts["relay-a"]
+	if !ok || m.Role != "relay" || m.Relay != "a.example.com" {
+		t.Fatalf("relay-a meta wrong: %+v", idx.Contexts)
 	}
 	if _, err := os.Stat(filepath.Join(Dir(), "contexts.yaml")); err != nil {
 		t.Errorf("index not written: %v", err)
@@ -73,8 +73,8 @@ func TestDefaultContextName(t *testing.T) {
 		{"client", "hds-t2.mint-tunnel.com", "server-1-user", "server-1-user"},
 		{"client", "hds-t2.mint-tunnel.com", "Alice B", "alice-b"}, // sanitized
 		{"client", "hds-t2.mint-tunnel.com", "", "hds-t2-mint-tunnel-com"},
-		{"admin", "hds-t2.mint-tunnel.com", "", "admin-hds-t2"},
-		{"admin", "", "", "admin"},
+		{"relay", "hds-t2.mint-tunnel.com", "", "relay-hds-t2"},
+		{"relay", "", "", "relay"},
 		{"server", "hds-t2.mint-tunnel.com", "", "hds-t2-mint-tunnel-com"},
 		{"", "hds-t2.mint-tunnel.com", "", "hds-t2-mint-tunnel-com"},
 		{"", "", "", ""},

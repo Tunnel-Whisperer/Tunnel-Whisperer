@@ -151,8 +151,8 @@ func (o *Ops) renderRelayConfigs(cfg *config.Config) (serverID, caddyfileB64, xr
 	remotePort := cfg.Server.RemotePort
 	vlessInPort := remotePort + 10000
 	role := "server"
-	if cfg.Mode == "admin" {
-		role = "admin"
+	if cfg.Mode == "relay" {
+		role = "relay"
 	}
 
 	caddyfile, err := caddy.RenderCaddyfile(caddy.Config{
@@ -210,15 +210,15 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 	}
 	progress(ProgressEvent{Step: 1, Total: 9, Label: "SSH keys", Status: "completed"})
 
-	// Step 2: Xray UUID (also stamps the admin mode — creating a relay makes
-	// this profile the admin identity; only an unset mode is stamped, and
-	// requireMode("admin") already blocks server/client profiles).
+	// Step 2: Xray UUID (also stamps the relay mode — creating a relay makes
+	// this profile the relay identity; only an unset mode is stamped, and
+	// requireMode("relay") already blocks server/client profiles).
 	progress(ProgressEvent{Step: 2, Total: 9, Label: "Xray UUID", Status: "running"})
 	o.mu.Lock()
 	cfg := o.cfg
 	changed := false
 	if cfg.Mode == "" {
-		cfg.Mode = "admin"
+		cfg.Mode = "relay"
 		changed = true
 	}
 	if cfg.Xray.UUID == "" {
@@ -411,12 +411,12 @@ func (o *Ops) GenerateManualInstallScript(domain string, sshOpen bool) (string, 
 	o.mu.Lock()
 	cfg := o.cfg
 	changed := false
-	// Creating a relay makes this profile the admin identity: the mode gates
-	// commands (requireMode) and renders the relay handle with the admin role.
-	// Only an unset mode is stamped — requireMode("admin") already blocks
+	// Creating a relay makes this profile the relay identity: the mode gates
+	// commands (requireMode) and renders the relay handle with the relay role.
+	// Only an unset mode is stamped — requireMode("relay") already blocks
 	// server/client profiles from reaching this point.
 	if cfg.Mode == "" {
-		cfg.Mode = "admin"
+		cfg.Mode = "relay"
 		changed = true
 	}
 	if cfg.Xray.UUID == "" {

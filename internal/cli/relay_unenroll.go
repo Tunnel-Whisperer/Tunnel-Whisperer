@@ -26,7 +26,7 @@ func init() {
 }
 
 func runRelayUnenrollServer(cmd *cobra.Command, args []string) error {
-	if err := requireMode("admin"); err != nil {
+	if err := requireMode("relay"); err != nil {
 		return err
 	}
 	serverID := args[0]

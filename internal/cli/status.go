@@ -16,7 +16,7 @@ var relayStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show current relay and tunnel status",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireMode("admin"); err != nil {
+		if err := requireMode("relay"); err != nil {
 			return err
 		}
 		return sharedStatus()

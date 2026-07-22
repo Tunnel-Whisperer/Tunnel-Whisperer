@@ -7,11 +7,11 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/config"
 )
 
-// TestGenerateManualInstallScriptStampsAdminMode is a regression test for the
-// bug where no code path ever set mode "admin": a relay created from a fresh
+// TestGenerateManualInstallScriptStampsRelayMode is a regression test for the
+// bug where no code path ever set mode "relay": a relay created from a fresh
 // profile left mode empty, so the context listing showed a blank ROLE and the
 // relay handle was rendered with the fallback "server" role.
-func TestGenerateManualInstallScriptStampsAdminMode(t *testing.T) {
+func TestGenerateManualInstallScriptStampsRelayMode(t *testing.T) {
 	t.Setenv("TW_CONFIG_DIR", t.TempDir())
 
 	// Fresh profile: no config.yaml at all, the state `tw relay create` runs in.
@@ -27,8 +27,8 @@ func TestGenerateManualInstallScriptStampsAdminMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reloading config: %v", err)
 	}
-	if cfg.Mode != "admin" {
-		t.Errorf("persisted mode = %q, want admin", cfg.Mode)
+	if cfg.Mode != "relay" {
+		t.Errorf("persisted mode = %q, want relay", cfg.Mode)
 	}
 
 	// An existing non-empty mode must never be overwritten.

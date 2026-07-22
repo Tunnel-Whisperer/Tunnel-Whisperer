@@ -66,7 +66,7 @@ func cliProgress(e ops.ProgressEvent) {
 }
 
 func runCreateRelayServer(cmd *cobra.Command, args []string) error {
-	if err := requireMode("admin"); err != nil {
+	if err := requireMode("relay"); err != nil {
 		return err
 	}
 	flagProvider, _ := cmd.Flags().GetString("provider")

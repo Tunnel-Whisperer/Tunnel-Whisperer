@@ -50,26 +50,28 @@ func SanitizeName(s string) string {
 }
 
 // DefaultContextName derives a self-explanatory context name from profile
-// metadata: a client context is named after its user, an admin context
-// admin-<relay's first DNS label>, anything else after the relay domain.
+// metadata: a client context is named after its user, a relay context
+// relay-<relay's first DNS label>, anything else after the relay domain.
+// role is expected to already be canonical (see CanonicalMode) — callers
+// reading a stored/legacy role should canonicalize it before calling this.
 // Returns "" when there is nothing to derive from — callers pick their own
 // fallback ("default" for the migration, "tw" for imports).
 func DefaultContextName(role, relay, user string) string {
 	switch {
 	case role == "client" && user != "":
 		return SanitizeName(user)
-	case role == "admin":
+	case role == "relay":
 		if relay != "" {
-			return "admin-" + SanitizeName(strings.SplitN(relay, ".", 2)[0])
+			return "relay-" + SanitizeName(strings.SplitN(relay, ".", 2)[0])
 		}
-		return "admin"
+		return "relay"
 	}
 	return SanitizeName(relay)
 }
 
 // MetaForConfig derives the context-index metadata for a live config.
 func MetaForConfig(cfg *Config) (role, relay, user, id string) {
-	role, relay = cfg.Mode, cfg.Xray.RelayHost
+	role, relay = CanonicalMode(cfg.Mode), cfg.Xray.RelayHost
 	if cfg.Mode == "client" {
 		user = cfg.Client.SSHUser
 	}

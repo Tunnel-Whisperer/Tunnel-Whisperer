@@ -68,16 +68,26 @@ func (o *Ops) ListContexts() ([]ContextInfo, error) {
 		// config is authoritative for the current context.
 		if name == idx.CurrentContext {
 			role, relay, user, id = config.MetaForConfig(o.Config())
-		} else if id == "" {
-			// Backfill entries written before user/id existed by reading the
-			// stored bundle once (bundles carry no passphrase).
-			if bundle, rerr := os.ReadFile(config.ContextBundlePath(name)); rerr == nil {
-				if plain, derr := cryptobox.Decrypt(bundle, ""); derr == nil {
-					if bm := readBundleMeta(plain); bm.ID != "" || bm.User != "" {
-						m.User, m.ID = bm.User, bm.ID
-						idx.Contexts[name] = m
-						user, id = bm.User, bm.ID
-						dirty = true
+		} else {
+			// Canonicalize a stored legacy role (e.g. "admin") so listings and
+			// naming always see the current mode name, and persist the fix.
+			if canon := config.CanonicalMode(role); canon != role {
+				role = canon
+				m.Role = canon
+				idx.Contexts[name] = m
+				dirty = true
+			}
+			if id == "" {
+				// Backfill entries written before user/id existed by reading the
+				// stored bundle once (bundles carry no passphrase).
+				if bundle, rerr := os.ReadFile(config.ContextBundlePath(name)); rerr == nil {
+					if plain, derr := cryptobox.Decrypt(bundle, ""); derr == nil {
+						if bm := readBundleMeta(plain); bm.ID != "" || bm.User != "" {
+							m.User, m.ID = bm.User, bm.ID
+							idx.Contexts[name] = m
+							user, id = bm.User, bm.ID
+							dirty = true
+						}
 					}
 				}
 			}
@@ -276,7 +286,7 @@ func readBundleMeta(plainZip []byte) bundleMeta {
 	if yaml.Unmarshal(data, &c) != nil {
 		return bundleMeta{}
 	}
-	m := bundleMeta{Role: c.Mode, Relay: c.Xray.RelayHost, ID: config.ShortID(c.Xray.UUID)}
+	m := bundleMeta{Role: config.CanonicalMode(c.Mode), Relay: c.Xray.RelayHost, ID: config.ShortID(c.Xray.UUID)}
 	if c.Mode == "client" {
 		m.User = c.Client.SSHUser
 	}

@@ -29,7 +29,7 @@ func init() {
 }
 
 func runRelayEnrollServer(cmd *cobra.Command, args []string) error {
-	if err := requireMode("admin"); err != nil {
+	if err := requireMode("relay"); err != nil {
 		return err
 	}
 	data, err := os.ReadFile(args[0])
@@ -61,7 +61,7 @@ func runRelayEnrollServer(cmd *cobra.Command, args []string) error {
 }
 
 func runRelayGetServers(cmd *cobra.Command, args []string) error {
-	if err := requireMode("admin"); err != nil {
+	if err := requireMode("relay"); err != nil {
 		return err
 	}
 	o, err := ops.New()
