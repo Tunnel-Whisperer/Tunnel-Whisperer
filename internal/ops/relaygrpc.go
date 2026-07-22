@@ -75,6 +75,16 @@ func liveAddTenant(client *gossh.Client, t relayxray.Tenant) error {
 	return nil
 }
 
+// alreadyGone reports whether a removal error means the target was not
+// present. Xray's inbound.Manager.RemoveHandler returns common.ErrNoClue
+// ("not enough information for making a decision") for a missing tag —
+// there is no structured code, so match the stable error strings.
+func alreadyGone(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not found") ||
+		strings.Contains(msg, "not enough information for making a decision")
+}
+
 // liveRemoveTenant removes one tenant's routing rules and inbound from the
 // relay's running Xray process via gRPC, without restarting Xray — the
 // counterpart of liveAddTenant. Removing the inbound severs the tenant's
@@ -97,7 +107,7 @@ func liveRemoveTenant(client *gossh.Client, serverID string) error {
 	rs := routercmd.NewRoutingServiceClient(conn)
 	for _, ruleTag := range []string{"allow-" + serverID, "deny-" + serverID} {
 		if _, err := rs.RemoveRule(ctx, &routercmd.RemoveRuleRequest{RuleTag: ruleTag}); err != nil {
-			if strings.Contains(strings.ToLower(err.Error()), "not found") {
+			if alreadyGone(err) {
 				slog.Warn("relay xray rule already gone", "ruleTag", ruleTag)
 				continue
 			}
@@ -108,7 +118,7 @@ func liveRemoveTenant(client *gossh.Client, serverID string) error {
 	hs := proxymanCmd.NewHandlerServiceClient(conn)
 	inboundTag := "vless-in-" + serverID
 	if _, err := hs.RemoveInbound(ctx, &proxymanCmd.RemoveInboundRequest{Tag: inboundTag}); err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "not found") {
+		if alreadyGone(err) {
 			slog.Warn("relay xray inbound already gone", "tag", inboundTag)
 			return nil
 		}
