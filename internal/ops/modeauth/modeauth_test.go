@@ -3,7 +3,6 @@ package modeauth
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/pem"
 	"testing"
 
@@ -64,7 +63,6 @@ func TestVerifyRejectsTamperedIdentity(t *testing.T) {
 
 func TestVerifyRejectsWrongIssuer(t *testing.T) {
 	priv, pub := testKey(t)
-	_, _ = base64.StdEncoding, ed25519.PublicKey(nil)
 	sig, _, _ := Sign(priv, "server", pub)
 	otherPriv, _ := testKey(t)
 	_, wrongIssuer, _ := Sign(otherPriv, "server", pub)
@@ -76,5 +74,13 @@ func TestVerifyRejectsWrongIssuer(t *testing.T) {
 func TestVerifyRejectsGarbage(t *testing.T) {
 	if err := Verify("server", "id", "!!notb64!!", "!!notb64!!"); err == nil {
 		t.Error("verify accepted garbage base64")
+	}
+}
+
+func TestPayloadFormatIsStable(t *testing.T) {
+	got := string(Payload("server", "ssh-ed25519 AAAA"))
+	want := "tw-mode-v1\n6:server\n16:ssh-ed25519 AAAA"
+	if got != want {
+		t.Errorf("Payload = %q, want %q", got, want)
 	}
 }

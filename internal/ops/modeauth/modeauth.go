@@ -20,9 +20,11 @@ import (
 const payloadPrefix = "tw-mode-v1"
 
 // Payload is the canonical signed message binding a mode to a profile
-// identity (the profile's own id_ed25519.pub, trimmed).
+// identity (the profile's own id_ed25519.pub, trimmed). Fields are
+// length-prefixed so the encoding is injective — no (mode, identity) pair
+// can collide with another via an embedded newline.
 func Payload(mode, identity string) []byte {
-	return []byte(payloadPrefix + "\n" + mode + "\n" + identity)
+	return []byte(fmt.Sprintf("%s\n%d:%s\n%d:%s", payloadPrefix, len(mode), mode, len(identity), identity))
 }
 
 // Sign signs Payload(mode, identity) with an OpenSSH ed25519 private key,
