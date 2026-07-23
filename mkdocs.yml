@@ -86,6 +86,7 @@ nav:
     - Server Setup: getting-started/server-setup.md
     - Client Setup: getting-started/client-setup.md
   - Guides:
+    - Greenfield Walkthrough: guides/greenfield-walkthrough.md
     - Relay Provisioning: guides/relay-provisioning.md
     - User Management: guides/user-management.md
     - Web Dashboard: guides/dashboard.md
