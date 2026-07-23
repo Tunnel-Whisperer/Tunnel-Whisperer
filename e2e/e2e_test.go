@@ -162,14 +162,8 @@ func testContexts(t *testing.T) {
 		fatalf(t, "admin context lost its ID %s after the switch round-trip:\n%s", id, out)
 	}
 }
-// The scenarios below are not yet implemented. Their Skip messages state the
-// behaviour they will verify, so `go test -v` documents the intended coverage.
+// Dashboard is not yet implemented. Its Skip message states the behaviour it
+// will verify, so `go test -v` documents the intended coverage.
 func testDashboard(t *testing.T) {
 	skipScenario(t, "NOT YET IMPLEMENTED (Task 9): the in-server dashboard serves, shows live status/logs over SSE, and the relay terminal works")
-}
-func testRelayResilience(t *testing.T) {
-	skipScenario(t, "NOT YET IMPLEMENTED (Task 9): the tunnel recovers after the relay's caddy/xray are restarted (reverse tunnel + client reconnect)")
-}
-func testTeardown(t *testing.T) {
-	skipScenario(t, "NOT YET IMPLEMENTED (Task 9): tw relay destroy tears the relay down and tw relay status reflects it")
 }

@@ -617,6 +617,10 @@ func (o *Ops) DestroyRelay(ctx context.Context, creds map[string]string, progres
 
 		progress(ProgressEvent{Step: 2, Total: 2, Label: "Cleaning up", Status: "running"})
 		deactivateAllUsers()
+		if err := o.clearRelayHost(); err != nil {
+			progress(ProgressEvent{Step: 2, Total: 2, Label: "Cleaning up", Status: "failed", Error: err.Error()})
+			return err
+		}
 		progress(ProgressEvent{Step: 2, Total: 2, Label: "Cleaning up", Status: "completed"})
 		return nil
 	}
@@ -648,9 +652,27 @@ func (o *Ops) DestroyRelay(ctx context.Context, creds map[string]string, progres
 	// Deactivate all users — their UUIDs are no longer on any relay.
 	deactivateAllUsers()
 
+	if err := o.clearRelayHost(); err != nil {
+		progress(ProgressEvent{Step: 3, Total: 3, Label: "Cleaning up", Status: "failed", Error: err.Error()})
+		return err
+	}
+
 	progress(ProgressEvent{Step: 3, Total: 3, Label: "Cleaning up", Status: "completed"})
 
 	return nil
+}
+
+// clearRelayHost removes the destroyed relay's address from config.
+// GetRelayStatus's marker-less fallback treats a set RelayHost plus an issued
+// client cert as a provisioned manual relay (so a lost marker file doesn't
+// block management); without this, a deliberately destroyed relay would be
+// resurrected by that fallback and status would never reflect the destroy.
+func (o *Ops) clearRelayHost() error {
+	o.mu.Lock()
+	o.cfg.Xray.RelayHost = ""
+	cfg := o.cfg
+	o.mu.Unlock()
+	return config.Save(cfg)
 }
 
 // TestRelay runs connectivity checks against the relay, streaming each
