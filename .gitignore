@@ -5,3 +5,4 @@ site/
 .ssh-over-xray
 CLAUDE.md
 .vscode/
+e2e/e2e-report.md

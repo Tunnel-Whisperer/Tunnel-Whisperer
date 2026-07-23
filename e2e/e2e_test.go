@@ -46,8 +46,14 @@ func TestE2E(t *testing.T) {
 		{"RelayResilience", testRelayResilience},
 		{"Teardown", testTeardown},
 	}
+	names := make([]string, len(steps))
+	for i, s := range steps {
+		names[i] = s.name
+	}
+	initReport(names)
+	defer writeReport(t)
 	for _, s := range steps {
-		if !t.Run(s.name, s.fn) {
+		if !runScenario(t, s.name, s.fn) {
 			t.Fatalf("scenario %s failed; later scenarios depend on it — stopping", s.name)
 		}
 	}
@@ -159,11 +165,11 @@ func testContexts(t *testing.T) {
 // The scenarios below are not yet implemented. Their Skip messages state the
 // behaviour they will verify, so `go test -v` documents the intended coverage.
 func testDashboard(t *testing.T) {
-	t.Skip("NOT YET IMPLEMENTED (Task 9): the in-server dashboard serves, shows live status/logs over SSE, and the relay terminal works")
+	skipScenario(t, "NOT YET IMPLEMENTED (Task 9): the in-server dashboard serves, shows live status/logs over SSE, and the relay terminal works")
 }
 func testRelayResilience(t *testing.T) {
-	t.Skip("NOT YET IMPLEMENTED (Task 9): the tunnel recovers after the relay's caddy/xray are restarted (reverse tunnel + client reconnect)")
+	skipScenario(t, "NOT YET IMPLEMENTED (Task 9): the tunnel recovers after the relay's caddy/xray are restarted (reverse tunnel + client reconnect)")
 }
 func testTeardown(t *testing.T) {
-	t.Skip("NOT YET IMPLEMENTED (Task 9): tw relay destroy tears the relay down and tw relay status reflects it")
+	skipScenario(t, "NOT YET IMPLEMENTED (Task 9): tw relay destroy tears the relay down and tw relay status reflects it")
 }

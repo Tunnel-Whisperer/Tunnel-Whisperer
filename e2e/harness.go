@@ -57,6 +57,10 @@ func execDetached(t *testing.T, service, script string) {
 // scenario makes. Emitted as the first lines of every subtest.
 func scenario(t *testing.T, summary string, checks ...string) {
 	t.Helper()
+	if current != nil {
+		current.summary = summary
+		current.checks = checks
+	}
 	t.Logf("SCENARIO — %s", summary)
 	t.Logf("  (real data path: client → Xray VLESS/XHTTP/mTLS :443 → Caddy client_auth gate → relay Xray → reverse SSH → server)")
 	for _, c := range checks {
