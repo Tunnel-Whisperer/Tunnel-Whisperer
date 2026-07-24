@@ -95,15 +95,15 @@ func testRelayResilience(t *testing.T) {
 // only a fresh RelayInstall (which re-creates from scratch) can follow.
 func testTeardown(t *testing.T) {
 	scenario(t, "tw relay destroy removes the manual relay and tw relay status reflects it",
-		"pre-destroy, tw relay status reports Provisioned: true with the relay's domain",
+		"pre-destroy, tw relay status reports Provisioned: yes with the relay's domain",
 		"tw relay destroy (confirmed over stdin) completes with 'Relay destroyed.'",
 		"the relay dir (manual-relay.json marker included) is removed from the admin profile",
 		"relay_host is cleared from config, so the marker-less status fallback cannot resurrect the destroyed relay",
-		"tw relay status now reports Provisioned: false",
+		"tw relay status now reports Provisioned: no",
 		"a second destroy is a clean no-op: 'No relay is currently provisioned.'")
 
 	out := execIn(t, "admin", "tw relay status")
-	if !strings.Contains(out, "Provisioned: true") || !strings.Contains(out, domain) {
+	if !strings.Contains(out, "Provisioned: yes") || !strings.Contains(out, domain) {
 		fatalf(t, "pre-destroy relay status does not report the provisioned relay:\n%s", out)
 	}
 
@@ -124,7 +124,7 @@ func testTeardown(t *testing.T) {
 	}
 
 	out = execIn(t, "admin", "tw relay status")
-	if !strings.Contains(out, "Provisioned: false") {
+	if !strings.Contains(out, "Provisioned: no") {
 		fatalf(t, "post-destroy relay status still reports a relay:\n%s", out)
 	}
 

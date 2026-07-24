@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/tunnelwhisperer/tw/internal/api"
@@ -120,23 +122,22 @@ func runStatusRemote(client *api.Client) error {
 		fmt.Println()
 	}
 
-	fmt.Printf("  Users:  %d\n", resp.UserCount)
+	if resp.Server != nil {
+		fmt.Printf("  Users:  %d (%d connected)\n", resp.UserCount, resp.ConnectedUsers)
+	} else {
+		fmt.Printf("  Users:  %d\n", resp.UserCount)
+	}
 	fmt.Println()
 
-	fmt.Println("  Relay:")
-	fmt.Printf("    Provisioned: %v\n", resp.Relay.Provisioned)
-	if resp.Relay.Provisioned {
-		fmt.Printf("    IP:          %s\n", resp.Relay.IP)
-		fmt.Printf("    Provider:    %s\n", resp.Relay.Provider)
-	}
+	printRelaySection(resp.Relay.Provisioned, resp.Relay.IP, resp.Relay.Provider, resp.Relay.Domain)
 
 	if resp.Server != nil {
 		fmt.Println()
 		fmt.Println("  Server:")
 		fmt.Printf("    State:   %s\n", resp.Server.State)
-		fmt.Printf("    SSH:     %v\n", resp.Server.SSH)
-		fmt.Printf("    Xray:    %v\n", resp.Server.Xray)
-		fmt.Printf("    Tunnel:  %v\n", resp.Server.Tunnel)
+		fmt.Printf("    SSH:     %s\n", workingStr(resp.Server.SSH))
+		fmt.Printf("    Xray:    %s\n", workingStr(resp.Server.Xray))
+		fmt.Printf("    Tunnel:  %s\n", workingStr(resp.Server.Tunnel))
 		if resp.Server.TunnelError != "" {
 			fmt.Printf("    Error:   %s\n", resp.Server.TunnelError)
 		}
@@ -146,8 +147,8 @@ func runStatusRemote(client *api.Client) error {
 		fmt.Println()
 		fmt.Println("  Client:")
 		fmt.Printf("    State:   %s\n", resp.Client.State)
-		fmt.Printf("    Xray:    %v\n", resp.Client.Xray)
-		fmt.Printf("    Tunnel:  %v\n", resp.Client.Tunnel)
+		fmt.Printf("    Xray:    %s\n", workingStr(resp.Client.Xray))
+		fmt.Printf("    Tunnel:  %s\n", workingStr(resp.Client.Tunnel))
 		if resp.Client.TunnelError != "" {
 			fmt.Printf("    Error:   %s\n", resp.Client.TunnelError)
 		}
@@ -170,15 +171,16 @@ func runStatusLocal() error {
 	relay := o.GetRelayStatus()
 	users, _ := o.ListUsers()
 
-	fmt.Printf("  Users:  %d\n", len(users))
+	if mode == "server" {
+		// No daemon answered, so the server is not running: nobody can be
+		// connected. GetOnlineUsers agrees (nil when the Xray tunnel is down).
+		fmt.Printf("  Users:  %d (0 connected)\n", len(users))
+	} else {
+		fmt.Printf("  Users:  %d\n", len(users))
+	}
 	fmt.Println()
 
-	fmt.Println("  Relay:")
-	fmt.Printf("    Provisioned: %v\n", relay.Provisioned)
-	if relay.Provisioned {
-		fmt.Printf("    IP:          %s\n", relay.IP)
-		fmt.Printf("    Provider:    %s\n", relay.Provider)
-	}
+	printRelaySection(relay.Provisioned, relay.IP, relay.Provider, relay.Domain)
 
 	if mode == "server" || mode == "client" {
 		fmt.Println()
@@ -212,6 +214,51 @@ func daemonContextMismatch(daemonMode, daemonRelay string) string {
 	return "  ⚠ The running tw service does not match the active context:\n    " +
 		strings.Join(diffs, "\n    ") +
 		"\n    Restart the service to apply the switch (Windows: Restart-Service tw; otherwise: tw service stop && tw service start)."
+}
+
+// printRelaySection prints the relay block shared by the remote and local paths.
+func printRelaySection(provisioned bool, ip, provider, domain string) {
+	fmt.Println("  Relay:")
+	fmt.Printf("    Provisioned: %s\n", yesNo(provisioned))
+	if provisioned {
+		fmt.Printf("    IP:          %s\n", relayIPDisplay(ip, domain))
+		fmt.Printf("    Provider:    %s\n", provider)
+	}
+}
+
+// relayIPDisplay returns the stored relay IP, or resolves the relay domain
+// when no IP is on record (joined servers and marker-less manual relays store
+// none). Returns a dash when neither is available.
+func relayIPDisplay(ip, domain string) string {
+	if ip != "" {
+		return ip
+	}
+	if domain == "" {
+		return "—"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	addrs, err := net.DefaultResolver.LookupHost(ctx, domain)
+	if err != nil || len(addrs) == 0 {
+		return "—"
+	}
+	return addrs[0] + " (resolved)"
+}
+
+// workingStr renders a component's health as words — status output is read by
+// humans, not parsers.
+func workingStr(b bool) string {
+	if b {
+		return "working"
+	}
+	return "not working"
+}
+
+func yesNo(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
 }
 
 // statusHeaderLines renders the identity header shown by every status command:

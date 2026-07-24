@@ -94,6 +94,26 @@ domain and the `Provisioned: true|false` string (`relay_install_test.go`,
 - Docs: add `tw status` to `docs/reference/cli.md` and mention it in the
   troubleshooting guide's "where am I?" flow.
 
+## Round 2 — Human-Readable Status (user feedback, 2026-07-24)
+
+After using the unified status, the user asked for three refinements:
+
+1. **Words, not booleans.** `SSH: true` carries no meaning. Component states
+   print `working` / `not working` (SSH, Xray, Tunnel in both the Server and
+   Client sections); `Provisioned:` prints `yes` / `no`.
+2. **Resolve the empty IP.** `RelayStatus.IP` is empty for joined servers and
+   marker-less manual relays. When the stored IP is empty but a relay domain
+   is known, the CLI resolves the domain via DNS (2s timeout) and prints
+   `<ip> (resolved)`; if resolution fails, `—`.
+3. **Show connected users.** In server mode the Users line becomes
+   `Users: N (M connected)`, backed by `ops.GetOnlineUsers()` (the dashboard's
+   online tracking). `StatusResponse` gains `connected_users`; the local
+   (daemon-down) path correctly reports 0 connected — a stopped server has no
+   sessions.
+
+e2e impact: `resilience_test.go` asserts `Provisioned: true|false` — those
+assertions (and their scenario briefs) change to `Provisioned: yes|no`.
+
 ## Out of Scope
 
 - No JSON output flag, no `--watch`, no changes to the gRPC `GetStatus` API

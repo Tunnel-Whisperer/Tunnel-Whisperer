@@ -8,6 +8,28 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
+func TestStatusWording(t *testing.T) {
+	if got := workingStr(true); got != "working" {
+		t.Errorf("workingStr(true) = %q, want \"working\"", got)
+	}
+	if got := workingStr(false); got != "not working" {
+		t.Errorf("workingStr(false) = %q, want \"not working\"", got)
+	}
+	if got := yesNo(true); got != "yes" {
+		t.Errorf("yesNo(true) = %q, want \"yes\"", got)
+	}
+	if got := yesNo(false); got != "no" {
+		t.Errorf("yesNo(false) = %q, want \"no\"", got)
+	}
+	// Stored IP wins without any lookup; nothing to resolve without a domain.
+	if got := relayIPDisplay("1.2.3.4", "relay.example.com"); got != "1.2.3.4" {
+		t.Errorf("relayIPDisplay with stored IP = %q, want \"1.2.3.4\"", got)
+	}
+	if got := relayIPDisplay("", ""); got != "—" {
+		t.Errorf("relayIPDisplay with nothing = %q, want dash", got)
+	}
+}
+
 func TestStatusHeaderLines(t *testing.T) {
 	relayCtx := &ops.ContextInfo{Name: "relay-tw-test", ID: "bef98b84", Role: "relay", Relay: "relay.tw.test", Current: true}
 	out := strings.Join(statusHeaderLines(relayCtx, 3, "relay", "/etc/tw/config.yaml"), "\n")

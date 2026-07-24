@@ -39,6 +39,11 @@ func (h *handler) GetStatus(ctx context.Context, req *Empty) (*StatusResponse, e
 	if mode == "server" {
 		ss := h.ops.ServerStatus()
 		resp.Server = &ss
+		for _, on := range h.ops.GetOnlineUsers() {
+			if on {
+				resp.ConnectedUsers++
+			}
+		}
 	}
 	if mode == "client" {
 		cs := h.ops.ClientStatus()

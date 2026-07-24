@@ -31,8 +31,11 @@ type StatusResponse struct {
 	Version   string             `json:"version"`
 	Relay     ops.RelayStatus    `json:"relay"`
 	UserCount int                `json:"user_count"`
-	Server    *ops.ServerStatus  `json:"server,omitempty"`
-	Client    *ops.ClientStatus  `json:"client,omitempty"`
+	// ConnectedUsers is how many of those users have a live session right now
+	// (server mode only; always 0 otherwise).
+	ConnectedUsers int               `json:"connected_users"`
+	Server         *ops.ServerStatus `json:"server,omitempty"`
+	Client         *ops.ClientStatus `json:"client,omitempty"`
 }
 
 // ConfigResponse carries the current on-disk configuration.
