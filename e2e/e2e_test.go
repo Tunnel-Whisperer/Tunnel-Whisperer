@@ -114,13 +114,24 @@ func testContexts(t *testing.T) {
 		"tw config new-context creates and switches to a fresh empty context (the admin's original is preserved)",
 		"tw config use-context <id> switches back by the short ID alone",
 		"tw config rename-context and delete-context clean up the scratch context",
-		"tw config current-context reflects each switch")
+		"tw config current-context reflects each switch",
+		"tw status (ungated) prints the unified header — context, mode, and USER alice on the client; context and mode relay on the admin")
 
 	// Client: the context imported from alice's user bundle must show the ssh
 	// user and a stable short ID (USER column is filled for client contexts).
 	out := execIn(t, "client", "tw config get-contexts")
 	if !regexp.MustCompile(`(?m)^\*\s+\S+\s+[0-9a-f]{8}\s+client\s+alice\s+`).MatchString(out) {
 		fatalf(t, "client current-context row does not show an 8-hex ID and USER alice:\n%s", out)
+	}
+
+	// The ungated top-level status must show the unified header on any role.
+	statusOut := execIn(t, "admin", "tw status")
+	if !strings.Contains(statusOut, "Context:") || !strings.Contains(statusOut, "Mode:     relay") {
+		fatalf(t, "admin tw status header missing context/mode:\n%s", statusOut)
+	}
+	statusOut = execIn(t, "client", "tw status")
+	if !strings.Contains(statusOut, "Mode:     client") || !strings.Contains(statusOut, "User:     alice") {
+		fatalf(t, "client tw status header missing mode/user:\n%s", statusOut)
 	}
 
 	// Admin: capture the current context's name and short ID from the listing.

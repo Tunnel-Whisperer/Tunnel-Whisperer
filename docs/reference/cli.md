@@ -11,7 +11,7 @@ config is set to `client`, and vice versa.
 | `tw serve` | server | Start the Tunnel Whisperer server (SSH, Xray, reverse tunnel, dashboard, gRPC API) |
 | `tw connect` | client | Connect to a relay as a client and establish local port forwards |
 | `tw dashboard` | any | Start the web dashboard with auto-start logic for server or client |
-| `tw status` | any | Show current server/client status (connects to daemon via gRPC, falls back to local) |
+| `tw status` | any | Overall status: active context (name/ID), mode, relay, config path, then that mode's live status. Ungated — works on any machine. |
 | `tw create relay-server` | server | Interactively provision a relay server on a cloud provider |
 | `tw create user` | server | Create a client user with tunnel access (interactive port mapping) |
 | `tw create user --from <name>` | server | Create a user by copying port mappings from an existing user |

@@ -38,6 +38,7 @@ commands:
   "config rename-context":   [TestE2E/Contexts]
   "config delete-context":   [TestE2E/Contexts]
   "config view":             [TestE2E/Contexts]
+  "status":                  [TestE2E/Contexts]
   "service install":         {exempt: "native service-manager integration (systemd/SCM/launchd); exercised via the manual Windows flow in CLAUDE.md"}
   "service uninstall":       {exempt: "native service-manager integration; see 'service install'"}
   "service start":           {exempt: "native service-manager integration; see 'service install'"}
