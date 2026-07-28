@@ -28,6 +28,9 @@ systemctl stop xray 2>/dev/null || true
 rm -rf /etc/caddy/ca /etc/caddy/Caddyfile
 rm -rf /usr/local/etc/xray
 rm -f /etc/ssh/sshd_config.d/99-tw-localhost.conf
+# Stale caddy repo bits: gpg --dearmor aborts on an existing keyring file
+# under set -e, so a re-run died at step 3 until these were cleaned.
+rm -f /usr/share/keyrings/caddy-stable-archive-keyring.gpg /etc/apt/sources.list.d/caddy-stable.list
 if command -v ufw >/dev/null 2>&1; then ufw --force reset >/dev/null 2>&1 || true; fi
 
 # ── Create SSH user ──────────────────────────────────────────
@@ -62,7 +65,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
 # ── Install Caddy ────────────────────────────────────────────
 echo "[3/7] Installing Caddy..."
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
-  | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  | gpg --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
   | tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null
 apt-get update -qq
