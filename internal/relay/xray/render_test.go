@@ -42,6 +42,28 @@ func TestRenderConfigPerTenant(t *testing.T) {
 	}
 }
 
+// TestRenderConfigFreedomAllowsLoopback: since Xray 26.3–26.6 the freedom
+// outbound blocks loopback/private targets for vless-originated traffic by
+// default (anti-SSRF hardening; symptom: "blocked target: tcp:127.0.0.1:22,
+// blackholing"). The relay's whole job is vless → freedom → 127.0.0.1:<port>,
+// so the freedom outbound must carry an explicit finalRules allow for
+// loopback. Per-tenant port restrictions stay enforced by the routing
+// allow/deny rules; all other private ranges remain blocked by the upstream
+// default. Older xray (≤26.2.x) ignores the unknown finalRules key.
+func TestRenderConfigFreedomAllowsLoopback(t *testing.T) {
+	out, err := RenderConfig(Config{Tenants: []Tenant{
+		{ServerID: "web-01-a1b2c3d4", UUID: "11111111-1111-1111-1111-111111111111", RemotePort: 20000},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"finalRules"`, `"action": "allow"`, `"127.0.0.1/32"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("freedom outbound missing loopback allow (%q)\n---\n%s", want, out)
+		}
+	}
+}
+
 func TestRenderConfigRequiresTenant(t *testing.T) {
 	if _, err := RenderConfig(Config{}); err == nil {
 		t.Error("expected error with no tenants")

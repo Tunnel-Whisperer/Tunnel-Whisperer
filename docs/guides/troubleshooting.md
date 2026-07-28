@@ -95,7 +95,7 @@ The dashboard shows "Configuration has changed. Restart/Reconnect to apply." whe
 
 ### "VLESS (with no Flow, etc.) is deprecated" Warning on the Relay
 
-The relay's Xray logs (`journalctl -u xray`) may show this at startup:
+Relays provisioned by an older `tw` (which pinned Xray v26.2.6) may show this in the Xray logs (`journalctl -u xray`) at startup — newer Xray versions (the current pin is v26.6.27) no longer print it:
 
 ```
 [Warning] common/errors: The feature VLESS (with no Flow, etc.) is deprecated, not recommended for using and might be removed. Please migrate to VLESS with Flow & Seed as soon as possible.

@@ -33,7 +33,15 @@
     }{{end}}
   ],
   "outbounds": [
-    { "tag": "freedom", "protocol": "freedom" },
+    {
+      "tag": "freedom",
+      "protocol": "freedom",
+      "settings": {
+        "finalRules": [
+          { "action": "allow", "ip": ["127.0.0.1/32"] }
+        ]
+      }
+    },
     { "tag": "blackhole", "protocol": "blackhole" }
   ],
   "routing": {

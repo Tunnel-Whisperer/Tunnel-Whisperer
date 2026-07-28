@@ -29,7 +29,7 @@ var installScriptTmpl string
 
 // Pinned versions — keeps relay setup reproducible even when upstream releases new versions.
 const (
-	XrayVersion = "v26.2.6" // must stay compatible with the xray-core in go.mod
+	XrayVersion = "v26.6.27" // must stay compatible with the xray-core in go.mod (pinned mtls commit, 2026-06-17)
 )
 
 // Config holds all values needed to render relay files.
