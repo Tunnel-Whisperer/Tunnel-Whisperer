@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -14,9 +15,21 @@ func TestKillRelayListenerCmd(t *testing.T) {
 	if !strings.Contains(cmd, "/proc/net/tcp") || !strings.Contains(cmd, "/proc/net/tcp6") {
 		t.Errorf("command must read /proc/net/tcp and /proc/net/tcp6:\n%s", cmd)
 	}
-	// No listener found must still exit 0 (tunnel already down = success).
-	if !strings.HasSuffix(cmd, "true") {
-		t.Errorf("command must end in 'true' so no-match is not an error:\n%s", cmd)
+	// A kill that does not actually free the port must surface as an error,
+	// not be swallowed by a trailing `true`: the command re-checks the
+	// listener after killing and exits 1 if it survived. No listener found
+	// at the start still exits 0 (tunnel already down = success).
+	if strings.HasSuffix(strings.TrimSpace(cmd), "true") {
+		t.Errorf("kill failure must not be masked by a trailing 'true':\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "still listening") || !strings.Contains(cmd, "exit 1") {
+		t.Errorf("command must re-check the listener and fail loudly if it survives:\n%s", cmd)
+	}
+	// The command must be valid shell.
+	c := exec.Command("sh", "-n")
+	c.Stdin = strings.NewReader(cmd)
+	if out, err := c.CombinedOutput(); err != nil {
+		t.Fatalf("command does not parse as shell: %v\n%s\n%s", err, out, cmd)
 	}
 }
 

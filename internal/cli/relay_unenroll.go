@@ -25,6 +25,16 @@ func init() {
 	relayCmd.AddCommand(relayUnenrollServerCmd)
 }
 
+// unenrollDetails is the human-readable identity of the server about to be
+// removed: id, allocated port, enrollment time ("-" for pre-stamp entries).
+func unenrollDetails(target *ops.RegisteredServer) string {
+	enrolled := "-"
+	if t, err := time.Parse(time.RFC3339, target.EnrolledAt); err == nil {
+		enrolled = t.Format("2006-01-02T15:04")
+	}
+	return fmt.Sprintf("\n  Server:   %s\n  Port:     %d\n  Enrolled: %s\n\n", target.ServerID, target.RemotePort, enrolled)
+}
+
 func runRelayUnenrollServer(cmd *cobra.Command, args []string) error {
 	if err := requireMode("relay"); err != nil {
 		return err
@@ -48,12 +58,10 @@ func runRelayUnenrollServer(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("server %q is not enrolled", serverID)
 	}
 
+	// Details print unconditionally — with --yes too, so scripted runs still
+	// log exactly what was removed.
+	fmt.Print(unenrollDetails(target))
 	if !unenrollYes {
-		enrolled := "-"
-		if t, err := time.Parse(time.RFC3339, target.EnrolledAt); err == nil {
-			enrolled = t.Format("2006-01-02T15:04")
-		}
-		fmt.Printf("\n  Server:   %s\n  Port:     %d\n  Enrolled: %s\n\n", target.ServerID, target.RemotePort, enrolled)
 		fmt.Print("  Un-enroll this server? Its relay access and all its live connections end immediately. [y/N]: ")
 		scanner := bufio.NewScanner(os.Stdin)
 		scanner.Scan()

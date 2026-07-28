@@ -19,14 +19,21 @@ import (
 // session) share one SSH user, so the kill targets the listener port, never
 // a process name. Pure coreutils + awk (no ss/fuser): find the LISTEN
 // socket inode in /proc/net/tcp{,6} (state 0A, hex port), then the pid
-// whose fd table holds that inode. No listener found is success — the
-// tunnel was already down — hence the trailing true.
+// whose fd table holds that inode. No listener found at the start is
+// success (the tunnel was already down); after a kill the command polls
+// until the listener is gone and exits 1 if it survives, so a failed kill
+// surfaces instead of being silently swallowed.
 func killRelayListenerCmd(port int) string {
+	find := fmt.Sprintf(`awk '$4=="0A" && $2 ~ /:%04X$/ {print $10}' /proc/net/tcp /proc/net/tcp6`, port)
 	return fmt.Sprintf(
-		`inos=$(awk '$4=="0A" && $2 ~ /:%04X$/ {print $10}' /proc/net/tcp /proc/net/tcp6); `+
+		`inos=$(%s); `+
+			`if [ -n "$inos" ]; then `+
 			`for ino in $inos; do for p in /proc/[0-9]*; do `+
 			`sudo ls -l "$p/fd" 2>/dev/null | grep -q "socket:\[$ino\]" && sudo kill "${p#/proc/}"; `+
-			`done; done; true`, port)
+			`done; done; `+
+			`left="$inos"; for i in 1 2 3 4 5; do left=$(%s); [ -z "$left" ] && break; sleep 1; done; `+
+			`[ -z "$left" ] || { echo "port %d still listening after kill" >&2; exit 1; }; `+
+			`fi`, find, find, port)
 }
 
 // excludeServer returns servers without the entry matching serverID,
@@ -52,6 +59,11 @@ func (o *Ops) UnenrollServer(serverID string, progress ProgressFunc) error {
 	if progress == nil {
 		progress = func(ProgressEvent) {}
 	}
+	release, err := acquireEnrollLock()
+	if err != nil {
+		return err
+	}
+	defer release()
 	const total = 4
 
 	// Step 1: Resolve the target in the registry.

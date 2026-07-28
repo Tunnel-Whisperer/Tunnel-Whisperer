@@ -2,10 +2,41 @@ package ops
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
 )
+
+// TestAddServerRejectsAdminOwnID: the admin's own identity must never land
+// in the registry — un-enrolling it would tear the admin's own tenant out
+// of the relay. Unreachable in practice (the admin doesn't join itself),
+// but cheap to refuse outright.
+func TestAddServerRejectsAdminOwnID(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	o, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.cfg.Xray.UUID = "a1b2c3d4-aaaa-bbbb-cccc-ddddeeeeffff"
+	host, _ := os.Hostname()
+	adminID := deriveServerID(host, o.cfg.Xray.UUID)
+
+	_, err = o.AddServer(&JoinRequest{Version: 1, ServerID: adminID, UUID: "u-x",
+		Hostname: "x", SSHPubkey: "ssh-ed25519 AAAA x@tw"})
+	if err == nil {
+		t.Fatal("enrolling the relay's own server-id must be refused")
+	}
+	if !strings.Contains(err.Error(), "own") {
+		t.Errorf("error should explain it is the relay's own identity, got: %v", err)
+	}
+
+	// A normal id is unaffected.
+	if _, err := o.AddServer(&JoinRequest{Version: 1, ServerID: "srv-1", UUID: "u-1",
+		Hostname: "srv", SSHPubkey: "ssh-ed25519 AAAA s@tw"}); err != nil {
+		t.Fatalf("normal enroll must still work: %v", err)
+	}
+}
 
 func TestAddAndListServers(t *testing.T) {
 	t.Setenv("TW_CONFIG_DIR", t.TempDir())

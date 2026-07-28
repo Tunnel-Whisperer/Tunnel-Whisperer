@@ -55,6 +55,13 @@ func (o *Ops) ListServers() ([]RegisteredServer, error) {
 
 // AddServer registers a joining server, allocating a unique RemotePort.
 func (o *Ops) AddServer(req *JoinRequest) (RegisteredServer, error) {
+	osHost, _ := os.Hostname()
+	if adminID := deriveServerID(osHost, o.Config().Xray.UUID); req.ServerID == adminID {
+		// The admin's own entry is seeded into every render outside the
+		// registry; letting it in would make it un-enrollable — tearing the
+		// admin's own tenant out of the relay.
+		return RegisteredServer{}, fmt.Errorf("server id %q is the relay's own identity; refusing to enroll the relay into itself", req.ServerID)
+	}
 	list, err := o.ListServers()
 	if err != nil {
 		return RegisteredServer{}, err

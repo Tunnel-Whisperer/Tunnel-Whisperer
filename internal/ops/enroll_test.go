@@ -1,9 +1,11 @@
 package ops
 
 import (
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/ops/modeauth"
 	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
 )
@@ -63,6 +65,61 @@ func TestEnrollServerSignsServerMode(t *testing.T) {
 	_ = resp
 	if err := modeauth.Verify("server", req.SSHPubkey, sig, issuer); err != nil {
 		t.Fatalf("relay-signed server token does not verify: %v", err)
+	}
+}
+
+// TestRelayTenantStateSeedsAdminFirst pins the invariant every relay render
+// depends on: the admin's own tenant entry is ALWAYS present and ALWAYS
+// first — even with zero registered servers — so an enroll/un-enroll can
+// never render a Caddyfile/authorized_keys/xray config that locks the
+// admin out of its own relay.
+func TestRelayTenantStateSeedsAdminFirst(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	o, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.cfg.Xray.UUID = "a1b2c3d4-aaaa-bbbb-cccc-ddddeeeeffff"
+	o.cfg.Server.RemotePort = 2222
+	if err := os.WriteFile(config.CACertPath(), []byte(testCAPEM(t)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	host, _ := os.Hostname()
+	adminID := deriveServerID(host, o.cfg.Xray.UUID)
+
+	// Zero registered servers: the admin entry alone.
+	servers, tenants, caCerts, err := o.relayTenantState(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(servers) != 1 || len(tenants) != 1 {
+		t.Fatalf("empty registry must still yield the admin entry, got %d servers / %d tenants", len(servers), len(tenants))
+	}
+	if servers[0].ID != adminID || servers[0].Role != "relay" {
+		t.Errorf("admin caddy entry = %+v, want ID %s role relay", servers[0], adminID)
+	}
+	if tenants[0].ServerID != adminID || tenants[0].RemotePort != 2222 {
+		t.Errorf("admin tenant = %+v, want ID %s port 2222", tenants[0], adminID)
+	}
+	if _, ok := caCerts[adminID]; !ok {
+		t.Errorf("admin CA cert missing from caCerts (keys: %v)", caCerts)
+	}
+
+	// With a registered server: admin still first, tenant appended after.
+	servers, tenants, caCerts, err = o.relayTenantState([]RegisteredServer{
+		{ServerID: "srv-1", UUID: "u-1", RemotePort: 20000, CACertPEM: "PEM-1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(servers) != 2 || servers[0].ID != adminID || servers[1].ID != "srv-1" {
+		t.Errorf("admin must stay first: %+v", servers)
+	}
+	if servers[1].Role != "server" {
+		t.Errorf("tenant role = %q, want server", servers[1].Role)
+	}
+	if tenants[1].ServerID != "srv-1" || string(caCerts["srv-1"]) != "PEM-1" {
+		t.Errorf("tenant entry not appended correctly: %+v / %q", tenants[1], caCerts["srv-1"])
 	}
 }
 

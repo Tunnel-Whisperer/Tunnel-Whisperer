@@ -109,6 +109,14 @@ func (o *Ops) EnrollServer(req *JoinRequest, progress ProgressFunc) (*JoinRespon
 	if progress == nil {
 		progress = func(ProgressEvent) {}
 	}
+	// Enroll and un-enroll both render the FULL relay state from the registry
+	// and rewrite it wholesale — interleaved runs would drop each other's
+	// tenant, so they are serialized per admin profile.
+	release, err := acquireEnrollLock()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 
 	const total = 5
 
