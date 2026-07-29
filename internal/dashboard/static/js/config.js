@@ -264,39 +264,66 @@ async function reloadConfigYAML() {
 
 // ── Contexts ────────────────────────────────────────────────────────────────
 
+let allContexts = [];
+
 async function loadContexts() {
   const rows = $('#contexts-rows');
   if (!rows) return;
   try {
-    const list = (await api.get('/api/config/contexts')) || [];
-    if (!list.length) {
-      rows.innerHTML = '<tr><td colspan="7" class="text-dim">No stored contexts.</td></tr>';
-      return;
-    }
-    rows.innerHTML = '';
-    for (const c of list) {
-      const tr = document.createElement('tr');
-      const cells = [c.Current ? '●' : '', c.Name, c.ID || '—', c.Role || '—', c.User || '—', c.Relay || '—'];
-      for (const v of cells) {
-        const td = document.createElement('td');
-        td.textContent = v;
-        tr.appendChild(td);
-      }
-      const td = document.createElement('td');
-      if (!c.Current) {
-        const btn = document.createElement('button');
-        btn.className = 'btn';
-        btn.textContent = 'Switch';
-        btn.onclick = () => switchContext(c.Name);
-        td.appendChild(btn);
-      }
-      tr.appendChild(td);
-      rows.appendChild(tr);
-    }
+    allContexts = (await api.get('/api/config/contexts')) || [];
+    renderContexts();
   } catch (err) {
     const errBox = $('#contexts-error');
     errBox.textContent = err.message;
     errBox.classList.remove('hidden');
+  }
+}
+
+function renderContexts() {
+  const rows = $('#contexts-rows'), count = $('#contexts-count');
+  if (!rows) return;
+  if (!allContexts.length) {
+    rows.innerHTML = '<tr><td colspan="7" class="text-dim">No stored contexts.</td></tr>';
+    return;
+  }
+  const q = ($('#contexts-search')?.value || '').trim().toLowerCase();
+  const role = $('#contexts-role-filter')?.value || '';
+  const shown = allContexts.filter(c => {
+    if (role && c.Role !== role) return false;
+    if (!q) return true;
+    const hay = [c.Name, c.ID, c.Role, c.User, c.Relay]
+      .map(v => String(v == null ? '' : v).toLowerCase()).join(' ');
+    return hay.includes(q);
+  });
+  if (q || role) {
+    count.textContent = `${shown.length} of ${allContexts.length}`;
+    count.classList.remove('hidden');
+  } else {
+    count.classList.add('hidden');
+  }
+  rows.innerHTML = '';
+  if (!shown.length) {
+    rows.innerHTML = '<tr><td colspan="7" class="text-dim">no matches</td></tr>';
+    return;
+  }
+  for (const c of shown) {
+    const tr = document.createElement('tr');
+    const cells = [c.Current ? '●' : '', c.Name, c.ID || '—', c.Role || '—', c.User || '—', c.Relay || '—'];
+    for (const v of cells) {
+      const td = document.createElement('td');
+      td.textContent = v;
+      tr.appendChild(td);
+    }
+    const td = document.createElement('td');
+    if (!c.Current) {
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.textContent = 'Switch';
+      btn.onclick = () => switchContext(c.Name);
+      td.appendChild(btn);
+    }
+    tr.appendChild(td);
+    rows.appendChild(tr);
   }
 }
 

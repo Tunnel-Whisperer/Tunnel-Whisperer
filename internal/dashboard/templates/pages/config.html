@@ -6,6 +6,16 @@
     <h2>Contexts</h2>
   </div>
   <p class="text-dim mb-16">Stored relay contexts. Switching re-seals the current profile, activates the selected one, and reloads the page.</p>
+  <div class="flex gap-8 mb-16">
+    <input type="text" id="contexts-search" placeholder="Search contexts…" autocomplete="off" oninput="renderContexts()">
+    <select id="contexts-role-filter" onchange="renderContexts()">
+      <option value="">all roles</option>
+      <option value="relay">relay</option>
+      <option value="server">server</option>
+      <option value="client">client</option>
+    </select>
+    <span id="contexts-count" class="text-dim hidden"></span>
+  </div>
   <table class="table" id="contexts-table">
     <thead><tr><th></th><th>Name</th><th>ID</th><th>Role</th><th>User</th><th>Relay</th><th></th></tr></thead>
     <tbody id="contexts-rows"><tr><td colspan="7" class="text-dim">Loading…</td></tr></tbody>
