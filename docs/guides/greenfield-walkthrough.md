@@ -99,7 +99,7 @@ Each client gets a user on the server it should reach, with a port map `clientLo
 ```bash
 tw server user create client1 -m 2201:22
 tw server user apply client1                 # registers the user on the relay
-tw config export-user client1                # writes client1-<ctx>.twctx
+tw config export-user client1                # writes client1-tw-context.twctx
 ```
 
 **On server2** (for client2):
@@ -117,7 +117,7 @@ Send each `.twctx` bundle to its client over a trusted channel — the bundles a
 **On client1:**
 
 ```bash
-tw config import client1-<ctx>.twctx --activate
+tw config import client1-tw-context.twctx --activate
 tw client connect        # keep running; or install as a service like the servers
 ```
 
@@ -154,6 +154,6 @@ A user bundle belongs to one server, but clients handle multiple via kubectl-sty
 ## Gotchas
 
 - Modes are enforced and signed: a client box can't run `tw server ...` commands and vice versa. If you set up a machine in the wrong mode, wipe its tw config dir and start that machine's steps over.
-- The relay VM's SSH is locked to localhost after install — only the admin reaches it, via `tw relay ssh`.
+- The relay VM's SSH is tunnel-only after install — the admin reaches it via `tw relay ssh`. If you provisioned with `--ssh-open`, the admin key also works directly over port 22 (close it later from the dashboard's relay page).
 - If you edit a user's port mappings later (`tw server user edit`), re-export and have the client re-import — the old bundle stops matching.
 - To kick a server off the relay: admin runs `tw relay un-enroll-server <server-id> --yes`; to revoke a client: server runs `tw server user unregister <name>` / `delete <name>` (takes effect on their next connection attempt).

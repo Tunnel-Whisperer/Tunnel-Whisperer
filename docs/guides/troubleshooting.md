@@ -21,7 +21,7 @@ The main page shows real-time status for all components with color-coded indicat
 ## Testing the Relay
 
 ```bash
-tw test relay
+tw relay test
 ```
 
 Runs a 3-step diagnostic:
@@ -37,7 +37,7 @@ Increase verbosity for debugging:
 ### CLI
 
 ```bash
-tw --log-level debug serve
+tw --log-level debug server start
 ```
 
 ### Dashboard
@@ -80,10 +80,10 @@ The client and server automatically reconnect with exponential backoff (2s → 4
 ### Mode Enforcement Errors
 
 ```
-Error: this is a server command, but tw is configured in client mode
+this command requires server mode, but tw is configured in client mode
 ```
 
-Server-only commands (like `tw create user`) cannot run in client mode, and vice versa.
+Server-only commands (like `tw server user create`) cannot run in client mode, and vice versa.
 
 **Fix:** Ensure you're running the command on the correct machine, or check `mode` in your `config.yaml`.
 

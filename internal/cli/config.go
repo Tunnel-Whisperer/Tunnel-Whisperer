@@ -61,7 +61,7 @@ var configDeleteContextCmd = &cobra.Command{
 }
 
 var configImportCmd = &cobra.Command{
-	Use:   "import <bundle.zip>",
+	Use:   "import <bundle.twctx>",
 	Short: "Import a bundle as a new context",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runConfigImport,

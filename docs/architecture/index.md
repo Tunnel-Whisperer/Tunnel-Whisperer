@@ -2,28 +2,28 @@
 
 Tunnel Whisperer creates resilient, application-layer bridges for specific ports across separated private networks. It encapsulates traffic in standard HTTPS to traverse strict firewalls, NAT, and DPI-controlled environments.
 
-The system connects a **server** behind a private network to **clients** behind other private networks via a publicly reachable **relay**. All connectivity is egress-only from both sides.
+The system has three roles: a **relay** operator (admin) owns a publicly reachable relay VM, **servers** behind private networks join it via an enrollment handshake, and **clients** behind other private networks connect through it. The relay is multi-tenant — several independent servers can share one relay, each isolated behind its own path, CA, and loopback port. All connectivity is egress-only from servers and clients.
 
 ```mermaid
 graph LR
     subgraph Server Network
-        S[Server - tw serve]
+        S[Server - tw server start]
     end
 
     subgraph Public Cloud
         R[Relay VM]
-        C_[Caddy :443]
-        X[Xray :10000]
+        C_[Caddy :443 mTLS gate]
+        X["Xray (per-tenant VLESS inbounds<br/>on 127.0.0.1)"]
     end
 
     subgraph Client Network
-        CL[Client - tw connect]
+        CL[Client - tw client connect]
     end
 
-    S -- "TLS :443 (Xray VLESS+XHTTP)" --> C_
-    CL -- "TLS :443 (Xray VLESS+XHTTP)" --> C_
-    C_ -- "reverse proxy /tw*" --> X
-    X -- "freedom outbound" --> R
+    S -- "mTLS :443 (VLESS+XHTTP, /tw/&lt;id&gt;)" --> C_
+    CL -- "mTLS :443 (VLESS+XHTTP, /tw/&lt;id&gt;)" --> C_
+    C_ -- "per-tenant handle /tw/&lt;id&gt;" --> X
+    X -- "freedom outbound (loopback only)" --> R
 ```
 
 ## Documentation Sections

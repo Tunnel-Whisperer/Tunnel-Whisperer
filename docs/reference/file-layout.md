@@ -8,52 +8,107 @@ state under a single platform-specific directory.
 | Linux | `/etc/tw/config/` |
 | macOS | `/etc/tw/config/` |
 | Windows | `C:\ProgramData\tw\config\` |
-| Override | `TW_CONFIG_DIR` environment variable |
+| Override | `TW_CONFIG_DIR` environment variable, or the `--config-dir` flag |
 
 ---
 
+## Common files (every mode)
+
+| File | Description |
+|---|---|
+| `config.yaml` | Main configuration file (see [Configuration](configuration.md)) |
+| `id_ed25519` / `id_ed25519.pub` | The profile's ed25519 SSH identity key pair, generated on first initialization. Server: authenticates the reverse tunnel to the relay. Relay: the admin management key. Client: the per-user key received in the bundle. Also the signing/identity key for `mode_auth`. |
+| `contexts.yaml` | Plaintext context index: the active context name plus non-secret metadata (role, relay, user, short ID, created) per stored context |
+| `contexts/<name>.twctx` | Sealed bundle of each **non-active** stored context (the active context lives unpacked in the config dir itself and is sealed on switch-away) |
+
 ## Server file tree
 
-A fully provisioned server with two users has the following layout:
+A server enrolled on a relay, with two users, has this layout:
 
 ```
 /etc/tw/config/
 ├── config.yaml              # Main configuration file
-├── authorized_keys          # SSH authorized keys (auto-generated from users)
-├── ssh_host_ed25519_key     # SSH server host key (private)
-├── ssh_host_ed25519_key.pub # SSH server host key (public)
+├── contexts.yaml            # Context index
+├── contexts/                # Sealed non-active contexts (*.twctx)
+├── id_ed25519               # Server identity key (reverse tunnel auth)
+├── id_ed25519.pub
+├── authorized_keys          # SSH authorized keys (seeded with the server's own key; one entry per user, re-read on every auth)
+├── ssh_host_ed25519_key     # Embedded SSH server host key (generated on first `tw server start`)
 ├── ca.crt                   # Per-server CA certificate (PEM); public cert shipped to the relay trust pool
 ├── ca.key                   # Per-server CA private key (PEM); never leaves the server
 ├── client.crt               # Client certificate (PEM) presented to the relay's mutual-TLS gate
 ├── client.key               # Private key (PEM) for client.crt
-├── relay/
-│   ├── main.tf              # Terraform configuration for the relay
-│   ├── cloud-init.yaml      # Cloud-init script (Caddy + Xray + SSH setup)
-│   ├── terraform.tfvars     # Terraform variables (provider, domain, token)
-│   └── terraform.tfstate    # Terraform state (tracks provisioned resources)
 └── users/
     ├── alice/
-    │   ├── config.yaml      # Client config pre-filled for this user
-    │   ├── id_ed25519       # SSH private key
-    │   └── id_ed25519.pub   # SSH public key
+    │   ├── config.yaml      # Client config pre-filled for this user (no mode field; mode is injected on export)
+    │   ├── id_ed25519       # User's SSH private key
+    │   ├── id_ed25519.pub   # User's SSH public key (mirrored into authorized_keys)
+    │   ├── .applied         # Marker: user is registered on the relay (written by create/apply)
+    │   ├── .single-session  # Optional marker: enforce one concurrent session for this user
+    │   └── .mappings-dirty  # Optional marker: mappings changed since the bundle was last exported
     └── bob/
-        ├── config.yaml      # Client config pre-filled for this user
-        ├── id_ed25519       # SSH private key
-        └── id_ed25519.pub   # SSH public key
+        └── ...
 ```
 
-## Client file tree
+## Relay (admin) file tree
 
-A client receives a config bundle from the server and places it in the config
-directory:
+The relay owner's profile additionally holds the tenant registry and the
+relay infrastructure state:
 
 ```
 /etc/tw/config/
-├── config.yaml              # Client configuration (mode, xray, tunnels)
-├── id_ed25519               # SSH private key (received from server)
-├── id_ed25519.pub           # SSH public key (received from server)
-├── client.crt               # Per-server client certificate (received from server) for relay mTLS
-└── client.key               # Private key for client.crt (received from server)
+├── config.yaml              # mode: relay
+├── contexts.yaml / contexts/
+├── id_ed25519(.pub)         # Admin management key (authorized on the relay VM)
+├── ca.crt / ca.key          # The relay profile's own tenant CA (the admin is also a tenant)
+├── client.crt / client.key  # ...and its mTLS client certificate
+├── servers/                 # Enrolled-server registry: one JSON file per tenant
+│   └── <server-id>.json     # server_id, uuid, hostname, remote_port, ca_cert_pem, ssh_pubkey, enrolled_at
+├── relay/                   # Relay infrastructure state (see below)
+├── archive/
+│   └── <domain>/caddy-certs.tar.gz   # Relay's Caddy TLS data, saved (best-effort) before destroy for reuse on re-provision
+└── enroll.lock              # Transient lock serializing enroll/un-enroll runs (auto-removed; stale locks expire)
+```
+
+### The `relay/` directory
+
+For a **cloud (Terraform) relay**, created by `tw relay create`:
+
+| File | Description |
+|---|---|
+| `main.tf` | Terraform configuration for the selected provider (Hetzner, DigitalOcean, or AWS) |
+| `cloud-init.yaml` | Cloud-init user data that installs Caddy + Xray and configures SSH |
+| `terraform.tfvars` | Input variables (provider credentials/region), written `0600` |
+| `terraform.tfstate` | Terraform state tracking the provisioned resources — its presence marks the relay as cloud-provisioned |
+| `relay-meta.json` | Relay metadata (`ssh_open`, name) |
+
+For a **manual (bring-your-own-VM) relay** there is no Terraform state; the
+marker is:
+
+| File | Description |
+|---|---|
+| `manual-relay.json` | Manual relay marker: domain, IP, `ssh_open` |
+
+The generated install script itself (`tw-install-<domain>.sh`) is written to
+the directory where you ran `tw relay create`, not the config dir.
+
+!!! warning "Do not edit `terraform.tfstate`"
+    The state file is managed by Terraform. Manual edits can cause resource
+    drift or prevent clean destruction of the relay server.
+
+## Client file tree
+
+A client imports a context bundle (`tw config import <file> --activate`),
+which unpacks into the config directory:
+
+```
+/etc/tw/config/
+├── config.yaml              # Client configuration (mode: client, xray, tunnels, mode_auth)
+├── contexts.yaml / contexts/
+├── id_ed25519               # This user's SSH private key (from the bundle)
+├── id_ed25519.pub
+├── client.crt               # Per-server client certificate (from the bundle) for relay mTLS
+└── client.key               # Private key for client.crt
 ```
 
 !!! note "The client certificate is per-server, not per-user"
@@ -64,62 +119,35 @@ directory:
 
 ---
 
-## Per-user config bundle
+## Context bundles (`.twctx`)
 
-When a user is created on the server, `tw export user <name>` (or the
-dashboard download button) produces a `.zip` file containing everything
-the client needs.
+All portable identity is exchanged as `.twctx` bundles — a zip of profile
+files sealed in the `TWBOX1` container format, **with no passphrase**:
 
-**Zip contents:**
+| Bundle | Produced by | Contents |
+|---|---|---|
+| `tw_<name>.twctx` | `tw config export` (and automatically at the end of `tw relay create`) | The full profile of the exported context |
+| `<name>-tw-context.twctx` | `tw config export-user <name>` (or the dashboard download) | A `role: client` context for one user: `config.yaml` (with `mode: client` and a `mode_auth` signature injected), `id_ed25519`, `id_ed25519.pub`, `client.crt`, `client.key` |
 
-```
-<name>-tw-config.zip
-├── config.yaml              # Complete client config
-├── id_ed25519               # SSH private key for this user
-├── id_ed25519.pub           # SSH public key for this user
-├── client.crt               # Per-server client certificate for relay mTLS (shared by all users)
-└── client.key               # Private key for client.crt
-```
+The client-side `config.yaml` inside a user bundle is pre-filled with:
 
-The `config.yaml` inside the bundle is pre-filled with:
+- `mode: client` (plus the server-signed `mode_auth` block)
+- `xray.uuid` — the user's unique UUID
+- `xray.relay_host`, `xray.relay_port`, `xray.path` — transport settings for the server's relay slot
+- `client.ssh_user` — the user's name
+- `client.server_ssh_port` — matching the server's SSH port
+- `client.tunnels` — the port mappings defined for the user
 
-- `mode: client`
-- `xray.uuid` -- unique UUID for this user
-- `xray.relay_host` -- the server's relay domain
-- `xray.relay_port` and `xray.path` -- transport settings
-- `client.ssh_user` -- the user's name
-- `client.server_ssh_port` -- matching the server's SSH port
-- `client.tunnels` -- port mappings defined during user creation
+Certificate paths are **not** stored in the bundle config — they are derived
+from the config dir at runtime, so a bundle works unchanged across platforms
+and `TW_CONFIG_DIR` values.
 
-The bundle also carries the server's `client.crt`/`client.key` — the same
-per-server certificate for every user — which the client presents to the
-relay's mutual-TLS gate. See [Relay Authentication](../security/relay-authentication.md).
-
-!!! tip "Deploying the bundle"
-    Extract the zip into the client's config directory and start the client:
-
+!!! tip "Deploying a user bundle"
     ```bash
-    # Linux
-    sudo mkdir -p /etc/tw/config
-    sudo unzip alice-tw-config.zip -d /etc/tw/config/
-    sudo tw connect
+    tw config import alice-tw-context.twctx --activate
+    tw client connect
     ```
 
----
-
-## Relay directory
-
-The `relay/` subdirectory contains all Terraform-managed infrastructure files.
-It is created during `tw create relay-server` and persists until
-`tw destroy relay-server` removes the cloud resources.
-
-| File | Description |
-|---|---|
-| `main.tf` | Terraform configuration defining the VPS, firewall rules, and DNS |
-| `cloud-init.yaml` | Cloud-init user data that installs Caddy, Xray, and configures SSH |
-| `terraform.tfvars` | Input variables: provider credentials, domain, region |
-| `terraform.tfstate` | Terraform state file tracking all provisioned cloud resources |
-
-!!! warning "Do not edit `terraform.tfstate`"
-    The state file is managed by Terraform. Manual edits can cause resource
-    drift or prevent clean destruction of the relay server.
+!!! warning "Bundles carry no passphrase"
+    A `.twctx` file is exactly as sensitive as the keys inside it. Transfer
+    it over a trusted channel and delete stray copies.

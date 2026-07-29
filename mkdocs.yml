@@ -83,14 +83,28 @@ nav:
   - Getting Started:
     - getting-started/index.md
     - Installation: getting-started/installation.md
-    - Server Setup: getting-started/server-setup.md
-    - Client Setup: getting-started/client-setup.md
+  - Global:
+    - global/index.md
+    - Contexts: global/contexts.md
+    - Status & Service: global/status-service.md
+    - Web Dashboard: global/dashboard.md
+    - Proxy: global/proxy.md
+  - Relay:
+    - relay/index.md
+    - Provisioning: relay/provisioning.md
+    - Tenants: relay/tenants.md
+    - SSH Access: relay/ssh-access.md
+  - Server:
+    - server/index.md
+    - Joining a Relay: server/join-relay.md
+    - Users: server/users.md
+    - Apps: server/apps.md
+    - Running: server/running.md
+  - Client:
+    - client/index.md
+    - Setup & Connect: client/connect.md
   - Guides:
     - Greenfield Walkthrough: guides/greenfield-walkthrough.md
-    - Relay Provisioning: guides/relay-provisioning.md
-    - User Management: guides/user-management.md
-    - Web Dashboard: guides/dashboard.md
-    - Proxy Configuration: guides/proxy-configuration.md
     - Troubleshooting: guides/troubleshooting.md
   - Reference:
     - CLI Commands: reference/cli.md

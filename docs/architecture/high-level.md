@@ -17,7 +17,7 @@ sequenceDiagram
     note over s: Server exposes sshd to relay via SSH -R
 
     c ->> c : SSH over TLS (local port forwarding)
-    note over c: Client can maps local ports to allowed server services
+    note over c: Client maps local ports to allowed server services
     c <<-->> s : Data exchange over SSH tunnel (Bidirectional is possible)
 
 ```
@@ -29,5 +29,7 @@ sequenceDiagram
 * **SSH handles session security and port semantics**
 * **Xray provides transport resilience and firewall traversal**
 * **Relay never initiates connections**
+* **Multi-tenant relay** — one relay serves many servers, each isolated behind its own path, CA (mutual TLS), and loopback port
+* **Three signed roles** — every installation is a `relay`, `server`, or `client` profile; the mode is ed25519-signed as tamper-evidence
 
 

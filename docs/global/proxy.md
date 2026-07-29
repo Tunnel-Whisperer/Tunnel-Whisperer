@@ -1,6 +1,6 @@
 # Proxy Configuration
 
-If your server or client is behind a corporate firewall that requires outbound connections to go through a proxy, Tunnel Whisperer can route its Xray tunnel through a SOCKS5 or HTTP proxy.
+If a machine is behind a corporate firewall that requires outbound connections to go through a proxy, Tunnel Whisperer can route its traffic through a SOCKS5 or HTTP proxy. The setting works in **all three roles** — server and client tunnels use it for the Xray transport, and relay-mode operations (provisioning, relay SSH, enrollment) honor it too.
 
 ## Supported Protocols
 
@@ -13,6 +13,7 @@ If your server or client is behind a corporate firewall that requires outbound c
 
 ```bash
 tw proxy set socks5://proxy.corp.example.com:1080
+tw proxy set http://user:pass@proxy.corp.example.com:8080
 ```
 
 ### Dashboard
@@ -31,10 +32,14 @@ tw proxy clear
 
 Go to **Config** → **Proxy** → **Clear**.
 
-## Viewing Current Proxy
+## Viewing the Current Proxy
 
 ```bash
 tw proxy
+```
+
+```text
+  Proxy: socks5://proxy.corp.example.com:1080
 ```
 
 ## When It Takes Effect

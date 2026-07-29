@@ -3,9 +3,9 @@
 Before any tunnel reaches the relay, it must pass a **mutual-TLS (mTLS)
 handshake**. The relay's Caddy front door is configured to *require and verify*
 an X.509 client certificate, so a connection that cannot present a certificate
-signed by the server's own certificate authority is rejected during the TLS
-handshake — before the VLESS protocol, before SSH, before any application byte
-is exchanged.
+signed by an enrolled server's own certificate authority is rejected during the
+TLS handshake — before the VLESS protocol, before SSH, before any application
+byte is exchanged.
 
 This is the relay's primary admission control. The older VLESS UUID check is
 kept as harmless defense-in-depth and is no longer the security boundary.
@@ -25,7 +25,8 @@ certificate at the TLS handshake:
   resistance).
 - **Anchors trust in a per-server CA.** The relay trusts exactly one
   certificate authority per enrolled server. Only that server (and the clients
-  it hands the certificate to) can establish a tunnel.
+  it hands the certificate to) can establish a tunnel — and only to that
+  server's own route.
 - **Preserves end-to-end encryption.** mTLS is *admission*, not decryption — the
   relay still forwards opaque streams and never sees plaintext. SSH remains the
   end-to-end layer.
@@ -35,21 +36,25 @@ certificate at the TLS handshake:
 ## The per-server certificate authority
 
 Each server runs its own small certificate authority. There is **one CA per
-server**, and it issues **one client certificate** (common name = the server's
-relay host, or `tw-server` if unset) that every client of that server shares.
+server**, and it issues **one client certificate** — its common name is the
+**server-id** (`<hostname>-<first 8 hex of the profile UUID>`) — that every
+client of that server shares.
 
 | Artifact | Curve / validity | Stored at | Leaves the server? |
 |---|---|---|---|
-| CA certificate (`ca.crt`) | ECDSA P-256, 10 years | `<config-dir>/ca.crt` | **Public cert only** → shipped to the relay trust pool |
+| CA certificate (`ca.crt`) | ECDSA P-256, 10 years, CN = server-id | `<config-dir>/ca.crt` | **Public cert only** → shipped to the relay trust pool (`/etc/caddy/ca/<server-id>.crt`) |
 | CA private key (`ca.key`) | ECDSA P-256 | `<config-dir>/ca.key` | **Never** |
-| Client certificate (`client.crt`) | ECDSA P-256, 5 years, `ExtKeyUsage: clientAuth` | `<config-dir>/client.crt` | Yes — in every user bundle |
+| Client certificate (`client.crt`) | ECDSA P-256, 5 years, CN = server-id, `ExtKeyUsage: clientAuth` | `<config-dir>/client.crt` | Yes — in every user bundle |
 | Client private key (`client.key`) | ECDSA P-256 | `<config-dir>/client.key` | Yes — in every user bundle |
 
-The CA and client certificate are generated automatically the first time you run
-`tw serve` (the generation is skipped in client mode — clients receive the
-certificate from the server). Generation is **idempotent and self-healing**: an
-existing CA is never regenerated, but a missing client certificate is re-issued
-from the existing CA.
+The CA and client certificate are generated automatically the first time a
+server or relay profile initializes (any `tw` command that touches ops — e.g.
+`tw server start`, `tw relay create`); generation is skipped in client mode,
+because clients receive the certificate from the server in their bundle and
+must never overwrite it. Generation is **idempotent and self-healing**: an
+existing CA is never regenerated, a missing client certificate is re-issued
+from the existing CA, and if the server-id changes (hostname or UUID change)
+the identity is re-issued to match.
 
 !!! note "One certificate per server, not per user"
     The client certificate authenticates the **server's relay slot**, not the
@@ -58,7 +63,8 @@ from the existing CA.
     one layer deeper, by the per-user SSH key and its `permitopen` restrictions
     (see [Access Control](access-control.md)). Keeping admission per-server means
     the relay needs no certificate revocation list — revoking a user is purely an
-    SSH-key operation on the server.
+    SSH-key operation on the server, and revoking a whole server is
+    `tw relay un-enroll-server`, which drops its CA from the trust pool.
 
 ---
 
@@ -68,14 +74,15 @@ from the existing CA.
 sequenceDiagram
     participant C as Client (Xray)
     participant Caddy as Relay · Caddy (:443)
-    participant X as Relay · Xray (:10000)
+    participant X as Relay · Xray (per-tenant inbound)
     participant S as Server (SSH)
 
     C->>Caddy: TLS 1.3 ClientHello + client.crt
-    Note over Caddy: client_auth require_and_verify<br/>verify client.crt against trust_pool (ca.crt)
+    Note over Caddy: client_auth require_and_verify<br/>verify client.crt against trust_pool (all enrolled ca.crt files)
     alt certificate missing or not signed by a trusted CA
         Caddy--xC: handshake rejected (no app data exchanged)
     else certificate valid
+        Note over Caddy: route by path /tw/<server-id> AND<br/>certificate subject CN=<server-id>
         Caddy->>X: reverse_proxy (h2c) the VLESS/XHTTP stream
         X->>S: opaque stream → server's reverse SSH tunnel
         Note over C,S: SSH provides end-to-end encryption
@@ -84,20 +91,24 @@ sequenceDiagram
 
 1. The client's embedded Xray opens a TLS 1.3 connection to the relay and
    presents `client.crt` during the handshake.
-2. Caddy verifies the certificate against its **trust pool** (the server's
-   `ca.crt`). If verification fails, the handshake is rejected and nothing
-   downstream is touched.
-3. On success, Caddy reverse-proxies the VLESS/XHTTP stream to the relay's local
-   Xray inbound (`h2c://127.0.0.1:10000`), which carries it to the server's
+2. Caddy verifies the certificate against its **trust pool** (the union of all
+   enrolled servers' `ca.crt` files). If verification fails, the handshake is
+   rejected and nothing downstream is touched.
+3. On success, Caddy matches the request against the per-server route: the
+   XHTTP path (`/tw/<server-id>`) **and** the certificate subject
+   (`CN=<server-id>`) must agree. A valid certificate for server A cannot reach
+   server B's upstream.
+4. Caddy reverse-proxies the stream to that server's local Xray inbound
+   (`h2c://127.0.0.1:<remote-port + 10000>`), which carries it to the server's
    reverse SSH tunnel.
 
 ---
 
 ## Client-side: presenting the certificate
 
-The client's Xray outbound (shared by both `tw serve` and `tw connect`) injects
-the certificate into the TLS settings when `client_cert_path`/`client_key_path`
-are set:
+The client's Xray outbound (shared by both `tw server start` and `tw client
+connect`) injects the certificate into the TLS settings when
+`client_cert_path`/`client_key_path` are set:
 
 ```json
 "tlsSettings": {
@@ -135,51 +146,59 @@ when present, so a config bundle works unchanged across machines and
 
 ## Relay-side: the Caddy gate
 
-The relay's Caddyfile is rendered by the server at provisioning time and embedded
-into the relay's cloud-init (and the manual install script). The TLS block
-enforces the mTLS gate for the whole site:
+The relay's Caddyfile is rendered by `tw` and installed at provisioning time
+(embedded in cloud-init or the manual install script) and **re-rendered,
+validated, and gracefully reloaded on every enroll/un-enroll**. The TLS block
+enforces the mTLS gate for the whole site; one handle block per enrolled
+server routes by certificate subject:
 
 ```caddyfile
 relay.example.com {
     tls {
         client_auth {
             mode require_and_verify
-            trust_pool file /etc/caddy/ca/relay.example.com.crt
+            trust_pool file /etc/caddy/ca/srv1-1a2b3c4d.crt /etc/caddy/ca/srv2-5e6f7a8b.crt
         }
-        # A single arg to `protocols` sets the minimum, pinning TLS 1.3.
+        # TLS 1.3 only: a single arg to `protocols` sets the minimum, pinning 1.3.
         protocols tls1.3
     }
 
-    @relay.example.com path /tw*
-    handle @relay.example.com {
-        reverse_proxy h2c://127.0.0.1:10000 {
+    @srv1-1a2b3c4d {
+        path /tw/srv1-1a2b3c4d*
+        expression {http.request.tls.client.subject} == "CN=srv1-1a2b3c4d"
+    }
+    handle @srv1-1a2b3c4d {
+        reverse_proxy h2c://127.0.0.1:30000 {
             flush_interval -1
             stream_close_delay 5m
             transport http {
                 versions h2c 1.1
+                keepalive 120s
+                keepalive_idle_conns 32
             }
         }
+    }
+
+    # ...one matcher + handle block per enrolled server...
+
+    handle {
+        respond 404
     }
 }
 ```
 
 - **`mode require_and_verify`** — Caddy demands a client certificate on every
   TLS handshake and verifies it against the trust pool.
-- **`trust_pool file …`** — the server's CA public certificate(s). The server's
-  `ca.crt` is written to `/etc/caddy/ca/<server-id>.crt` on the relay (base64 in
-  cloud-init), and Caddy is configured to trust it.
+- **`trust_pool file …`** — the public CA certificate of every enrolled server,
+  written to `/etc/caddy/ca/<server-id>.crt` on the relay.
 - **`protocols tls1.3`** — TLS 1.3 only.
+- **`@<server-id>` matcher** — path *and* client-certificate subject must both
+  name the same server, isolating tenants from each other on a shared relay.
 - **`stream_close_delay 5m`** — holds reverse-proxy streams open for up to five
-  minutes across a Caddy reload so long-lived tunnels survive config changes (the
-  server's SSH auto-reconnect covers the rest).
-
-!!! info "Per-site, not per-path"
-    Caddy's `client_auth` is enforced per-site (per TLS handshake / SNI), not per
-    path. In the current single-server design that is exactly right. Routing
-    different servers to different upstreams by client-certificate subject is a
-    multi-server concern: the data model already carries the seams (a per-server
-    handle block, a role tag, and a trust pool keyed by role), but multi-server
-    isolation is not yet shipped.
+  minutes across a Caddy reload so long-lived tunnels survive config changes
+  (enrolling a new server reloads Caddy gracefully; the SSH auto-reconnect
+  covers the rest).
+- Unmatched requests get a plain `404`.
 
 ---
 
@@ -189,20 +208,20 @@ relay.example.com {
 |---|---|---|
 | **Scope** | Per **server** — shared by all its users | Per **user** |
 | **Checked by** | Relay's Caddy, at the TLS handshake | Server's embedded SSH server, after the tunnel is up |
-| **Purpose** | Admit the connection to the relay | Authenticate the user, restrict forwardable ports |
-| **Issued by** | The server's CA (`tw serve`, first run) | The server (`tw create user`) |
-| **Revocation** | Re-provision the relay with a new CA | Remove the key from `authorized_keys` (immediate) |
+| **Purpose** | Admit the connection to the relay and route it to the right server | Authenticate the user, restrict forwardable ports |
+| **Issued by** | The server's CA (automatic, first profile init) | The server (`tw server user create`) |
+| **Revocation** | `tw relay un-enroll-server` (removes the CA from the trust pool) | Remove the key from `authorized_keys` (immediate — re-read every auth) |
 
 To block a single user, remove their SSH key — the certificate layer is not
-involved. To cut off an entire server's relay slot, rotate the CA and
-re-provision the relay.
+involved. To cut off an entire server's relay slot, un-enroll it from the
+relay.
 
 ---
 
 ## Relationship to the UUID check
 
 The VLESS UUID is still present in the configuration and still matches at the
-relay's Xray inbound, but it is now **defense-in-depth, not the security
-boundary**. Admission is decided at the TLS handshake by the certificate gate;
-an attacker who cannot present a trusted client certificate never reaches the
-point where a UUID would be checked.
+relay's per-tenant Xray inbound, but it is now **defense-in-depth, not the
+security boundary**. Admission is decided at the TLS handshake by the
+certificate gate; an attacker who cannot present a trusted client certificate
+never reaches the point where a UUID would be checked.
