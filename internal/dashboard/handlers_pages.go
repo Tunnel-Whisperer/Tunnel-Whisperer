@@ -43,12 +43,13 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	mode := s.ops.Mode()
 
+
 	// No mode chosen yet — show mode selection.
 	if mode == "" {
 		s.renderPage(w, "setup", struct {
 			pageData
 		}{
-			pageData: pageData{Title: "Setup", Active: "index", Mode: mode},
+			pageData: s.newPageData("Setup", "index"),
 		})
 		return
 	}
@@ -62,7 +63,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			pageData
 			Relay ops.RelayStatus
 		}{
-			pageData: pageData{Title: "Relay", Active: "index", Mode: mode},
+			pageData: s.newPageData("Relay", "index"),
 			Relay:    relay,
 		})
 		return
@@ -110,7 +111,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ConfigChanged bool
 		StatsEnabled  bool
 	}{
-		pageData:      pageData{Title: "Status", Active: "index", Mode: mode},
+		pageData:      s.newPageData("Status", "index"),
 		Config:        cfg,
 		ConfigPath:    config.FilePath(),
 		Relay:         relay,
@@ -127,13 +128,12 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRelay(w http.ResponseWriter, r *http.Request) {
 	relay := s.ops.GetRelayStatus()
-	mode := s.ops.Mode()
 
 	data := struct {
 		pageData
 		Relay ops.RelayStatus
 	}{
-		pageData: pageData{Title: "Relay", Active: "relay", Mode: mode},
+		pageData: s.newPageData("Relay", "relay"),
 		Relay:    relay,
 	}
 	s.renderPage(w, "relay", data)
@@ -143,14 +143,13 @@ func (s *Server) handleRelayWizard(w http.ResponseWriter, r *http.Request) {
 	cfg := s.ops.Config()
 	providers := ops.CloudProviders()
 	providersJSON, _ := json.Marshal(providers)
-	mode := s.ops.Mode()
 
 	data := struct {
 		pageData
 		Config        *config.Config
 		ProvidersJSON template.JS
 	}{
-		pageData:      pageData{Title: "Provision Relay", Active: "relay", Mode: mode},
+		pageData:      s.newPageData("Provision Relay", "relay"),
 		Config:        cfg,
 		ProvidersJSON: template.JS(providersJSON),
 	}
@@ -162,7 +161,6 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("listing users", "error", err)
 	}
-	mode := s.ops.Mode()
 	relay := s.ops.GetRelayStatus()
 	srvStatus := s.ops.ServerStatus()
 
@@ -196,7 +194,7 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 		ServerRunning bool
 		InactiveCount int
 	}{
-		pageData:      pageData{Title: "Users", Active: "users", Mode: mode},
+		pageData:      s.newPageData("Users", "users"),
 		Users:         users,
 		RelayReady:    relay.Provisioned,
 		ServerRunning: string(srvStatus.State) == "running",
@@ -206,7 +204,6 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUserNew(w http.ResponseWriter, r *http.Request) {
-	mode := s.ops.Mode()
 	relay := s.ops.GetRelayStatus()
 	srvStatus := s.ops.ServerStatus()
 	apps := s.ops.ListApplications()
@@ -236,7 +233,7 @@ func (s *Server) handleUserNew(w http.ResponseWriter, r *http.Request) {
 		AppsJSON      template.JS
 		PrefillJSON   template.JS
 	}{
-		pageData:      pageData{Title: "Create User", Active: "users", Mode: mode},
+		pageData:      s.newPageData("Create User", "users"),
 		RelayReady:    relay.Provisioned,
 		ServerRunning: string(srvStatus.State) == "running",
 		AppsJSON:      template.JS(appsJSON),
@@ -274,7 +271,6 @@ func (s *Server) handleUserDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mode := s.ops.Mode()
 
 	if editing {
 		apps := s.ops.ListApplications()
@@ -284,7 +280,7 @@ func (s *Server) handleUserDetail(w http.ResponseWriter, r *http.Request) {
 			User     ops.UserInfo
 			AppsJSON template.JS
 		}{
-			pageData: pageData{Title: "Edit: " + name, Active: "users", Mode: mode},
+			pageData: s.newPageData("Edit: " + name, "users"),
 			User:     *found,
 			AppsJSON: template.JS(appsJSON),
 		}
@@ -303,7 +299,7 @@ func (s *Server) handleUserDetail(w http.ResponseWriter, r *http.Request) {
 		User         ops.UserInfo
 		StatsEnabled bool
 	}{
-		pageData:     pageData{Title: "User: " + name, Active: "users", Mode: mode},
+		pageData:     s.newPageData("User: " + name, "users"),
 		User:         *found,
 		StatsEnabled: s.ops.StatsEnabled(),
 	}
@@ -318,7 +314,6 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		cfg = s.ops.Config()
 	}
 	cfgYAML, _ := yaml.Marshal(cfg)
-	mode := s.ops.Mode()
 
 	running := string(s.ops.ServerStatus().State) == "running" ||
 		string(s.ops.ClientStatus().State) == "running"
@@ -347,7 +342,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		HistorySize      int
 		Version          string
 	}{
-		pageData:         pageData{Title: "Config", Active: "config", Mode: mode},
+		pageData:         s.newPageData("Config", "config"),
 		ConfigPath:       config.FilePath(),
 		ConfigYAML:       string(cfgYAML),
 		LogLevel:         logLevel,
@@ -364,38 +359,35 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBandwidth(w http.ResponseWriter, r *http.Request) {
-	mode := s.ops.Mode()
 	data := struct {
 		pageData
 		StatsEnabled bool
 	}{
-		pageData:     pageData{Title: "Bandwidth", Active: "bandwidth", Mode: mode},
+		pageData:     s.newPageData("Bandwidth", "bandwidth"),
 		StatsEnabled: s.ops.StatsEnabled(),
 	}
 	s.renderPage(w, "bandwidth", data)
 }
 
 func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
-	mode := s.ops.Mode()
 	apps := s.ops.ListApplications()
 
 	data := struct {
 		pageData
 		Apps []config.Application
 	}{
-		pageData: pageData{Title: "Applications", Active: "apps", Mode: mode},
+		pageData: s.newPageData("Applications", "apps"),
 		Apps:     apps,
 	}
 	s.renderPage(w, "apps", data)
 }
 
 func (s *Server) handleAppNew(w http.ResponseWriter, r *http.Request) {
-	mode := s.ops.Mode()
 
 	data := struct {
 		pageData
 	}{
-		pageData: pageData{Title: "Create Application", Active: "apps", Mode: mode},
+		pageData: s.newPageData("Create Application", "apps"),
 	}
 	s.renderPage(w, "app_new", data)
 }
@@ -420,13 +412,25 @@ func (s *Server) handleAppEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mode := s.ops.Mode()
 	data := struct {
 		pageData
 		App config.Application
 	}{
-		pageData: pageData{Title: "Edit Application", Active: "apps", Mode: mode},
+		pageData: s.newPageData("Edit Application", "apps"),
 		App:      *found,
 	}
 	s.renderPage(w, "app_edit", data)
+}
+
+// handleServers is the relay-mode tenant page; other modes bounce home.
+func (s *Server) handleServers(w http.ResponseWriter, r *http.Request) {
+	if s.ops.Mode() != "relay" {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	s.renderPage(w, "servers", struct {
+		pageData
+	}{
+		pageData: s.newPageData("Servers", "servers"),
+	})
 }
