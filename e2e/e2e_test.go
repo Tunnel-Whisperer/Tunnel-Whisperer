@@ -181,8 +181,3 @@ func testContexts(t *testing.T) {
 		fatalf(t, "admin context lost its ID %s after the switch round-trip:\n%s", id, out)
 	}
 }
-// Dashboard is not yet implemented. Its Skip message states the behaviour it
-// will verify, so `go test -v` documents the intended coverage.
-func testDashboard(t *testing.T) {
-	skipScenario(t, "NOT YET IMPLEMENTED (Task 9): the in-server dashboard serves, shows live status/logs over SSE, and the relay terminal works")
-}
