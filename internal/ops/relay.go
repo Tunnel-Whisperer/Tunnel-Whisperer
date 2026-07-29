@@ -822,10 +822,31 @@ func (o *Ops) CloseRelaySSH(progress ProgressFunc) error {
 	progress(ProgressEvent{Step: 1, Total: 3, Label: "Connecting to relay", Status: "completed"})
 	progress(ProgressEvent{Step: 2, Total: 3, Label: "Closing SSH port 22", Status: "running"})
 
+	// Re-pin the admin key to loopback: an --ssh-open provision wrote it
+	// unpinned so it could authenticate over the open port; closing must
+	// restore the tunnel-only invariant. Full rewrite from the tenant list,
+	// same as enroll/un-enroll.
+	adminPubKey, err := os.ReadFile(filepath.Join(config.Dir(), "id_ed25519.pub"))
+	if err != nil {
+		progress(ProgressEvent{Step: 2, Total: 3, Label: "Closing SSH port 22", Status: "failed", Error: err.Error()})
+		return fmt.Errorf("reading admin public key: %w", err)
+	}
+	servers, err := o.ListServers()
+	if err != nil {
+		progress(ProgressEvent{Step: 2, Total: 3, Label: "Closing SSH port 22", Status: "failed", Error: err.Error()})
+		return fmt.Errorf("listing registered servers: %w", err)
+	}
+	akContent := renderRelayAuthorizedKeys(string(adminPubKey), servers, false)
+	sshUser := o.Config().Server.RelaySSHUser
+	akPath := fmt.Sprintf("/home/%s/.ssh/authorized_keys", sshUser)
+	akB64 := base64.StdEncoding.EncodeToString([]byte(akContent))
+
 	err = sshFn(func(client *gossh.Client) error {
 		cmds := []string{
 			"sudo ufw deny 22/tcp",
 			"sudo sed -i 's/^ListenAddress 0.0.0.0/ListenAddress 127.0.0.1/' /etc/ssh/sshd_config.d/99-tw-localhost.conf",
+			fmt.Sprintf("echo %s | base64 -d | sudo tee %s >/dev/null && sudo chown %s:%s %s && sudo chmod 600 %s",
+				akB64, akPath, sshUser, sshUser, akPath, akPath),
 			"sudo systemctl restart ssh 2>/dev/null || sudo systemctl restart sshd 2>/dev/null || true",
 		}
 		for _, cmd := range cmds {

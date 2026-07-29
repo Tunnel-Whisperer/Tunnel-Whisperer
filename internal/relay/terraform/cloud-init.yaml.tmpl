@@ -10,7 +10,9 @@ users:
       # localhost); it never authenticates over public port 22. cloud-init
       # preserves the option prefix. Any provider-injected launch key stays a
       # separate entry, so your own public-22 access is unaffected.
-      - 'from="127.0.0.1" {{.PublicKey}}'
+{{if .SSHOpen}}      - '{{.PublicKey}}'
+{{else}}      - 'from="127.0.0.1" {{.PublicKey}}'
+{{end}}
 
 package_update: true
 

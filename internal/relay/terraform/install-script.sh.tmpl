@@ -51,7 +51,10 @@ if [ -n "$TW_KEYBODY" ]; then
   grep -vF "$TW_KEYBODY" "$AK" > "$AK.tmp" 2>/dev/null || true
   mv "$AK.tmp" "$AK"
 fi
-echo "from=\"127.0.0.1\" $TW_PUBKEY" >> "$AK"
+{{if .SSHOpen}}# --ssh-open: the tw key must work over the open port 22, so no loopback pin.
+echo "$TW_PUBKEY" >> "$AK"
+{{else}}echo "from=\"127.0.0.1\" $TW_PUBKEY" >> "$AK"
+{{end}}
 chmod 700 /home/{{.SSHUser}}/.ssh
 chmod 600 "$AK"
 chown -R {{.SSHUser}}:{{.SSHUser}} /home/{{.SSHUser}}/.ssh

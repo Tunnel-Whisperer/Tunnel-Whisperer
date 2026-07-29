@@ -44,7 +44,9 @@ func testRelayInstall(t *testing.T) {
 		"the generated install script provisions the relay VM (Caddy + Xray + sshd + firewall) and prints 'Setup complete'",
 		"tw relay test confirms the tunnel and shell work end-to-end (DNS + mTLS handshake + SSH over the VLESS tunnel)",
 		"tw relay status reports the manual relay",
-		"re-running the install script is idempotent (its documented clean-then-reinstall contract) and the relay still passes tw relay test")
+		"re-running the install script is idempotent (its documented clean-then-reinstall contract) and the relay still passes tw relay test",
+		"--ssh-open writes the admin key UNPINNED and direct SSH to relay:22 with the tw key works (the flag's whole point)",
+		"the dashboard close-ssh API re-pins the key and blocks port 22 (posture returns to tunnel-only for the rest of the suite)")
 
 	// Start from a clean identity: `tw relay create` itself stamps mode admin
 	// on a fresh profile (no seeding shim — the Contexts scenario later asserts
@@ -58,7 +60,7 @@ func testRelayInstall(t *testing.T) {
 	// create must run to completion with no prompts (stdin is not a tty here, so
 	// any leftover prompt would read EOF and fail loudly).
 	out := execIn(t, "admin",
-		`cd /shared && tw relay create --provider manual --domain `+domain+` --ip `+relayIP+` --ssh-open=false`)
+		`cd /shared && tw relay create --provider manual --domain `+domain+` --ip `+relayIP+` --ssh-open`)
 	if !strings.Contains(out, "Relay server setup complete") {
 		fatalf(t, "non-interactive create did not complete:\n%s", out)
 	}
@@ -125,5 +127,40 @@ func testRelayInstall(t *testing.T) {
 	waitFor(t, "tw relay test after re-install", 120*time.Second, func() (bool, string) {
 		out, err := execInOK("admin", "tw relay test")
 		return err == nil && strings.Contains(out, "tunnel and shell working"), out
+	})
+
+	// --ssh-open contract: the admin key line is UNPINNED (no loopback
+	// from=) and direct SSH to the relay's open port 22 with the tw key
+	// actually authenticates. Regression: the key used to stay pinned
+	// from="127.0.0.1", making the deliberately-open port unusable.
+	akOut := execIn(t, "relay", "cat /home/*/.ssh/authorized_keys")
+	if strings.Contains(akOut, `from="127.0.0.1"`) {
+		fatalf(t, "--ssh-open relay wrote a loopback-pinned key:\n%s", akOut)
+	}
+	directSSH := `U=$(awk '$1=="relay_ssh_user:"{print $2}' /etc/tw-test/config.yaml); ` +
+		`ssh -p 22 -i /etc/tw-test/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ` +
+		`-o BatchMode=yes -o ConnectTimeout=5 "$U"@relay echo DIRECT-OK`
+	out = execIn(t, "admin", directSSH)
+	if !strings.Contains(out, "DIRECT-OK") {
+		fatalf(t, "direct SSH over the open port with the tw key failed:\n%s", out)
+	}
+
+	// Close SSH via the dashboard API (its only exposure; async — poll for
+	// the closed state). Posture returns to tunnel-only for later scenarios.
+	killMatching(t, "admin", "tw dashboard")
+	execDetached(t, "admin", "tw dashboard > /shared/dash-close.log 2>&1")
+	defer killMatching(t, "admin", "tw dashboard")
+	waitFor(t, "admin dashboard up", 30*time.Second, func() (bool, string) {
+		out, err := execInOK("admin", "curl -sf http://127.0.0.1:8080/api/status")
+		return err == nil, out
+	})
+	execIn(t, "admin", "curl -sf -X POST http://127.0.0.1:8080/api/relay/close-ssh")
+	waitFor(t, "SSH closed and key re-pinned", 60*time.Second, func() (bool, string) {
+		ak, err := execInOK("relay", "cat /home/*/.ssh/authorized_keys")
+		if err != nil || !strings.Contains(ak, `from="127.0.0.1"`) {
+			return false, "key not re-pinned yet:\n" + ak
+		}
+		out, err := execInOK("admin", directSSH)
+		return err != nil, "direct ssh still succeeds:\n" + out
 	})
 }

@@ -27,9 +27,9 @@ func (o *Ops) signServerMode(req *JoinRequest) (sig, issuer string, err error) {
 }
 
 // renderRelayAuthorizedKeys composes the relay's tw-managed authorized_keys
-// file: the admin's tunnel-only key first, then one forward-only line per
-// enrolled server. Every line is newline-terminated and the file is fully
-// rewritten on each enroll (same philosophy as the Caddyfile and the relay
+// file: the admin's key first, then one forward-only line per enrolled
+// server. Every line is newline-terminated and the file is fully rewritten
+// on each enroll (same philosophy as the Caddyfile and the relay
 // config.json), so a stale or corrupted file self-heals.
 //
 // Server lines: restrict = no shell/exec/sudo/agent/x11 and no forwarding;
@@ -39,8 +39,17 @@ func (o *Ops) signServerMode(req *JoinRequest) (sig, issuer string, err error) {
 // port so a tenant can't reach the relay's Xray gRPC API (127.0.0.1:10085) or
 // other loopback ports. The admin key is unrestricted (beyond tunnel-only
 // from=), so admin -L (for gRPC) still works.
-func renderRelayAuthorizedKeys(adminPubKey string, servers []RegisteredServer) string {
-	lines := []string{fmt.Sprintf(`from="127.0.0.1" %s`, strings.TrimSpace(adminPubKey))}
+//
+// sshOpen: the admin line is pinned from="127.0.0.1" (tunnel-only) UNLESS
+// the relay was provisioned --ssh-open — the pin rejects any non-loopback
+// source, which made the deliberately-open port 22 unusable with tw's own
+// key. Tenant lines stay pinned regardless.
+func renderRelayAuthorizedKeys(adminPubKey string, servers []RegisteredServer, sshOpen bool) string {
+	adminLine := strings.TrimSpace(adminPubKey)
+	if !sshOpen {
+		adminLine = `from="127.0.0.1" ` + adminLine
+	}
+	lines := []string{adminLine}
 	for _, s := range servers {
 		lines = append(lines, fmt.Sprintf(
 			`from="127.0.0.1",restrict,port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:%d" %s`,
@@ -178,7 +187,7 @@ func (o *Ops) EnrollServer(req *JoinRequest, progress ProgressFunc) (*JoinRespon
 		progress(ProgressEvent{Step: 3, Total: total, Label: "Apply relay config", Status: "failed", Error: err.Error()})
 		return nil, fmt.Errorf("reading admin public key: %w", err)
 	}
-	akContent := renderRelayAuthorizedKeys(string(adminPubKey), allServers)
+	akContent := renderRelayAuthorizedKeys(string(adminPubKey), allServers, o.GetRelayStatus().SSHOpen)
 
 	err = o.RelaySSH(func(client *gossh.Client) error {
 		// Ensure CA directory exists.

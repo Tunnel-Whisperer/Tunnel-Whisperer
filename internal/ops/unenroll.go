@@ -112,7 +112,7 @@ func (o *Ops) UnenrollServer(serverID string, progress ProgressFunc) error {
 		progress(ProgressEvent{Step: 2, Total: total, Label: "Render remaining config", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("reading admin public key: %w", err)
 	}
-	akContent := renderRelayAuthorizedKeys(string(adminPubKey), remaining)
+	akContent := renderRelayAuthorizedKeys(string(adminPubKey), remaining, o.GetRelayStatus().SSHOpen)
 	sshUser := cfg.Server.RelaySSHUser
 	progress(ProgressEvent{Step: 2, Total: total, Label: "Render remaining config", Status: "completed",
 		Message: fmt.Sprintf("%d tenants remain (admin + %d servers)", len(tenants), len(remaining))})

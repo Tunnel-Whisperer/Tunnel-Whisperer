@@ -20,7 +20,7 @@ func TestRenderRelayAuthorizedKeys(t *testing.T) {
 		{RemotePort: 20000, SSHPubkey: "ssh-ed25519 AAAAkey1 s1@tw\n"}, // trailing newline must be trimmed
 		{RemotePort: 20001, SSHPubkey: "ssh-ed25519 AAAAkey2 s2@tw"},
 	}
-	out := renderRelayAuthorizedKeys("ssh-ed25519 AAAAadmin admin@tw\n", servers)
+	out := renderRelayAuthorizedKeys("ssh-ed25519 AAAAadmin admin@tw\n", servers, false)
 
 	if !strings.HasSuffix(out, "\n") {
 		t.Error("authorized_keys content must end with a newline")
@@ -65,6 +65,28 @@ func TestEnrollServerSignsServerMode(t *testing.T) {
 	_ = resp
 	if err := modeauth.Verify("server", req.SSHPubkey, sig, issuer); err != nil {
 		t.Fatalf("relay-signed server token does not verify: %v", err)
+	}
+}
+
+// TestRenderRelayAuthorizedKeysSSHOpen: --ssh-open means the admin key must
+// actually WORK over the open port 22 — so the admin line drops its
+// from="127.0.0.1" pin (which rejects any non-loopback source and made the
+// open port unusable with tw's own key). Tenant lines stay pinned and
+// forward-only regardless.
+func TestRenderRelayAuthorizedKeysSSHOpen(t *testing.T) {
+	servers := []RegisteredServer{
+		{RemotePort: 20000, SSHPubkey: "ssh-ed25519 AAAAkey1 s1@tw"},
+	}
+	out := renderRelayAuthorizedKeys("ssh-ed25519 AAAAadmin admin@tw", servers, true)
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("want 2 lines, got %d:\n%s", len(lines), out)
+	}
+	if lines[0] != "ssh-ed25519 AAAAadmin admin@tw" {
+		t.Errorf("ssh-open admin line must be unpinned, got %q", lines[0])
+	}
+	if !strings.Contains(lines[1], `from="127.0.0.1"`) || !strings.Contains(lines[1], "restrict") {
+		t.Errorf("tenant line must stay pinned+restricted even with ssh-open: %q", lines[1])
 	}
 }
 
