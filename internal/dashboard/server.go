@@ -88,6 +88,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/", s.handleIndex)
 	s.mux.HandleFunc("/relay", s.handleRelay)
 	s.mux.HandleFunc("/relay/wizard", s.handleRelayWizard)
+	s.mux.HandleFunc("/servers", s.handleServers)
 	s.mux.HandleFunc("/users", s.handleUsers)
 	s.mux.HandleFunc("/users/new", s.handleUserNew)
 	s.mux.HandleFunc("/users/", s.handleUserDetail) // /users/{name}
@@ -132,6 +133,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/apps/", s.apiAppAction)
 	s.mux.HandleFunc("/api/config/contexts", s.apiListContexts)
 	s.mux.HandleFunc("/api/config/use-context", s.apiUseContext)
+	s.mux.HandleFunc("/api/servers", s.apiServers)
+	s.mux.HandleFunc("/api/servers/enroll", s.apiEnrollServer)
+	s.mux.HandleFunc("/api/servers/unenroll", s.apiUnenrollServer)
 	s.mux.HandleFunc("/api/users", s.apiUsers)
 	s.mux.HandleFunc("/api/users/apply", s.apiApplyUsers)
 	s.mux.HandleFunc("/api/users/unregister", s.apiUnregisterUsers)
@@ -166,7 +170,15 @@ func (s *Server) Stop() error {
 
 // pageData is the common data passed to all page templates.
 type pageData struct {
-	Title  string
-	Active string // nav highlight
-	Mode   string // "server", "client", or ""
+	Title   string
+	Active  string // nav highlight
+	Mode    string // "server", "client", "relay", or ""
+	Context string // active context name ("" if none stored)
+}
+
+// newPageData fills the fields every page shares. CurrentContext is a local
+// index read; an error just leaves the nav badge empty.
+func (s *Server) newPageData(title, active string) pageData {
+	ctx, _ := s.ops.CurrentContext()
+	return pageData{Title: title, Active: active, Mode: s.ops.Mode(), Context: ctx}
 }

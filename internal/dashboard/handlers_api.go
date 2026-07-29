@@ -959,3 +959,95 @@ func (s *Server) apiAppAction(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
+
+// requireDashboardMode is the dashboard's requireMode: true if the profile
+// runs in the wanted mode, else a 403 with the reason is written.
+func (s *Server) requireDashboardMode(w http.ResponseWriter, mode string) bool {
+	if got := s.ops.Mode(); got != mode {
+		jsonError(w, fmt.Sprintf("only available in %s mode (this profile: %q)", mode, got), http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
+// apiServers mirrors `tw relay get-servers`: registry + ONE live relay
+// query. Relay unreachable is an error, never a stale table.
+func (s *Server) apiServers(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDashboardMode(w, "relay") {
+		return
+	}
+	details, err := s.ops.GetServerDetails()
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	if details == nil {
+		details = []ops.ServerDetail{}
+	}
+	jsonOK(w, details)
+}
+
+// apiEnrollServer mirrors `tw relay enroll-server`: multipart upload of the
+// join request, join-response JSON returned as a download.
+func (s *Server) apiEnrollServer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireDashboardMode(w, "relay") {
+		return
+	}
+	f, _, err := r.FormFile("request")
+	if err != nil {
+		jsonError(w, "missing join-request upload: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, 1<<20))
+	if err != nil {
+		jsonError(w, "reading upload: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	req, err := ops.DecodeJoinRequest(data)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	resp, err := s.ops.EnrollServer(req, nil)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	out, err := resp.Encode()
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", "tw_join_response_"+resp.ServerID+".json"))
+	_, _ = w.Write(out)
+}
+
+// apiUnenrollServer mirrors `tw relay un-enroll-server --yes` (the
+// confirmation lives in the browser).
+func (s *Server) apiUnenrollServer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireDashboardMode(w, "relay") {
+		return
+	}
+	var req struct {
+		ServerID string `json:"server_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ServerID == "" {
+		jsonError(w, "bad request: server_id required", http.StatusBadRequest)
+		return
+	}
+	if err := s.ops.UnenrollServer(req.ServerID, nil); err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, map[string]string{"status": "ok"})
+}
