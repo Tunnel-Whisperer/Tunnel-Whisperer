@@ -11,36 +11,64 @@ function fmtEnrolled(iso) {
   return iso.replace('T', ' ').replace(/:\d\d(Z|[+-].*)?$/, '');
 }
 
+let allServers = [];
+
 async function loadServers() {
   const loading = $('#servers-loading'), errBox = $('#servers-error');
-  const table = $('#servers-table'), rows = $('#servers-rows'), empty = $('#servers-empty');
+  const table = $('#servers-table'), empty = $('#servers-empty');
   loading.classList.remove('hidden');
   errBox.classList.add('hidden');
   table.classList.add('hidden');
   empty.classList.add('hidden');
   try {
-    const list = await api.get('/api/servers');
+    allServers = (await api.get('/api/servers')) || [];
     loading.classList.add('hidden');
-    if (!list.length) { empty.classList.remove('hidden'); return; }
-    rows.innerHTML = list.map(s => {
-      const badge = s.TunnelUp
-        ? '<span class="badge badge-green">up</span>'
-        : '<span class="badge badge-dim">down</span>';
-      return `<tr>
-        <td>${escText(s.server_id)}</td>
-        <td>${escText(s.Path)}</td>
-        <td>${escText(s.remote_port)}</td>
-        <td>${escText(fmtEnrolled(s.enrolled_at))}</td>
-        <td>${badge}</td>
-        <td><button class="btn btn-danger" onclick="unenrollServer('${escText(s.server_id)}', ${Number(s.remote_port)})">Un-enroll</button></td>
-      </tr>`;
-    }).join('');
+    if (!allServers.length) { empty.classList.remove('hidden'); return; }
+    renderServers();
     table.classList.remove('hidden');
   } catch (err) {
     loading.classList.add('hidden');
     errBox.textContent = err.message;
     errBox.classList.remove('hidden');
   }
+}
+
+function renderServers() {
+  const rows = $('#servers-rows'), count = $('#servers-count');
+  if (!rows) return;
+  const q = ($('#servers-search')?.value || '').trim().toLowerCase();
+  const tunnel = $('#servers-tunnel-filter')?.value || '';
+  const shown = allServers.filter(s => {
+    if (tunnel === 'up' && !s.TunnelUp) return false;
+    if (tunnel === 'down' && s.TunnelUp) return false;
+    if (!q) return true;
+    const hay = [s.server_id, s.Path, s.remote_port, fmtEnrolled(s.enrolled_at)]
+      .map(v => String(v == null ? '' : v).toLowerCase()).join(' ');
+    return hay.includes(q);
+  });
+  if (q || tunnel) {
+    count.textContent = `${shown.length} of ${allServers.length}`;
+    count.classList.remove('hidden');
+  } else {
+    count.classList.add('hidden');
+  }
+  if (!shown.length) {
+    rows.innerHTML = '<tr><td colspan="6" class="text-dim">no matches</td></tr>';
+    return;
+  }
+  rows.innerHTML = shown.map(s => {
+    const badge = s.TunnelUp
+      ? '<span class="badge badge-green">up</span>'
+      : '<span class="badge badge-dim">down</span>';
+    return `<tr>
+      <td>${escText(s.server_id)}</td>
+      <td>${escText(s.Path)}</td>
+      <td>${escText(s.remote_port)}</td>
+      <td>${escText(fmtEnrolled(s.enrolled_at))}</td>
+      <td>${badge}</td>
+      <td><button class="btn btn-danger" onclick="unenrollServer('${escText(s.server_id)}', ${Number(s.remote_port)})">Un-enroll</button></td>
+    </tr>`;
+  }).join('');
 }
 
 async function unenrollServer(serverID, port) {
