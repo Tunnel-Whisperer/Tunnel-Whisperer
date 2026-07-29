@@ -115,6 +115,7 @@ func testContexts(t *testing.T) {
 		"tw config use-context <id> switches back by the short ID alone",
 		"tw config rename-context and delete-context clean up the scratch context",
 		"tw config current-context reflects each switch",
+		"tab completion: tw __complete config use-context offers the context name and its short ID",
 		"tw status (ungated) prints the unified header — context, mode, and USER alice on the client; context and mode relay on the admin")
 
 	// Client: the context imported from alice's user bundle must show the ssh
@@ -143,6 +144,13 @@ func testContexts(t *testing.T) {
 		fatalf(t, "admin current-context row missing name or 8-hex ID:\n%s", out)
 	}
 	name, id := row[1], row[2]
+
+	// Tab completion (cobra __complete = what zsh calls) offers both the
+	// context name and its short ID for use-context.
+	compOut := execIn(t, "admin", `tw __complete config use-context ""`)
+	if !strings.Contains(compOut, name) || !strings.Contains(compOut, id) {
+		fatalf(t, "use-context completion missing name %q or id %q:\n%s", name, id, compOut)
+	}
 
 	// The relay profile's mode is tamper-evidently signed (mode_auth block).
 	if viewOut := execIn(t, "admin", "tw config view"); !strings.Contains(viewOut, "mode_auth:") {

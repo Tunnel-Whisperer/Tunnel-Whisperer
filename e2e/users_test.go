@@ -17,7 +17,8 @@ func testUserLifecycle(t *testing.T) {
 		"tw config export-user packages her as a .twctx bundle; the client imports + activates it",
 		"tw client connect opens the local tunnel port",
 		"a byte-for-byte echo round-trip (hello-tw-e2e) succeeds through relay + tunnel",
-		"tw client test steps 1-2 (DNS, HTTPS/mTLS) pass; step 3's known client-role auth failure is asserted stable (loud if it changes)")
+		"tw client test steps 1-2 (DNS, HTTPS/mTLS) pass; step 3's known client-role auth failure is asserted stable (loud if it changes)",
+		"tab completion: tw __complete server user delete offers alice")
 
 	// Re-runnability: a prior full-suite run may have left a live
 	// `tw client connect` and an old /etc/tw-test on the client, and a
@@ -40,6 +41,12 @@ func testUserLifecycle(t *testing.T) {
 	out := execIn(t, "server", "tw server user list")
 	if !strings.Contains(out, "alice") {
 		fatalf(t, "alice missing from user list:\n%s", out)
+	}
+
+	// Tab completion offers the created user for user-selecting commands.
+	compOut := execIn(t, "server", `tw __complete server user delete ""`)
+	if !strings.Contains(compOut, "alice") {
+		fatalf(t, "user delete completion does not offer alice:\n%s", compOut)
 	}
 
 	// Export as a client context bundle; import + activate on the client.

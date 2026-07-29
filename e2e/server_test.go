@@ -150,7 +150,8 @@ func testSecondTenant(t *testing.T) {
 		"server2's tw server test reports 'tunnel and shell working'",
 		"server-1's tw server test and the admin's tw relay test still pass (non-disruptive)",
 		"tw relay un-enroll-server --yes removes the LIVE server2: registry row gone, relay listener gone, its tunnel test fails",
-		"server-1 and the admin remain unaffected after the un-enroll (non-disruptive removal)")
+		"server-1 and the admin remain unaffected after the un-enroll (non-disruptive removal)",
+		"tab completion: tw __complete relay un-enroll-server offers the enrolled server-id")
 
 	// Clean identity on server2 (same rationale as ServerJoin's wipe).
 	killMatching(t, "server2", "tw server start")
@@ -202,6 +203,12 @@ func testSecondTenant(t *testing.T) {
 		fatalf(t, "get-servers does not show server2 (%s-*) with its path and TUNNEL down:\n%s", host, regOut)
 	}
 	server2ID, server2Port := row[1], row[2]
+
+	// Tab completion offers the enrolled server-id for un-enroll-server.
+	compOut := execIn(t, "admin", `tw __complete relay un-enroll-server ""`)
+	if !strings.Contains(compOut, server2ID) {
+		fatalf(t, "un-enroll-server completion does not offer %s:\n%s", server2ID, compOut)
+	}
 
 	// 3. server2 applies the response.
 	execIn(t, "server2", "cd /shared && tw server join-relay --apply "+respGlob)
