@@ -47,6 +47,9 @@ func testDashboard(t *testing.T) {
 	if !strings.Contains(out, "Enroll a Server") {
 		fatalf(t, "admin /servers page did not render the tenant view:\n%.400s", out)
 	}
+	if !strings.Contains(out, "servers-search") {
+		fatalf(t, "admin /servers page is missing the search/filter toolbar:\n%.400s", out)
+	}
 
 	// Live tenant table mirrors `tw relay get-servers`: server-1 up.
 	serverHost := strings.TrimSpace(execIn(t, "server", "hostname"))
@@ -59,6 +62,12 @@ func testDashboard(t *testing.T) {
 	out = execIn(t, "admin", "curl -sf http://127.0.0.1:8080/api/config/contexts")
 	if !strings.Contains(out, `"Current":true`) {
 		fatalf(t, "/api/config/contexts has no current context:\n%s", out)
+	}
+
+	// Config page carries the contexts table with its search/filter toolbar.
+	out = execIn(t, "admin", "curl -sf http://127.0.0.1:8080/config")
+	if !strings.Contains(out, "contexts-search") {
+		fatalf(t, "admin /config page is missing the contexts search/filter toolbar:\n%.400s", out)
 	}
 
 	// A bogus un-enroll must be rejected and change nothing.
