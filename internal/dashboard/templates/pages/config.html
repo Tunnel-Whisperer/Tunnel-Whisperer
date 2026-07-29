@@ -3,6 +3,18 @@
 
 <div class="card mb-16">
   <div class="card-header">
+    <h2>Contexts</h2>
+  </div>
+  <p class="text-dim mb-16">Stored relay contexts. Switching re-seals the current profile, activates the selected one, and reloads the page.</p>
+  <table class="table" id="contexts-table">
+    <thead><tr><th></th><th>Name</th><th>ID</th><th>Role</th><th>User</th><th>Relay</th><th></th></tr></thead>
+    <tbody id="contexts-rows"><tr><td colspan="7" class="text-dim">Loading…</td></tr></tbody>
+  </table>
+  <div id="contexts-error" class="alert alert-error mt-16 hidden"></div>
+</div>
+
+<div class="card mb-16">
+  <div class="card-header">
     <h2>Version</h2>
     <span class="badge badge-dim">{{.Version}}</span>
   </div>

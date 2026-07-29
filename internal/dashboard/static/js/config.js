@@ -261,3 +261,61 @@ async function reloadConfigYAML() {
     // ignore — non-critical
   }
 }
+
+// ── Contexts ────────────────────────────────────────────────────────────────
+
+async function loadContexts() {
+  const rows = $('#contexts-rows');
+  if (!rows) return;
+  try {
+    const list = (await api.get('/api/config/contexts')) || [];
+    if (!list.length) {
+      rows.innerHTML = '<tr><td colspan="7" class="text-dim">No stored contexts.</td></tr>';
+      return;
+    }
+    rows.innerHTML = '';
+    for (const c of list) {
+      const tr = document.createElement('tr');
+      const cells = [c.Current ? '●' : '', c.Name, c.ID || '—', c.Role || '—', c.User || '—', c.Relay || '—'];
+      for (const v of cells) {
+        const td = document.createElement('td');
+        td.textContent = v;
+        tr.appendChild(td);
+      }
+      const td = document.createElement('td');
+      if (!c.Current) {
+        const btn = document.createElement('button');
+        btn.className = 'btn';
+        btn.textContent = 'Switch';
+        btn.onclick = () => switchContext(c.Name);
+        td.appendChild(btn);
+      }
+      tr.appendChild(td);
+      rows.appendChild(tr);
+    }
+  } catch (err) {
+    const errBox = $('#contexts-error');
+    errBox.textContent = err.message;
+    errBox.classList.remove('hidden');
+  }
+}
+
+async function switchContext(name) {
+  if (!confirm(`Switch to context "${name}"? The current profile is re-sealed and the page reloads.`)) return;
+  const errBox = $('#contexts-error');
+  errBox.classList.add('hidden');
+  try {
+    const resp = await fetch('/api/config/use-context', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    location.reload();
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.classList.remove('hidden');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', loadContexts);
