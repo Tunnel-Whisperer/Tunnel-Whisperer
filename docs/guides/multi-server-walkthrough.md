@@ -1,6 +1,12 @@
-# Greenfield Walkthrough: 1 Relay, 2 Servers, 2 Clients
+# Multi-Server Walkthrough: 1 Relay, 2 Servers, 2 Clients
 
 A complete from-scratch setup: one relay, two servers enrolled on it, and two clients each reaching a server's SSH through the tunnel.
+
+Prefer watching? The whole walkthrough, recorded live against a real topology (~3½ min, silent) — each step below also embeds just its own segment:
+
+<video controls preload="metadata" style="width:100%; border-radius:6px;">
+  <source src="../../assets/multi-server-walkthrough.mp4" type="video/mp4">
+</video>
 
 ## Topology
 
@@ -32,6 +38,10 @@ Five machines run `tw`: your admin laptop, server1, server2, client1, client2. T
 
 ## Step 1 — Admin: Provision the Relay
 
+<video controls preload="metadata" style="width:100%; border-radius:6px;">
+  <source src="../../assets/multi-server-step1-relay.mp4" type="video/mp4">
+</video>
+
 On your **admin laptop**:
 
 ```bash
@@ -57,6 +67,10 @@ tw relay test        # DNS → HTTPS/mTLS → SSH-over-tunnel, all three must pa
 This machine is now in **relay** mode — it's the relay's owner and the only one that can enroll servers or shell into the relay (`tw relay ssh`).
 
 ## Step 2 — Enroll server1 (join → enroll → apply)
+
+<video controls preload="metadata" style="width:100%; border-radius:6px;">
+  <source src="../../assets/multi-server-step2-server1.mp4" type="video/mp4">
+</video>
 
 **On server1:**
 
@@ -84,6 +98,10 @@ tw server test           # expect "tunnel and shell working"
 
 ## Step 3 — Enroll server2
 
+<video controls preload="metadata" style="width:100%; border-radius:6px;">
+  <source src="../../assets/multi-server-step3-server2.mp4" type="video/mp4">
+</video>
+
 Repeat Step 2 exactly, on server2. Enrollment is live — server1 keeps running, no relay restart. Then confirm both tenants from the admin laptop:
 
 ```bash
@@ -91,6 +109,10 @@ tw relay get-servers     # lists server1 and server2
 ```
 
 ## Step 4 — Create the Client Users (on the servers)
+
+<video controls preload="metadata" style="width:100%; border-radius:6px;">
+  <source src="../../assets/multi-server-step4-users.mp4" type="video/mp4">
+</video>
 
 Each client gets a user on the server it should reach, with a port map `clientLocalPort:serverPort`. For SSH, the server port is **22**.
 
@@ -114,6 +136,10 @@ Send each `.twctx` bundle to its client over a trusted channel — the bundles a
 
 ## Step 5 — Connect the Clients
 
+<video controls preload="metadata" style="width:100%; border-radius:6px;">
+  <source src="../../assets/multi-server-step5-client.mp4" type="video/mp4">
+</video>
+
 **On client1:**
 
 ```bash
@@ -133,6 +159,10 @@ ssh -p 2201 <your-unix-user>@127.0.0.1
     `tw` gets you a tunnel to the server's port 22; authentication to `sshd` itself is still whatever that server's OS accounts use (your normal SSH key or password there).
 
 ## Step 6 — Verify Everything
+
+<video controls preload="metadata" style="width:100%; border-radius:6px;">
+  <source src="../../assets/multi-server-step6-verify.mp4" type="video/mp4">
+</video>
 
 ```bash
 # admin

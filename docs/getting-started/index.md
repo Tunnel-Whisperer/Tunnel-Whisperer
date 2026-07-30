@@ -2,12 +2,6 @@
 
 Tunnel Whisperer connects services across separated private networks via resilient HTTPS tunnels. One binary, three roles: the **relay** admin owns the relay VM, **servers** join it and expose services, **clients** import a bundle and connect. This guide walks you through the setup.
 
-## Video Tutorial
-
-New to Tunnel Whisperer? Watch the step-by-step video walkthrough:
-
-[![Video Tutorial](https://img.youtube.com/vi/cIe0-C1IMe4/maxresdefault.jpg)](https://www.youtube.com/watch?v=cIe0-C1IMe4)
-
 ## Prerequisites
 
 - **Go 1.26+** — to build from source
@@ -50,4 +44,4 @@ The **relay admin** provisions the relay and enrolls servers. Each **server** op
 ## Next Steps
 
 - [Installation](installation.md) — build from source, cross-compile, install as a service
-- [Greenfield Walkthrough](../guides/greenfield-walkthrough.md) — a complete from-scratch setup: 1 relay, 2 servers, 2 clients
+- [Multi-Server Walkthrough](../guides/multi-server-walkthrough.md) — a complete from-scratch setup: 1 relay, 2 servers, 2 clients

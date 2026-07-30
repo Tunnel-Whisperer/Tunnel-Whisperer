@@ -19,12 +19,16 @@ services:
         aliases: [relay.tw.test]
   admin:
     <<: *tw
+    hostname: admin
   server:
     <<: *tw
+    hostname: server1
   client:
     <<: *tw
+    hostname: client1
   server2:
     <<: *tw
+    hostname: server2
 
 networks:
   twnet:

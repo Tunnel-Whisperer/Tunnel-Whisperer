@@ -79,14 +79,6 @@ Client Network                   Public Cloud                    Server Network
 
 ---
 
-## Video Tutorial
-
-New to Tunnel Whisperer? Watch the step-by-step video walkthrough:
-
-[![Video Tutorial](https://img.youtube.com/vi/cIe0-C1IMe4/maxresdefault.jpg)](https://www.youtube.com/watch?v=cIe0-C1IMe4)
-
----
-
 ## Three Roles, One Binary
 
 Every machine runs the same `tw` binary in one of three modes (set by its first role command, then signed and enforced):
@@ -95,9 +87,9 @@ Every machine runs the same `tw` binary in one of three modes (set by its first 
 - **Server:** joins a relay as a tenant, publishes its reverse tunnel, manages client users.
 - **Client:** imports a user bundle and opens local ports that reach the server's services.
 
-## Quick Start: Two Tenants on One Relay
+## Quick Start: One Relay, One Server, One Client
 
-The smallest real multi-tenant setup — one relay, two servers, one client each:
+The smallest setup — one relay, one server, one client:
 
 ```bash
 # ── Admin laptop: provision the relay (cloud wizard, or any VPS manually) ──
@@ -106,16 +98,13 @@ tw relay create --provider manual --domain relay.example.com --ip <vps-ip>
 #     point DNS relay.example.com → <vps-ip>
 tw relay test                          # DNS → HTTPS/mTLS → SSH-over-tunnel
 
-# ── server1: join (repeat the same three steps on server2) ──
+# ── server: join the relay ──
 tw server join-relay relay.example.com # writes tw_join_<id>.json → send to admin
 # admin: tw relay enroll-server tw_join_<id>.json   → send response back
 tw server join-relay --apply tw_join_response_<id>.json
 tw server start                        # or: sudo tw service install && sudo tw service start
 
-# ── admin: both tenants live, tunnels up ──
-tw relay get-servers                   # SERVER-ID  PATH  PORT  ENROLLED  TUNNEL up/down
-
-# ── server1: grant a client access to its SSH (port 22 → client's local 2201) ──
+# ── server: grant the client access to its SSH (port 22 → client's local 2201) ──
 tw server user create alice -m 2201:22
 tw server user apply alice
 tw config export-user alice            # → alice-tw-context.twctx, send over a trusted channel
@@ -123,12 +112,10 @@ tw config export-user alice            # → alice-tw-context.twctx, send over a
 # ── client: import and connect ──
 tw config import alice-tw-context.twctx --activate
 tw client connect
-ssh -p 2201 user@127.0.0.1             # you are on server1, through the relay
+ssh -p 2201 user@127.0.0.1             # you are on the server, through the relay
 ```
 
-Enrollment is live — adding server2 never restarts the relay or interrupts server1, and `tw relay un-enroll-server <id>` removes a tenant (config *and* live connections) just as surgically.
-
-> **Full greenfield walkthrough** — [1 Relay, 2 Servers, 2 Clients](https://tunnel-whisperer.github.io/Tunnel-Whisperer/guides/greenfield-walkthrough/): the complete from-scratch path across five machines — provision the relay (cloud or manual), enroll both servers with the join-request/response handshake, create a user per client, ship the `.twctx` bundles, and connect both clients — plus how one client reaches *both* servers by switching kubectl-style contexts (`tw config use-context`), and the gotchas (modes are permanent per machine, bundles are unprotected, re-export after editing mappings).
+> **Scaling out?** The relay is multi-tenant, and enrollment is live — adding a server never restarts the relay or interrupts the others. The [Multi-Server Walkthrough](https://tunnel-whisperer.github.io/Tunnel-Whisperer/guides/multi-server-walkthrough/) covers 1 relay, 2 servers, 2 clients across five machines — with step-by-step videos, how one client reaches *both* servers by switching kubectl-style contexts (`tw config use-context`), and the gotchas (modes are permanent per machine, bundles are unprotected, re-export after editing mappings).
 
 Building from source requires **Go 1.26+**; **Terraform** only for cloud relay provisioning (`make build` → `bin/tw`).
 

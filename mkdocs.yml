@@ -104,7 +104,7 @@ nav:
     - client/index.md
     - Setup & Connect: client/connect.md
   - Guides:
-    - Greenfield Walkthrough: guides/greenfield-walkthrough.md
+    - Multi-Server Walkthrough: guides/multi-server-walkthrough.md
     - Troubleshooting: guides/troubleshooting.md
   - Reference:
     - CLI Commands: reference/cli.md

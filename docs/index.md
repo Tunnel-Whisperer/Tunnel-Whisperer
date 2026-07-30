@@ -115,7 +115,7 @@ Connect a cloud Jupyter notebook to an on-premise database behind a corporate fi
 
     Open `http://localhost:8080` to manage everything from a browser. See [Web Dashboard](global/dashboard.md).
 
-For the full five-machine walkthrough, see the [Greenfield Walkthrough](guides/greenfield-walkthrough.md).
+For the full five-machine walkthrough, see the [Multi-Server Walkthrough](guides/multi-server-walkthrough.md).
 
 ---
 
