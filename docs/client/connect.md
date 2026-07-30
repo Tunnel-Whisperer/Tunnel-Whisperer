@@ -55,6 +55,45 @@ tw client listen 127.0.0.1    # restore the default (local only)
 
 Takes effect on the next reconnect.
 
+## Local Port Conflicts & Overrides
+
+The `local_port` values in your bundle were chosen by the server admin — they
+may clash with something already running on *your* machine. The local port is
+purely your machine's business (access control is enforced on the server
+port), so you can remap it freely.
+
+If a port is taken, `tw client connect` fails fast with:
+
+```text
+local port 8080 (→ server port 15432) is already in use — override it with
+'tw client set-port 15432 <port>' or 'tw client connect --map <port>:15432'
+```
+
+**Persistent override** — remap the tunnel identified by its *server* port:
+
+```bash
+tw client set-port 15432 4000     # server port 15432 now binds on localhost:4000
+tw client set-port                # list tunnels: default, override, effective
+tw client set-port 15432 --clear  # back to the admin default
+```
+
+Changes take effect on the next reconnect.
+
+**One-shot override** — for a single run, without persisting anything:
+
+```bash
+tw client connect --map 4000:15432          # <local_port>:<server_port>, like ssh -L
+tw client connect --map 4000:15432 --map 4001:15433
+```
+
+`--map` wins over a persisted override for that run only; a reconnect from the
+dashboard or service drops it.
+
+!!! note "Re-importing a bundle resets overrides"
+    `tw config import` replaces the whole context, including
+    `port_overrides`. After importing an updated bundle, re-run
+    `tw client set-port` for any ports you had remapped.
+
 ## Test and Status
 
 ```bash

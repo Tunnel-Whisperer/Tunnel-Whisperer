@@ -164,8 +164,9 @@ All subcommands require `mode: client`.
 
 | Command | Description |
 |---|---|
-| `tw client connect` | Connect to the relay: starts the embedded Xray client and the SSH forward tunnels. Runs until Ctrl-C. |
+| `tw client connect` | Connect to the relay: starts the embedded Xray client and the SSH forward tunnels. Runs until Ctrl-C. Supports repeatable one-shot overrides: `--map <local_port>:<server_port>` (ssh -L ordering, not persisted). |
 | `tw client listen [address]` | Show or set the local interface forwarded tunnels bind to. No argument prints the current address (default `127.0.0.1`); pass an IP to change it (`0.0.0.0` to expose tunnels on all interfaces, e.g. in a container). Takes effect on next reconnect. |
+| `tw client set-port [server_port] [local_port]` | Override the local port a tunnel binds on this machine, keyed by its server port. No arguments lists tunnels with default, override, and effective ports; `--clear` removes an override. Takes effect on next reconnect. |
 | `tw client status` | Client-mode variant of [`tw status`](#tw-status). |
 | `tw client test` | Test connectivity to the relay server. |
 

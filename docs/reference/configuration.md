@@ -139,6 +139,12 @@ client:
       remote_host: 127.0.0.1
       remote_port: 443
 
+  # Client-owned local-port overrides, keyed by server port (remote_port).
+  # Set with `tw client set-port`; omitted when empty. Wins over the
+  # tunnel's local_port; `tw client connect --map` wins over both for one run.
+  port_overrides:
+    3389: 13389
+
 # Tamper-evidence signature over (mode, profile identity). Written by
 # enrollment / bundle export / relay self-signing — never by hand.
 mode_auth:
@@ -215,6 +221,7 @@ Analytics works in both server and client modes. In server mode, stats are track
 | `xray_port` | int | `54001` | Local port the embedded Xray dokodemo-door listens on. |
 | `listen_address` | string | `127.0.0.1` | Local interface forwarded tunnels bind to. Set to `0.0.0.0` to expose tunnels on all interfaces — required when `tw` runs inside a container that publishes ports to the host. Also settable with `tw client listen`. |
 | `tunnels` | list | _(empty)_ | Port forwarding rules. Each entry has `local_port`, `remote_host`, `remote_port`. |
+| `port_overrides` | map | _(empty)_ | Local-port overrides keyed by server port (`remote_port`). Client-owned — set with `tw client set-port` or the dashboard Tunnels card; never shipped in bundles. |
 
 ### `tunnels[]` entry
 

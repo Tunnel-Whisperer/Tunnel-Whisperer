@@ -82,7 +82,7 @@ The multi-tenant view — every server enrolled on this relay, in a **live table
 ### Status Page
 
 - **Client card** — upload form for the context bundle (when none is loaded), Xray and Tunnel health, **Connect/Disconnect/Reconnect**
-- **Tunnels card** — configured port mappings (click to copy `localhost:port`); bundle update form when stopped
+- **Tunnels card** — port mappings with the *effective* local port (click to copy `localhost:port`). Ports remapped on this machine show an `override` badge; **edit** changes a tunnel's local port and **reset** restores the admin default (both take effect on the next reconnect). Bundle update form when stopped.
 - **Bandwidth card** — when analytics is enabled: per-port sent/received bytes and active connections
 
 ## Relay Management Page

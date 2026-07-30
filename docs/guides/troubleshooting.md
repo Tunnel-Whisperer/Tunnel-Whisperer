@@ -77,6 +77,21 @@ The client and server automatically reconnect with exponential backoff (2s → 4
 
 **Fix:** Check the debug logs for specific error messages. Ensure keepalive traffic can pass through any intermediate proxies.
 
+### "local port … is already in use"
+
+`tw client connect` checks every tunnel's local port before starting and
+refuses to connect if one is taken:
+
+```text
+local port 8080 (→ server port 15432) is already in use — override it with
+'tw client set-port 15432 <port>' or 'tw client connect --map <port>:15432'
+```
+
+Either stop whatever is using the port, or remap the tunnel to a free local
+port — persistently with `tw client set-port 15432 4000`, or for one run
+with `tw client connect --map 4000:15432`. See
+[Local Port Conflicts & Overrides](../client/connect.md#local-port-conflicts-overrides).
+
 ### Mode Enforcement Errors
 
 ```
