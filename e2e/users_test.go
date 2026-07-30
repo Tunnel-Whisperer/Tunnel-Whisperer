@@ -130,7 +130,7 @@ func testPermitOpen(t *testing.T) {
 	// dashboard API — the documented product gap, now closed).
 	execIn(t, "server", "tw server user single-session alice on")
 	ssOut := execIn(t, "server", "tw server user single-session alice")
-	if !strings.Contains(ssOut, "on") {
+	if !strings.Contains(ssOut, ": on") {
 		fatalf(t, "single-session state not reported as on:\n%s", ssOut)
 	}
 

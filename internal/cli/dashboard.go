@@ -154,7 +154,7 @@ func runDashboard(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	fmt.Printf("Starting dashboard on http://localhost%s\n", addr)
+	fmt.Printf("Starting dashboard on http://%s\n", addr)
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)

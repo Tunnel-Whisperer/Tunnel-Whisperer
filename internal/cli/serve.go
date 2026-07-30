@@ -44,7 +44,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		slog.Info("dashboard listening", "addr", dashAddr)
 		dashSrv := dashboard.NewServer(dashAddr, o)
 		go func() {
-			fmt.Printf("Dashboard on http://localhost%s\n", dashAddr)
+			fmt.Printf("Dashboard on http://%s\n", dashAddr)
 			if err := dashSrv.Run(); err != nil {
 				fmt.Printf("Dashboard error: %v\n", err)
 			}
