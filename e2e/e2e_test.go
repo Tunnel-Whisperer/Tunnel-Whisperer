@@ -137,7 +137,7 @@ func testContexts(t *testing.T) {
 
 	// Admin: capture the current context's name and short ID from the listing.
 	// The relay role is now named "relay" (renamed from "admin" — see
-	// docs/superpowers/specs/2026-07-22-mode-integrity-design.md).
+	// .claude/superpowers/specs/2026-07-22-mode-integrity-design.md).
 	out = execIn(t, "admin", "tw config get-contexts")
 	row := regexp.MustCompile(`(?m)^\*\s+(\S+)\s+([0-9a-f]{8})\s+relay\s+`).FindStringSubmatch(out)
 	if row == nil {

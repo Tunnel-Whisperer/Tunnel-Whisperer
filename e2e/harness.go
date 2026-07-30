@@ -3,7 +3,7 @@
 // Package e2e drives the Docker Compose test topology from the host. All tw
 // and relay processes run inside containers; this package only orchestrates
 // via `docker compose exec` and asserts on the results. See
-// docs/superpowers/specs/2026-07-18-local-e2e-compose-design.md.
+// .claude/superpowers/specs/2026-07-18-local-e2e-compose-design.md.
 package e2e
 
 import (

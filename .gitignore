@@ -1,4 +1,6 @@
 .claude
+.superpowers
+docs/superpowers
 .tmp
 bin/
 site/

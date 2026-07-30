@@ -280,7 +280,7 @@ func testSecondTenant(t *testing.T) {
 
 // mtlsNoCertAlert and mtlsForeignCAAlert are the stable substrings of the
 // OpenSSL/curl error text actually observed (live, --http1.1) for each
-// rejection case — see /home/n/code/Tunnel-Whisperer/.superpowers/sdd/task-6-report.md
+// rejection case — see /home/n/code/Tunnel-Whisperer/.claude/superpowers/sdd/task-6-report.md
 // and the "Fix round 1" section appended there. They're deliberately the
 // *specific* alert wording, not generic words like "certificate" or
 // "handshake", which also show up in an unrelated server-trust failure
