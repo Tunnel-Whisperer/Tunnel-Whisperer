@@ -34,7 +34,7 @@ func runConnect(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Config: %s\n", config.FilePath())
 
-	if err := o.StartClient(cliProgress); err != nil {
+	if err := o.StartClient(cliProgress, nil); err != nil {
 		return err
 	}
 

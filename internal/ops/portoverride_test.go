@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"net"
 	"os"
 	"strings"
 	"testing"
@@ -99,5 +100,33 @@ func TestClearClientPortOverride(t *testing.T) {
 	}
 	if len(cfg.Client.PortOverrides) != 0 {
 		t.Errorf("override still on disk: %v", cfg.Client.PortOverrides)
+	}
+}
+
+func TestPreflightBindReportsConflictActionably(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	busy := ln.Addr().(*net.TCPAddr).Port
+
+	tunnels := []config.Tunnel{{LocalPort: busy, RemoteHost: "127.0.0.1", RemotePort: 15432}}
+	err = preflightBind("", tunnels)
+	if err == nil {
+		t.Fatal("want error for occupied port")
+	}
+	for _, want := range []string{"already in use", "tw client set-port 15432", "--map"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("preflight error missing %q: %v", want, err)
+		}
+	}
+
+	free, err2 := freeLoopbackPort()
+	if err2 != nil {
+		t.Fatal(err2)
+	}
+	if err := preflightBind("", []config.Tunnel{{LocalPort: free, RemoteHost: "127.0.0.1", RemotePort: 15432}}); err != nil {
+		t.Errorf("free port must pass preflight: %v", err)
 	}
 }

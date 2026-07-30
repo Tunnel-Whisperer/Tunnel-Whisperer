@@ -131,7 +131,7 @@ func (h *handler) StopServer(ctx context.Context, req *Empty) (*Empty, error) {
 }
 
 func (h *handler) StartClient(ctx context.Context, req *Empty) (*Empty, error) {
-	if err := h.ops.StartClient(slogProgress); err != nil {
+	if err := h.ops.StartClient(slogProgress, nil); err != nil {
 		return nil, status.Errorf(codes.Internal, "%v", err)
 	}
 	return &Empty{}, nil

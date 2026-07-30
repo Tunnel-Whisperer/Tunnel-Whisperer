@@ -216,7 +216,7 @@ func (s *Server) apiClientStart(w http.ResponseWriter, r *http.Request) {
 	sessionID, progress := s.sse.create()
 
 	go func() {
-		if err := s.ops.StartClient(progress); err != nil {
+		if err := s.ops.StartClient(progress, nil); err != nil {
 			slog.Error("client start failed", "error", err)
 		}
 	}()
