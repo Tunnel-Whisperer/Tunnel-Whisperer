@@ -19,9 +19,9 @@ import (
 )
 
 var (
-	dashboardPort  int
+	dashboardPort   int
 	dashboardListen string
-	runAsService   bool
+	runAsService    bool
 )
 
 var dashboardCmd = &cobra.Command{

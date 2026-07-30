@@ -64,9 +64,9 @@ type XrayConfig struct {
 
 // ServerConfig holds settings only used by `tw server start`.
 type ServerConfig struct {
-	SSHPort       int           `yaml:"ssh_port"`
-	APIPort       int           `yaml:"api_port"`
-	DashboardPort int           `yaml:"dashboard_port"`
+	SSHPort       int `yaml:"ssh_port"`
+	APIPort       int `yaml:"api_port"`
+	DashboardPort int `yaml:"dashboard_port"`
 	// DashboardListen is the interface the web dashboard binds.
 	// Defaults to 127.0.0.1; set to 0.0.0.0 to expose it (the dashboard is
 	// unauthenticated — only do this on a trusted network).
