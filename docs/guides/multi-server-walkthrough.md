@@ -6,6 +6,7 @@ Prefer watching? The whole walkthrough, recorded live against a real topology (~
 
 <video controls preload="metadata" style="width:100%; border-radius:6px;">
   <source src="../../assets/multi-server-walkthrough.mp4" type="video/mp4">
+  <a href="../assets/multi-server-walkthrough.mp4">▶ Watch the full walkthrough (mp4)</a>
 </video>
 
 ## Topology
@@ -40,6 +41,7 @@ Five machines run `tw`: your admin laptop, server1, server2, client1, client2. T
 
 <video controls preload="metadata" style="width:100%; border-radius:6px;">
   <source src="../../assets/multi-server-step1-relay.mp4" type="video/mp4">
+  <a href="../assets/multi-server-step1-relay.mp4">▶ Watch: provision the relay (mp4)</a>
 </video>
 
 On your **admin laptop**:
@@ -70,6 +72,7 @@ This machine is now in **relay** mode — it's the relay's owner and the only on
 
 <video controls preload="metadata" style="width:100%; border-radius:6px;">
   <source src="../../assets/multi-server-step2-server1.mp4" type="video/mp4">
+  <a href="../assets/multi-server-step2-server1.mp4">▶ Watch: enroll server1 (mp4)</a>
 </video>
 
 **On server1:**
@@ -100,6 +103,7 @@ tw server test           # expect "tunnel and shell working"
 
 <video controls preload="metadata" style="width:100%; border-radius:6px;">
   <source src="../../assets/multi-server-step3-server2.mp4" type="video/mp4">
+  <a href="../assets/multi-server-step3-server2.mp4">▶ Watch: enroll server2 (mp4)</a>
 </video>
 
 Repeat Step 2 exactly, on server2. Enrollment is live — server1 keeps running, no relay restart. Then confirm both tenants from the admin laptop:
@@ -112,6 +116,7 @@ tw relay get-servers     # lists server1 and server2
 
 <video controls preload="metadata" style="width:100%; border-radius:6px;">
   <source src="../../assets/multi-server-step4-users.mp4" type="video/mp4">
+  <a href="../assets/multi-server-step4-users.mp4">▶ Watch: create the client users (mp4)</a>
 </video>
 
 Each client gets a user on the server it should reach, with a port map `clientLocalPort:serverPort`. For SSH, the server port is **22**.
@@ -138,6 +143,7 @@ Send each `.twctx` bundle to its client over a trusted channel — the bundles a
 
 <video controls preload="metadata" style="width:100%; border-radius:6px;">
   <source src="../../assets/multi-server-step5-client.mp4" type="video/mp4">
+  <a href="../assets/multi-server-step5-client.mp4">▶ Watch: connect the clients (mp4)</a>
 </video>
 
 **On client1:**
@@ -162,6 +168,7 @@ ssh -p 2201 <your-unix-user>@127.0.0.1
 
 <video controls preload="metadata" style="width:100%; border-radius:6px;">
   <source src="../../assets/multi-server-step6-verify.mp4" type="video/mp4">
+  <a href="../assets/multi-server-step6-verify.mp4">▶ Watch: verify everything (mp4)</a>
 </video>
 
 ```bash
