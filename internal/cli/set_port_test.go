@@ -27,3 +27,27 @@ func TestFormatPortOverrides(t *testing.T) {
 		t.Errorf("effective column wrong:\n%s", out)
 	}
 }
+
+func TestParseMapFlags(t *testing.T) {
+	if m, err := parseMapFlags(nil); err != nil || m != nil {
+		t.Errorf("empty input: want (nil, nil), got (%v, %v)", m, err)
+	}
+
+	m, err := parseMapFlags([]string{"4000:15432", "5000:15433"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m[15432] != 4000 || m[15433] != 5000 {
+		t.Errorf("wrong map: %v", m)
+	}
+
+	for _, bad := range []string{"4000", "a:15432", "4000:b", ":15432", "4000:"} {
+		if _, err := parseMapFlags([]string{bad}); err == nil {
+			t.Errorf("want error for %q", bad)
+		}
+	}
+
+	if _, err := parseMapFlags([]string{"4000:15432", "5000:15432"}); err == nil {
+		t.Error("want error for duplicate server port")
+	}
+}
