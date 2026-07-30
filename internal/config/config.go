@@ -67,12 +67,16 @@ type ServerConfig struct {
 	SSHPort       int           `yaml:"ssh_port"`
 	APIPort       int           `yaml:"api_port"`
 	DashboardPort int           `yaml:"dashboard_port"`
-	RelaySSHPort  int           `yaml:"relay_ssh_port"`
-	RelaySSHUser  string        `yaml:"relay_ssh_user"`
-	RemotePort    int           `yaml:"remote_port"`
-	XrayPort      int           `yaml:"xray_port,omitempty"`
-	TempXrayPort  int           `yaml:"temp_xray_port,omitempty"`
-	Applications  []Application `yaml:"applications,omitempty" json:"applications,omitempty"`
+	// DashboardListen is the interface the web dashboard binds.
+	// Defaults to 127.0.0.1; set to 0.0.0.0 to expose it (the dashboard is
+	// unauthenticated — only do this on a trusted network).
+	DashboardListen string        `yaml:"dashboard_listen,omitempty"`
+	RelaySSHPort    int           `yaml:"relay_ssh_port"`
+	RelaySSHUser    string        `yaml:"relay_ssh_user"`
+	RemotePort      int           `yaml:"remote_port"`
+	XrayPort        int           `yaml:"xray_port,omitempty"`
+	TempXrayPort    int           `yaml:"temp_xray_port,omitempty"`
+	Applications    []Application `yaml:"applications,omitempty" json:"applications,omitempty"`
 }
 
 // PortMapping defines a client-port → server-port pair.
