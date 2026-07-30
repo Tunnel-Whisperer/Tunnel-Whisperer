@@ -35,6 +35,31 @@ func (s *Server) renderPage(w http.ResponseWriter, page string, data interface{}
 	}
 }
 
+// tunnelView is one row of the client Tunnels card: the admin default, the
+// client's persisted override (0 = none), and the effective bound port.
+type tunnelView struct {
+	ServerPort    int
+	RemoteHost    string
+	DefaultPort   int
+	OverridePort  int
+	EffectivePort int
+}
+
+func buildTunnelViews(c config.ClientConfig) []tunnelView {
+	effective := c.EffectiveTunnels(nil)
+	views := make([]tunnelView, 0, len(c.Tunnels))
+	for i, t := range c.Tunnels {
+		views = append(views, tunnelView{
+			ServerPort:    t.RemotePort,
+			RemoteHost:    t.RemoteHost,
+			DefaultPort:   t.LocalPort,
+			OverridePort:  c.PortOverrides[t.RemotePort],
+			EffectivePort: effective[i].LocalPort,
+		})
+	}
+	return views
+}
+
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -110,7 +135,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ClientStatus  ops.ClientStatus
 		ConfigChanged bool
 		StatsEnabled  bool
-		ClientTunnels []config.Tunnel
+		ClientTunnels []tunnelView
 	}{
 		pageData:      s.newPageData("Status", "index"),
 		Config:        cfg,
@@ -123,8 +148,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ClientStatus:  cliStatus,
 		ConfigChanged: s.ops.ConfigChanged(),
 		StatsEnabled:  s.ops.StatsEnabled(),
-		// Persisted overrides only (no runtime --map state to show here).
-		ClientTunnels: cfg.Client.EffectiveTunnels(nil),
+		ClientTunnels: buildTunnelViews(cfg.Client),
 	}
 	s.renderPage(w, "index", data)
 }
