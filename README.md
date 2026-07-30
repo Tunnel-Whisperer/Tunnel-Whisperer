@@ -115,7 +115,9 @@ tw client connect
 ssh -p 2201 user@127.0.0.1             # you are on the server, through the relay
 ```
 
-> **Scaling out?** The relay is multi-tenant, and enrollment is live — adding a server never restarts the relay or interrupts the others. The [Multi-Server Walkthrough](https://tunnel-whisperer.github.io/Tunnel-Whisperer/guides/multi-server-walkthrough/) covers 1 relay, 2 servers, 2 clients across five machines — with step-by-step videos, how one client reaches *both* servers by switching kubectl-style contexts (`tw config use-context`), and the gotchas (modes are permanent per machine, bundles are unprotected, re-export after editing mappings).
+> **Scaling out?** The relay is multi-tenant, and enrollment is live — adding a server never restarts the relay or interrupts the others. The [Multi-Server Walkthrough](https://tunnel-whisperer.github.io/Tunnel-Whisperer/guides/multi-server-walkthrough/) covers 1 relay, 2 servers, 2 clients across five machines — with step-by-step videos, how one client reaches *both* servers by switching kubectl-style contexts (`tw config use-context`), and the gotchas (modes are permanent per machine, bundles are unprotected, re-export after editing mappings). The whole thing, recorded live in a real topology (~3 min, silent):
+
+[![Multi-server walkthrough recording](docs/assets/multi-server-walkthrough.gif)](https://tunnel-whisperer.github.io/Tunnel-Whisperer/guides/multi-server-walkthrough/)
 
 Building from source requires **Go 1.26+**; **Terraform** only for cloud relay provisioning (`make build` → `bin/tw`).
 

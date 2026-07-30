@@ -4,7 +4,7 @@
 # real tw binary running in the containers; long waits are jump-cut by the
 # tape, never faked.
 #
-#   bash e2e/video/record.sh            # render docs/assets/multi-server-walkthrough.mp4
+#   bash e2e/video/record.sh            # render the docs/assets/multi-server-*.gif embeds
 #   VIDEO_KEEP=1 bash e2e/video/record.sh   # leave the stack up afterwards
 #   VIDEO_PREP_ONLY=1 bash e2e/video/record.sh  # stack + prep, no vhs (for debugging)
 #
@@ -141,7 +141,25 @@ done
 
 log "concatenating parts"
 for f in e2e/video/out/part-*.mp4; do printf "file '%s'\n" "$PWD/$f"; done > e2e/video/out/concat.txt
-ffmpeg -y -loglevel error -f concat -safe 0 -i e2e/video/out/concat.txt -c copy docs/assets/multi-server-walkthrough.mp4
+ffmpeg -y -loglevel error -f concat -safe 0 -i e2e/video/out/concat.txt -c copy e2e/video/out/multi-server-walkthrough.mp4
+
+# The committed embeds are GIFs (GitHub strips <video> tags from rendered
+# markdown); the mp4s stay in out/. Two-pass palette per clip, no dithering,
+# so the terminal text stays crisp at 960px.
+gif() {
+  ffmpeg -y -loglevel error -i "$1" -vf "fps=8,scale=960:-1:flags=lanczos,palettegen=stats_mode=diff" e2e/video/out/palette.png
+  ffmpeg -y -loglevel error -i "$1" -i e2e/video/out/palette.png \
+    -lavfi "fps=8,scale=960:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=none" "$2"
+}
+log "rendering gifs into docs/assets"
+gif e2e/video/out/part-01.mp4 docs/assets/multi-server-step1-relay.gif
+gif e2e/video/out/part-02.mp4 docs/assets/multi-server-step2-server1.gif
+gif e2e/video/out/part-03.mp4 docs/assets/multi-server-step3-server2.gif
+gif e2e/video/out/part-04.mp4 docs/assets/multi-server-step4-users.gif
+gif e2e/video/out/part-05.mp4 docs/assets/multi-server-step5-client.gif
+gif e2e/video/out/part-06.mp4 docs/assets/multi-server-step6-verify.gif
+gif e2e/video/out/multi-server-walkthrough.mp4 docs/assets/multi-server-walkthrough.gif
 
 log "render complete:"
-ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 docs/assets/multi-server-walkthrough.mp4
+ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 e2e/video/out/multi-server-walkthrough.mp4
+du -h docs/assets/multi-server-*.gif

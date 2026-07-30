@@ -73,9 +73,6 @@ markdown_extensions:
   - toc:
       permalink: true
 
-extra_css:
-  - stylesheets/extra.css
-
 extra:
   social:
     - icon: fontawesome/brands/github

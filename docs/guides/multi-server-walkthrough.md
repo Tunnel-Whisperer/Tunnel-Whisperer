@@ -2,12 +2,7 @@
 
 A complete from-scratch setup: one relay, two servers enrolled on it, and two clients each reaching a server's SSH through the tunnel.
 
-Prefer watching? The whole walkthrough, recorded live against a real topology (~3½ min, silent) — each step below also embeds just its own segment:
-
-<video controls preload="metadata" style="width:100%; border-radius:6px;">
-  <source src="../../assets/multi-server-walkthrough.mp4" type="video/mp4">
-</video>
-<a class="gh-video-fallback" href="../assets/multi-server-walkthrough.mp4"><img src="../assets/multi-server-walkthrough.gif" alt="Full walkthrough" loading="lazy"></a>
+Each step below embeds its segment of a live recording made against a real topology (silent).
 
 ## Topology
 
@@ -39,10 +34,7 @@ Five machines run `tw`: your admin laptop, server1, server2, client1, client2. T
 
 ## Step 1 — Admin: Provision the Relay
 
-<video controls preload="metadata" style="width:100%; border-radius:6px;">
-  <source src="../../assets/multi-server-step1-relay.mp4" type="video/mp4">
-</video>
-<a class="gh-video-fallback" href="../assets/multi-server-step1-relay.mp4"><img src="../assets/multi-server-step1-relay.gif" alt="Step 1 — provision the relay" loading="lazy"></a>
+![Step 1 — provision the relay](../assets/multi-server-step1-relay.gif)
 
 On your **admin laptop**:
 
@@ -70,10 +62,7 @@ This machine is now in **relay** mode — it's the relay's owner and the only on
 
 ## Step 2 — Enroll server1 (join → enroll → apply)
 
-<video controls preload="metadata" style="width:100%; border-radius:6px;">
-  <source src="../../assets/multi-server-step2-server1.mp4" type="video/mp4">
-</video>
-<a class="gh-video-fallback" href="../assets/multi-server-step2-server1.mp4"><img src="../assets/multi-server-step2-server1.gif" alt="Step 2 — enroll server1" loading="lazy"></a>
+![Step 2 — enroll server1](../assets/multi-server-step2-server1.gif)
 
 **On server1:**
 
@@ -101,10 +90,7 @@ tw server test           # expect "tunnel and shell working"
 
 ## Step 3 — Enroll server2
 
-<video controls preload="metadata" style="width:100%; border-radius:6px;">
-  <source src="../../assets/multi-server-step3-server2.mp4" type="video/mp4">
-</video>
-<a class="gh-video-fallback" href="../assets/multi-server-step3-server2.mp4"><img src="../assets/multi-server-step3-server2.gif" alt="Step 3 — enroll server2" loading="lazy"></a>
+![Step 3 — enroll server2](../assets/multi-server-step3-server2.gif)
 
 Repeat Step 2 exactly, on server2. Enrollment is live — server1 keeps running, no relay restart. Then confirm both tenants from the admin laptop:
 
@@ -114,10 +100,7 @@ tw relay get-servers     # lists server1 and server2
 
 ## Step 4 — Create the Client Users (on the servers)
 
-<video controls preload="metadata" style="width:100%; border-radius:6px;">
-  <source src="../../assets/multi-server-step4-users.mp4" type="video/mp4">
-</video>
-<a class="gh-video-fallback" href="../assets/multi-server-step4-users.mp4"><img src="../assets/multi-server-step4-users.gif" alt="Step 4 — create the client users" loading="lazy"></a>
+![Step 4 — create the client users](../assets/multi-server-step4-users.gif)
 
 Each client gets a user on the server it should reach, with a port map `clientLocalPort:serverPort`. For SSH, the server port is **22**.
 
@@ -141,10 +124,7 @@ Send each `.twctx` bundle to its client over a trusted channel — the bundles a
 
 ## Step 5 — Connect the Clients
 
-<video controls preload="metadata" style="width:100%; border-radius:6px;">
-  <source src="../../assets/multi-server-step5-client.mp4" type="video/mp4">
-</video>
-<a class="gh-video-fallback" href="../assets/multi-server-step5-client.mp4"><img src="../assets/multi-server-step5-client.gif" alt="Step 5 — connect the clients" loading="lazy"></a>
+![Step 5 — connect the clients](../assets/multi-server-step5-client.gif)
 
 **On client1:**
 
@@ -166,10 +146,7 @@ ssh -p 2201 <your-unix-user>@127.0.0.1
 
 ## Step 6 — Verify Everything
 
-<video controls preload="metadata" style="width:100%; border-radius:6px;">
-  <source src="../../assets/multi-server-step6-verify.mp4" type="video/mp4">
-</video>
-<a class="gh-video-fallback" href="../assets/multi-server-step6-verify.mp4"><img src="../assets/multi-server-step6-verify.gif" alt="Step 6 — verify everything" loading="lazy"></a>
+![Step 6 — verify everything](../assets/multi-server-step6-verify.gif)
 
 ```bash
 # admin
