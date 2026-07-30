@@ -6,6 +6,7 @@ import (
 	"net"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -166,7 +167,7 @@ func (m *clientManager) Start(o *Ops, progress ProgressFunc, overrides map[int]i
 	for _, t := range tunnels {
 		desc = append(desc, fmt.Sprintf("localhost:%d → %s:%d", t.LocalPort, t.RemoteHost, t.RemotePort))
 	}
-	progress(ProgressEvent{Step: 3, Total: 3, Label: "Port forwarding", Status: "completed", Message: fmt.Sprintf("%d tunnel(s) active", len(mappings))})
+	progress(ProgressEvent{Step: 3, Total: 3, Label: "Port forwarding", Status: "completed", Message: fmt.Sprintf("%d tunnel(s) active: %s", len(mappings), strings.Join(desc, ", "))})
 
 	m.mu.Lock()
 	m.state = StateRunning

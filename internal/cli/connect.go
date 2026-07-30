@@ -60,6 +60,9 @@ func runConnect(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// parseMapFlags parses repeated --map values of the form
+// "<local_port>:<server_port>" (ssh -L ordering) into a
+// server-port → local-port map.
 func parseMapFlags(vals []string) (map[int]int, error) {
 	if len(vals) == 0 {
 		return nil, nil

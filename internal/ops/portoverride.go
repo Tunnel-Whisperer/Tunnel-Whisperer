@@ -21,6 +21,9 @@ func validateClientOverrides(c config.ClientConfig, runtime map[int]int) error {
 	check := func(overrides map[int]int, source string) error {
 		for sp, lp := range overrides {
 			if !valid[sp] {
+				if len(ports) == 0 {
+					return fmt.Errorf("%s: no tunnels configured", source)
+				}
 				return fmt.Errorf("%s: no tunnel with server port %d (valid server ports: %s)",
 					source, sp, strings.Join(ports, ", "))
 			}
@@ -77,10 +80,16 @@ func (o *Ops) ClearClientPortOverride(serverPort int) (bool, error) {
 		o.mu.Unlock()
 		return false, nil
 	}
-	delete(o.cfg.Client.PortOverrides, serverPort)
-	if len(o.cfg.Client.PortOverrides) == 0 {
-		o.cfg.Client.PortOverrides = nil
+	var next map[int]int
+	if len(o.cfg.Client.PortOverrides) > 1 {
+		next = make(map[int]int, len(o.cfg.Client.PortOverrides)-1)
+		for k, v := range o.cfg.Client.PortOverrides {
+			if k != serverPort {
+				next[k] = v
+			}
+		}
 	}
+	o.cfg.Client.PortOverrides = next
 	cfg := o.cfg
 	o.mu.Unlock()
 	return true, config.Save(cfg)

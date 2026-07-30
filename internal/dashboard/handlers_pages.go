@@ -110,6 +110,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ClientStatus  ops.ClientStatus
 		ConfigChanged bool
 		StatsEnabled  bool
+		ClientTunnels []config.Tunnel
 	}{
 		pageData:      s.newPageData("Status", "index"),
 		Config:        cfg,
@@ -122,6 +123,8 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ClientStatus:  cliStatus,
 		ConfigChanged: s.ops.ConfigChanged(),
 		StatsEnabled:  s.ops.StatsEnabled(),
+		// Persisted overrides only (no runtime --map state to show here).
+		ClientTunnels: cfg.Client.EffectiveTunnels(nil),
 	}
 	s.renderPage(w, "index", data)
 }

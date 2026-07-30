@@ -242,14 +242,14 @@
         {{if eq .ClientStatus.State "running"}}
         <span class="badge {{if .ClientStatus.Tunnel}}badge-green{{else}}badge-dim{{end}}" data-bind="tunnel-badge">{{if .ClientStatus.Tunnel}}connected{{else}}disconnected{{end}}</span>
         {{end}}
-        <span class="badge badge-dim">{{len .Config.Client.Tunnels}}</span>
+        <span class="badge badge-dim">{{len .ClientTunnels}}</span>
       </div>
     </div>
 
-    {{if .Config.Client.Tunnels}}
+    {{if .ClientTunnels}}
     <div class="tunnel-list-scroll">
       <div class="kv">
-        {{range .Config.Client.Tunnels}}
+        {{range .ClientTunnels}}
         <span class="kv-label copyable" onclick="copyText('localhost:{{.LocalPort}}', this)" title="Click to copy">localhost:{{.LocalPort}}</span>
         <span class="kv-value">{{.RemoteHost}}:{{.RemotePort}}</span>
         {{end}}

@@ -103,6 +103,23 @@ func TestClearClientPortOverride(t *testing.T) {
 	}
 }
 
+func TestClearClientPortOverrideDoesNotMutateSnapshot(t *testing.T) {
+	o := newClientOpsForTest(t)
+	if err := o.SetClientPortOverride(15432, 4000); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := o.Config()
+	if snapshot.Client.PortOverrides[15432] != 4000 {
+		t.Fatalf("snapshot missing override: %v", snapshot.Client.PortOverrides)
+	}
+	if _, err := o.ClearClientPortOverride(15432); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Client.PortOverrides[15432] != 4000 {
+		t.Errorf("Clear mutated a previously taken Config() snapshot's map: %v", snapshot.Client.PortOverrides)
+	}
+}
+
 func TestPreflightBindReportsConflictActionably(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
