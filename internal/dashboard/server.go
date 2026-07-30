@@ -128,6 +128,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/client/start", s.apiClientStart)
 	s.mux.HandleFunc("/api/client/stop", s.apiClientStop)
 	s.mux.HandleFunc("/api/client/reconnect", s.apiClientReconnect)
+	s.mux.HandleFunc("/api/client/port-override", s.apiClientPortOverride)
 	s.mux.HandleFunc("/api/client/upload", s.apiClientUpload)
 	s.mux.HandleFunc("/api/apps", s.apiApps)
 	s.mux.HandleFunc("/api/apps/", s.apiAppAction)

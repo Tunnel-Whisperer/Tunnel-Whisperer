@@ -825,6 +825,43 @@ func (s *Server) apiSetClientSettings(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]string{"status": "ok"})
 }
 
+func (s *Server) apiClientPortOverride(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.ops.Config().Mode != "client" {
+		jsonError(w, "dashboard port overrides are client-mode only", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		ServerPort int  `json:"server_port"`
+		LocalPort  int  `json:"local_port"`
+		Clear      bool `json:"clear"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Clear {
+		cleared, err := s.ops.ClearClientPortOverride(req.ServerPort)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		jsonOK(w, map[string]any{"status": "ok", "cleared": cleared})
+		return
+	}
+
+	if err := s.ops.SetClientPortOverride(req.ServerPort, req.LocalPort); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	jsonOK(w, map[string]string{"status": "ok"})
+}
+
 // ── Log streaming ───────────────────────────────────────────────────────────
 
 func (s *Server) apiLogs(w http.ResponseWriter, r *http.Request) {
