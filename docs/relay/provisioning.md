@@ -174,8 +174,10 @@ the other roles):
 2. **HTTPS (Caddy)** — a TLS connection presenting this machine's client
    certificate succeeds; without a cert to present, a "certificate required"
    rejection still proves Caddy is up and the mTLS gate is active.
-3. **Xray + SSH** — a full tunnel is established and a real SSH command is
-   executed on the relay.
+3. **Xray + SSH** — a full tunnel is established. On the relay and server, a
+   real SSH command is executed on the relay. On the client, an SSH publickey
+   handshake authenticates against the server's embedded SSH through the tunnel
+   (no command execution).
 
 ## Destroying the relay
 
