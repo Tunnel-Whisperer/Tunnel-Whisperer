@@ -47,5 +47,5 @@ commands:
   "proxy":                   {exempt: "pending: upstream-proxy scenario needs a SOCKS5 container"}
   "proxy set":               {exempt: "pending: upstream-proxy scenario needs a SOCKS5 container"}
   "proxy clear":             {exempt: "pending: upstream-proxy scenario needs a SOCKS5 container"}
-  "dashboard":               [TestE2E/Dashboard]
+  "dashboard":               [TestE2E/Dashboard, TestE2E/PortOverride]
   "completion":              {exempt: "shell completion generation; no runtime behavior"}

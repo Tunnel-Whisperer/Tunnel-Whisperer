@@ -13,6 +13,7 @@ import (
 const (
 	overridePort = "18090" // persisted via tw client set-port
 	mapPort      = "18091" // one-shot via tw client connect --map
+	dashPort     = "18093" // set via the dashboard API (18092 is PermitOpen's probe)
 )
 
 // testPortOverride proves a client can remap the admin-chosen local port:
@@ -25,7 +26,8 @@ func testPortOverride(t *testing.T) {
 		"with alice's local port occupied, tw client connect fails fast with the set-port/--map hint (not a silent background failure)",
 		"tw client set-port persists an override; reconnect moves real bytes through the new local port",
 		"tw client connect --map remaps for one run only — the persisted config is untouched",
-		"tw client set-port --clear restores the admin default (second --clear reports no override)")
+		"tw client set-port --clear restores the admin default (second --clear reports no override)",
+		"the dashboard API can set and clear the same override: auto-connect fails the preflight in the dashboard log, POST /api/client/port-override remaps, the dashboard-started client moves real bytes, clear returns cleared:true")
 
 	// Take down alice's live tunnel and occupy her local port.
 	killMatching(t, "client", "tw client connect")
@@ -39,6 +41,49 @@ func testPortOverride(t *testing.T) {
 	if !strings.Contains(out, "already in use") || !strings.Contains(out, "tw client set-port "+echoPort) {
 		fatalf(t, "conflict error is not the actionable preflight message:\n%s", out)
 	}
+
+	// ── Dashboard leg: the same override, driven via the dashboard API. ──
+	// tw dashboard auto-connects its in-process client on launch; with the
+	// default port still occupied that auto-connect must fail the bind
+	// preflight (in the dashboard log) while the dashboard keeps serving.
+	execDetached(t, "client", "tw dashboard > /var/log/tw-client-dash.log 2>&1")
+	waitFor(t, "client dashboard serving", 60*time.Second, func() (bool, string) {
+		code, err := execInOK("client", "curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/")
+		if err != nil || !strings.Contains(code, "200") {
+			tail, _ := execInOK("client", "tail -5 /var/log/tw-client-dash.log")
+			return false, tail
+		}
+		return true, ""
+	})
+	preflightHits := execIn(t, "client", "grep -c 'already in use' /var/log/tw-client-dash.log || true")
+	if strings.TrimSpace(preflightHits) == "0" || strings.TrimSpace(preflightHits) == "" {
+		tail := execIn(t, "client", "tail -20 /var/log/tw-client-dash.log")
+		fatalf(t, "dashboard auto-connect did not hit the bind preflight:\n%s", tail)
+	}
+	dashSet := execIn(t, "client",
+		`curl -sS -X POST -d '{"server_port":`+echoPort+`,"local_port":`+dashPort+`}' http://127.0.0.1:8080/api/client/port-override`)
+	if !strings.Contains(dashSet, `"status":"ok"`) {
+		fatalf(t, "dashboard set-override failed:\n%s", dashSet)
+	}
+	execIn(t, "client", `curl -sS -X POST -d '{}' http://127.0.0.1:8080/api/client/start`)
+	waitFor(t, "dashboard-set override tunnel listening", 120*time.Second, func() (bool, string) {
+		if _, err := execInOK("client", "nc -z 127.0.0.1 "+dashPort); err != nil {
+			tail, _ := execInOK("client", "tail -5 /var/log/tw-client-dash.log")
+			return false, tail
+		}
+		return true, ""
+	})
+	dashEcho := execIn(t, "client", "printf 'hello-dashboard' | nc -w 10 127.0.0.1 "+dashPort)
+	if strings.TrimSpace(dashEcho) != "hello-dashboard" {
+		fatalf(t, "echo through dashboard-set port mismatch: %q", dashEcho)
+	}
+	execIn(t, "client", `curl -sS -X POST -d '{}' http://127.0.0.1:8080/api/client/stop`)
+	dashClear := execIn(t, "client",
+		`curl -sS -X POST -d '{"server_port":`+echoPort+`,"clear":true}' http://127.0.0.1:8080/api/client/port-override`)
+	if !strings.Contains(dashClear, `"cleared":true`) {
+		fatalf(t, "dashboard clear-override failed:\n%s", dashClear)
+	}
+	killMatching(t, "client", "tw dashboard")
 
 	// Persisted override: alice's server port (echoPort) → overridePort.
 	execIn(t, "client", "tw client set-port "+echoPort+" "+overridePort)
