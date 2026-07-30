@@ -1,0 +1,5 @@
+/* Plain links shown on GitHub's markdown view, where <video> embeds are
+   stripped; the site renders the players, so hide the fallbacks here. */
+.gh-video-fallback {
+  display: none;
+}
