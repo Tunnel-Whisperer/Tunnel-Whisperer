@@ -347,9 +347,10 @@ func (o *Ops) ServerStatus() ServerStatus {
 	return o.srv.Status()
 }
 
-// StartClient starts the client connection.
-func (o *Ops) StartClient(progress ProgressFunc) error {
-	return o.cli.Start(o, progress)
+// StartClient starts the client connection. overrides (server port →
+// local port, from `tw client connect --map`) apply to this run only.
+func (o *Ops) StartClient(progress ProgressFunc, overrides map[int]int) error {
+	return o.cli.Start(o, progress, overrides)
 }
 
 // StopClient stops the client connection.
@@ -382,7 +383,7 @@ func (o *Ops) ReconnectClient(progress ProgressFunc) error {
 		logging.SetLevel(cfg.LogLevel)
 	}
 
-	return o.cli.Start(o, progress)
+	return o.cli.Start(o, progress, nil)
 }
 
 // ClientStatus returns the client lifecycle state.

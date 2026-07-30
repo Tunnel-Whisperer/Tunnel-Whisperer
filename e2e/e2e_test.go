@@ -38,6 +38,7 @@ func TestE2E(t *testing.T) {
 		{"ServerJoin", testServerJoin},
 		{"MTLSGate", testMTLSGate},
 		{"UserLifecycle", testUserLifecycle},
+		{"PortOverride", testPortOverride},
 		{"PermitOpen", testPermitOpen},
 		{"Revocation", testRevocation},
 		{"Contexts", testContexts},

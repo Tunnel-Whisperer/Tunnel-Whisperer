@@ -94,7 +94,7 @@ func runDashboard(cmd *cobra.Command, args []string) error {
 			}
 		} else if mode == "client" && cfg.Xray.RelayHost != "" {
 			slog.Info("auto-connecting client")
-			if err := o.StartClient(slogProgress); err != nil {
+			if err := o.StartClient(slogProgress, nil); err != nil {
 				slog.Error("auto-connect client failed", "error", err)
 			}
 		}

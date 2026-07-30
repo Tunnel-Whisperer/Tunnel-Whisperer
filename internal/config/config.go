@@ -96,6 +96,10 @@ type ClientConfig struct {
 	// Defaults to 127.0.0.1; set to 0.0.0.0 to expose tunnels (e.g. in containers).
 	ListenAddress string   `yaml:"listen_address,omitempty"`
 	Tunnels       []Tunnel `yaml:"tunnels"`
+	// PortOverrides maps a tunnel's server port (remote_port) to a
+	// client-chosen local port, overriding the admin default in Tunnels.
+	// Client-owned: user bundles never ship this field.
+	PortOverrides map[int]int `yaml:"port_overrides,omitempty"`
 }
 
 // Tunnel defines a single local-port → remote-host:remote-port mapping.
@@ -103,6 +107,25 @@ type Tunnel struct {
 	LocalPort  int    `yaml:"local_port"`
 	RemoteHost string `yaml:"remote_host"`
 	RemotePort int    `yaml:"remote_port"`
+}
+
+// EffectiveTunnels returns Tunnels with each LocalPort replaced by the
+// persisted override (PortOverrides) or, with higher precedence, a runtime
+// override (from `tw client connect --map`). Both maps are keyed by server
+// port (RemotePort). The receiver's Tunnels slice is not mutated; unknown
+// keys are ignored here and rejected by ops-level validation.
+func (c ClientConfig) EffectiveTunnels(runtime map[int]int) []Tunnel {
+	out := make([]Tunnel, len(c.Tunnels))
+	for i, t := range c.Tunnels {
+		if p, ok := c.PortOverrides[t.RemotePort]; ok {
+			t.LocalPort = p
+		}
+		if p, ok := runtime[t.RemotePort]; ok {
+			t.LocalPort = p
+		}
+		out[i] = t
+	}
+	return out
 }
 
 // Hash returns a SHA-256 hex digest of the YAML-serialised config.

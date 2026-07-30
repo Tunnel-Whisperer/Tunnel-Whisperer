@@ -24,10 +24,11 @@ commands:
   "server app create":       {exempt: "pending: app catalog scenario not yet written"}
   "server app edit":         {exempt: "pending: app catalog scenario not yet written"}
   "server app delete":       {exempt: "pending: app catalog scenario not yet written"}
-  "client connect":          [TestE2E/UserLifecycle]
+  "client connect":          [TestE2E/UserLifecycle, TestE2E/PortOverride]
   "client test":             [TestE2E/UserLifecycle]
   "client status":           [TestE2E/UserLifecycle]
   "client listen":           [TestE2E/UserLifecycle]
+  "client set-port":         [TestE2E/PortOverride]
   "config import":           [TestE2E/UserLifecycle]
   "config export":           [TestE2E/Contexts]
   "config export-user":      [TestE2E/UserLifecycle]
