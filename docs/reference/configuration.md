@@ -84,6 +84,11 @@ server:
   # Port the web dashboard listens on.
   dashboard_port: 8080
 
+  # Interface the web dashboard binds. Defaults to 127.0.0.1 (local only).
+  # Set to 0.0.0.0 to expose it — the dashboard is unauthenticated, so only
+  # on a trusted network. Also settable per run with `tw dashboard --listen`.
+  dashboard_listen: 127.0.0.1
+
   # SSH port on the relay server (for the reverse tunnel).
   relay_ssh_port: 22
 
@@ -182,6 +187,7 @@ mode_auth:
 | `ssh_port` | int | `2222` | Local SSH server listen port. |
 | `api_port` | int | `50051` | gRPC API listen port. Read in every mode to locate a running daemon. |
 | `dashboard_port` | int | `8080` | Web dashboard listen port. Set to `0` to disable. |
+| `dashboard_listen` | string | `127.0.0.1` | Interface the web dashboard binds to. Default `127.0.0.1` (loopback only). Set to `0.0.0.0` to expose on all interfaces — the dashboard is unauthenticated, so only on a trusted network. Also settable per run with `tw dashboard --listen`. |
 | `relay_ssh_port` | int | `22` | SSH port on the relay for the reverse tunnel. |
 | `relay_ssh_user` | string | `ubuntu` | SSH user on the relay server. |
 | `remote_port` | int | `2222` | Remote port on the relay forwarded back to local SSH. Enrolled servers get their port assigned by the relay admin (starting at 20000). |

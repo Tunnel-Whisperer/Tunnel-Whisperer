@@ -5,10 +5,21 @@ The web dashboard provides a browser-based interface for managing Tunnel Whisper
 ## Starting the Dashboard
 
 ```bash
-tw dashboard [--port PORT]
+tw dashboard [--port PORT] [--listen ADDR]
 ```
 
 Default port is `8080`. The dashboard is also served by the running server daemon (`tw server start`) when `server.dashboard_port` is configured, and by the [system service](status-service.md#tw-service-run-as-a-system-service). On launch it auto-starts the server (if the relay is provisioned) or auto-connects the client (if a relay is configured).
+
+The dashboard binds `127.0.0.1` by default — it is only reachable from the machine it runs on. To expose it (e.g. from a container or another machine on a trusted network), override the listen interface:
+
+```bash
+tw dashboard --listen 0.0.0.0          # all interfaces
+```
+
+or set `server.dashboard_listen` in `config.yaml`.
+
+!!! warning "The dashboard is unauthenticated"
+    Anyone who can reach the port has full control of this node. Keep the default loopback bind unless the network is trusted.
 
 ## Role Selection
 

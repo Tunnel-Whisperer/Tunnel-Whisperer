@@ -125,12 +125,13 @@ tw server start
 
 | Command | Description |
 |---|---|
-| `tw server user create [name]` | Create a client user with tunnel access. With a name argument it runs non-interactively from flags; without one it prompts. |
+| `tw server user create [name]` | Create a client user with tunnel access. With a name argument it runs non-interactively from flags; without one it prompts. Supports `--single-session` to enforce one concurrent connection per user. |
 | `tw server user list` | List all configured users and their tunnel mappings. |
 | `tw server user edit <name>` | Edit a user's port mappings (interactive). |
 | `tw server user delete <name>` | Delete a user (with confirmation prompt). |
 | `tw server user apply [name...]` | Register users on the relay (all users if no names are given). |
 | `tw server user unregister <name>` | Unregister a user from the relay (revoke tunnel access without deleting the user). |
+| `tw server user single-session <name> [on\|off]` | Show or set single-session enforcement (one concurrent SSH connection per user). No argument shows the current state; `on` or `off` sets it. Rewrites the user's authorized_keys entry; takes effect on the next auth attempt. |
 
 `tw server user create` flags:
 
@@ -138,6 +139,7 @@ tw server start
 |---|---|
 | `-m`, `--map <clientPort:serverPort>` | Port mapping (repeatable), e.g. `-m 8080:80`. |
 | `--from <user>` | Copy port mappings from an existing user (mutually exclusive with `--map`). |
+| `--single-session` | Enforce one concurrent SSH connection per user; subsequent login attempts while one is active are rejected. Takes effect on the next auth attempt. |
 
 ```bash
 tw server user create alice -m 8080:80 -m 5432:5432
@@ -229,6 +231,7 @@ and the gRPC API, then auto-starts the appropriate role:
 | Flag | Description |
 |---|---|
 | `--port <n>` | Dashboard listen port (overrides config). |
+| `--listen <addr>` | Dashboard listen address (default `127.0.0.1`, loopback only; set to `0.0.0.0` to expose on all interfaces). Overrides config. |
 
 The dashboard also starts the gRPC API, so CLI commands like `tw status` and
 `tw server user list` talk to the running daemon instead of reading state

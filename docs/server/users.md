@@ -37,9 +37,25 @@ This is the actual access-control record: the embedded SSH server only allows th
 !!! note "Revocation is live"
     The SSH server re-reads `authorized_keys` on **every** authentication attempt — no restart needed. Deleting or unregistering a user takes effect on their next connection attempt.
 
-### Single-session
+### Single-session enforcement
 
-A user can be limited to one concurrent connection: with the `single-session` option on their `authorized_keys` entry, a second login is rejected while a session is active. Users are created with it off; toggle it per user from the dashboard's user detail page.
+A user can be limited to one concurrent SSH connection: when enabled, a second login attempt is rejected while one is already active. The server re-checks this rule on every authentication attempt — no restart needed. Users are created with single-session enforcement off.
+
+**To toggle single-session for an existing user:**
+
+```bash
+tw server user single-session alice on      # enable
+tw server user single-session alice off     # disable
+tw server user single-session alice         # show current state
+```
+
+**To create a user with single-session enabled from the start:**
+
+```bash
+tw server user create bob -m 8080:80 --single-session
+```
+
+You can also toggle it from the dashboard: go to the user's detail page in the **Users** section and use the single-session toggle.
 
 ## Exporting the Client Bundle
 
