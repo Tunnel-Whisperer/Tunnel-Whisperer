@@ -91,6 +91,15 @@ Every machine runs the same `tw` binary in one of three modes (set by its first 
 
 The smallest setup — one relay, one server, one client:
 
+```mermaid
+flowchart TD
+    S1["Admin provisions the relay"]
+    S2["Server joins, admin enrolls it"]
+    S3["Server creates the client user and exports a bundle"]
+    S4["Client imports the bundle and connects"]
+    S1 --> S2 --> S3 --> S4
+```
+
 ```bash
 # ── Admin laptop: provision the relay (cloud wizard, or any VPS manually) ──
 tw relay create --provider manual --domain relay.example.com --ip <vps-ip>
