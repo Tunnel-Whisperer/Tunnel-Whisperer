@@ -478,10 +478,23 @@ async function submitTunnelOverride(body, okMessage) {
   try {
     await api.post('/api/client/port-override', body);
     tunnelNotice(`${okMessage} — takes effect on next reconnect. ` +
-      `<a href="#" onclick="clientReconnect(); return false;">Reconnect now</a>`, false);
-    setTimeout(() => window.location.reload(), 1500);
+      `<a href="#" id="tunnel-reconnect-now">Reconnect now</a>`, false);
+    const reloadTimer = setTimeout(() => window.location.reload(), 1500);
+    const reconnectLink = $('#tunnel-reconnect-now');
+    if (reconnectLink) {
+      reconnectLink.onclick = (ev) => {
+        ev.preventDefault();
+        clearTimeout(reloadTimer);
+        clientReconnect();
+      };
+    }
   } catch (e) {
-    tunnelNotice(e.message, true);
+    let msg = e.message;
+    try {
+      const parsed = JSON.parse(e.message);
+      if (parsed && parsed.error) msg = parsed.error;
+    } catch (_) {}
+    tunnelNotice(msg, true);
   }
 }
 
@@ -500,6 +513,7 @@ function editTunnelPort(serverPort) {
   saveLink.onclick = (ev) => {
     ev.preventDefault();
     const port = parseInt(input.value, 10);
+    if (!port) return;
     submitTunnelOverride({ server_port: serverPort, local_port: port },
       `Server port ${serverPort} now binds locally on ${port}`);
   };

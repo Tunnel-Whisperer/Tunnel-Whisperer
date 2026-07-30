@@ -47,6 +47,7 @@ func testPortOverride(t *testing.T) {
 	// default port still occupied that auto-connect must fail the bind
 	// preflight (in the dashboard log) while the dashboard keeps serving.
 	execDetached(t, "client", "tw dashboard > /var/log/tw-client-dash.log 2>&1")
+	defer killMatching(t, "client", "tw dashboard")
 	waitFor(t, "client dashboard serving", 60*time.Second, func() (bool, string) {
 		code, err := execInOK("client", "curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/")
 		if err != nil || !strings.Contains(code, "200") {
