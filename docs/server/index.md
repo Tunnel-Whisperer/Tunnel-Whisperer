@@ -4,8 +4,8 @@ A **server** is a machine on a private network that exposes selected local servi
 
 In the three-role model, a server is a **tenant** of a relay. The relay is owned and operated by its admin (the machine in `relay` mode); a server joins it through an explicit enrollment handshake and gets its own path (`/tw/<server-id>`) and port allocation on the relay. Multiple servers can share one relay, each isolated under its own path and mutual-TLS identity.
 
-!!! warning "Modes are permanent per machine"
-    The first role command a machine runs sets its mode (`relay`, `server`, or `client`) permanently, and the mode is cryptographically signed. Run server commands only on the machine that should *be* the server.
+!!! warning "One role per profile"
+    The first server command sets the active profile to `server`, and the mode is cryptographically signed; relay and client commands then refuse to run in it. This locks the *profile*, not the machine — another role can live in its own [context](../global/contexts.md) — but run server commands only on the machine that should *be* the server.
 
 ## Lifecycle
 

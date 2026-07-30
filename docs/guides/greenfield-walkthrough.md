@@ -21,8 +21,8 @@ A complete from-scratch setup: one relay, two servers enrolled on it, and two cl
 
 Five machines run `tw`: your admin laptop, server1, server2, client1, client2. The relay VM itself only runs Caddy + Xray (installed by the generated script). Nobody needs an inbound port except the relay (80/443); everyone else connects outbound over HTTPS.
 
-!!! warning "Modes are permanent per machine"
-    The first role command a machine runs sets its mode (`relay`, `server`, or `client`) permanently — run each step on the right box.
+!!! warning "One role per profile — run each step on the right box"
+    The first role command a machine runs sets its active profile to that role (`relay`, `server`, or `client`); from then on, commands of the other two roles refuse to run in it. This locks the *profile*, not the machine — you can always hold another role in a separate [context](../global/contexts.md) — but for this walkthrough, keep it simple: one role per machine.
 
 ## Prerequisites
 

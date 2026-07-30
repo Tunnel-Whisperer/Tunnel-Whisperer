@@ -14,8 +14,8 @@ Every machine runs the same `tw` binary. What it *does* is decided by the **mode
 
 The mode is set by the first role action a machine performs — `tw relay create` (relay), `tw server join-relay <relay-host>` (server — the request step already stamps it), or importing **and activating** a user bundle (`tw config import --activate`, client) — and every context carries exactly one role.
 
-!!! warning "Modes are permanent per machine (per context)"
-    Once a context has a role, commands of the other roles refuse to run:
+!!! warning "One role per context"
+    Once a context has a role, it keeps it — commands of the other roles refuse to run in it:
 
     ```text
     Error: this command requires relay mode, but tw is configured in server mode

@@ -4,8 +4,8 @@ A **client** is a machine that consumes tunnels: it connects outbound to the rel
 
 Everything a client needs arrives in one file: a `.twctx` context bundle issued by the server operator (`tw config export-user <name>` on their side). It contains the relay coordinates, the user's port mappings, their SSH key, and the client certificate for the relay's mutual-TLS gate. There is nothing to configure by hand.
 
-!!! warning "Modes are permanent per machine"
-    The first role command a machine runs sets its mode (`relay`, `server`, or `client`) permanently. Importing and activating a client bundle sets this machine up as a client.
+!!! warning "One role per profile"
+    Importing and activating a client bundle sets the active profile to `client`; server and relay commands then refuse to run in it. This locks the *profile*, not the machine — to act in another role on the same machine, switch to (or create) a separate [context](../global/contexts.md).
 
 ## Lifecycle
 
