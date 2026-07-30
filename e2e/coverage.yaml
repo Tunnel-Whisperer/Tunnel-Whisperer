@@ -28,6 +28,7 @@ commands:
   "client test":             [TestE2E/UserLifecycle]
   "client status":           [TestE2E/UserLifecycle]
   "client listen":           [TestE2E/UserLifecycle]
+  "client set-port":         [TestE2E/PortOverride]
   "config import":           [TestE2E/UserLifecycle]
   "config export":           [TestE2E/Contexts]
   "config export-user":      [TestE2E/UserLifecycle]
