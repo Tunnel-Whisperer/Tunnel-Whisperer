@@ -17,7 +17,7 @@ func testUserLifecycle(t *testing.T) {
 		"tw config export-user packages her as a .twctx bundle; the client imports + activates it",
 		"tw client connect opens the local tunnel port",
 		"a byte-for-byte echo round-trip (hello-tw-e2e) succeeds through relay + tunnel",
-		"tw client test steps 1-2 (DNS, HTTPS/mTLS) pass; step 3's known client-role auth failure is asserted stable (loud if it changes)",
+		"tw client test: all three steps pass (DNS, HTTPS/mTLS, and an SSH auth handshake to the server's embedded SSH through the tunnel)",
 		"tab completion: tw __complete server user delete offers alice")
 
 	// Re-runnability: a prior full-suite run may have left a live
@@ -93,42 +93,18 @@ func testUserLifecycle(t *testing.T) {
 
 	execIn(t, "client", "tw client status")
 
-	// Deviation from the brief: `tw client test` step 3 ("Xray + SSH") always
-	// fails for a legitimate client user, so we can't gate on the whole
-	// command succeeding as the brief's original waitFor did. sharedTestRelay
-	// (internal/cli/test_relay.go) is shared verbatim across admin/server/
-	// client and its step 3 calls withRelaySSH (internal/ops/user.go), which
-	// unconditionally dials the RELAY VM's own SSH (cfg.Server.RelaySSHUser,
-	// default "ubuntu", port 22 — those defaults survive for a client config
-	// because config.Load() starts from Default() and the client's
-	// config.yaml has no `server:` section to override them) using this
-	// role's <config dir>/id_ed25519. For a client that key is alice's
-	// per-user tunnel key, generated for the server's SSH and authorized
-	// only in the server's authorized_keys — it was never, and per the relay
-	// SSH security model (tenants are forward-only; only admin shells into
-	// the relay) should never be, added to the relay VM's own
-	// ~ubuntu/.ssh/authorized_keys. So step 3 deterministically fails with
-	// "ssh: unable to authenticate ... no supported methods remain" — proven
-	// live during this task (see task-7-report.md). That is a pre-existing
-	// product-CLI wiring bug (clientTestCmd reusing the admin/server relay
-	// check unmodified), not an e2e issue, and fixing it is out of scope
-	// here (no product-code changes for this task). We still run the
-	// command — it covers the "client test" coverage.yaml entry per the
-	// brief's intent — but only assert on the two steps that are actually
-	// meaningful for a client role (DNS, HTTPS/mTLS); step 3's known failure
-	// is logged, not asserted on, so this scenario doesn't become hostage to
-	// an unrelated, already-documented bug.
+	// All three steps must pass for a client role: DNS, HTTPS/mTLS, and an
+	// SSH auth handshake to the SERVER's embedded SSH through the tunnel.
+	// (Step 3 previously dialed the relay VM's sshd with the client key — a
+	// wiring bug this suite documented as a known deviation; now fixed.)
 	out = execIn(t, "client", "tw client test")
-	if !strings.Contains(out, "[1/3] DNS —") {
-		fatalf(t, "tw client test: DNS step did not report success:\n%s", out)
+	for _, want := range []string{"[1/3] DNS —", "[2/3] HTTPS (Caddy) —", "[3/3] Xray + SSH (server auth) —"} {
+		if !strings.Contains(out, want) {
+			fatalf(t, "tw client test: step %q missing or failed:\n%s", want, out)
+		}
 	}
-	if !strings.Contains(out, "[2/3] HTTPS (Caddy) —") {
-		fatalf(t, "tw client test: HTTPS step did not report success:\n%s", out)
-	}
-	if strings.Contains(out, "unable to authenticate") {
-		t.Logf("tw client test: step 3 (Xray+SSH) failed as expected (known pre-existing bug, see task-7-report.md):\n%s", out)
-	} else {
-		t.Errorf("tw client test step 3 changed behavior: expected the known client-role auth failure ('unable to authenticate', see task-7-report.md); got:\n%s", out)
+	if strings.Contains(out, "unable to authenticate") || strings.Contains(out, "✗") {
+		fatalf(t, "tw client test reported a failure:\n%s", out)
 	}
 }
 

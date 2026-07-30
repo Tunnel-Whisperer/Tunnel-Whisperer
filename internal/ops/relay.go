@@ -726,7 +726,17 @@ func (o *Ops) TestRelay(progress ProgressFunc) {
 		return
 	}
 
-	// 3. Xray + SSH through tunnel.
+	// 3. Xray + SSH through tunnel. A client's key is only valid on the
+	// SERVER's embedded SSH; relay/server keys are valid on the relay VM.
+	if cfg.Mode == "client" {
+		progress(ProgressEvent{Step: 3, Total: 3, Label: "Xray + SSH (server auth)", Status: "running"})
+		if err := testClientSSH(cfg); err != nil {
+			progress(ProgressEvent{Step: 3, Total: 3, Label: "Xray + SSH (server auth)", Status: "failed", Error: err.Error()})
+		} else {
+			progress(ProgressEvent{Step: 3, Total: 3, Label: "Xray + SSH (server auth)", Status: "completed", Message: "authenticated as " + cfg.Client.SSHUser})
+		}
+		return
+	}
 	progress(ProgressEvent{Step: 3, Total: 3, Label: "Xray + SSH", Status: "running"})
 	err = withRelaySSH(cfg, func(client *gossh.Client) error {
 		session, err := client.NewSession()
