@@ -242,19 +242,27 @@
         {{if eq .ClientStatus.State "running"}}
         <span class="badge {{if .ClientStatus.Tunnel}}badge-green{{else}}badge-dim{{end}}" data-bind="tunnel-badge">{{if .ClientStatus.Tunnel}}connected{{else}}disconnected{{end}}</span>
         {{end}}
-        <span class="badge badge-dim">{{len .Config.Client.Tunnels}}</span>
+        <span class="badge badge-dim">{{len .ClientTunnels}}</span>
       </div>
     </div>
 
-    {{if .Config.Client.Tunnels}}
+    {{if .ClientTunnels}}
     <div class="tunnel-list-scroll">
       <div class="kv">
-        {{range .Config.Client.Tunnels}}
-        <span class="kv-label copyable" onclick="copyText('localhost:{{.LocalPort}}', this)" title="Click to copy">localhost:{{.LocalPort}}</span>
-        <span class="kv-value">{{.RemoteHost}}:{{.RemotePort}}</span>
+        {{range .ClientTunnels}}
+        <span class="kv-label tunnel-row" data-server-port="{{.ServerPort}}" data-default-port="{{.DefaultPort}}">
+          <span class="copyable tunnel-port" onclick="copyText('localhost:{{.EffectivePort}}', this)" title="Click to copy">localhost:{{.EffectivePort}}</span>
+          {{if .OverridePort}}<span class="badge badge-dim" title="default {{.DefaultPort}}">override</span>{{end}}
+        </span>
+        <span class="kv-value">
+          {{.RemoteHost}}:{{.ServerPort}}
+          <a href="#" class="tunnel-action" onclick="editTunnelPort({{.ServerPort}}); return false;" title="Change the local port on this machine">edit</a>
+          {{if .OverridePort}}<a href="#" class="tunnel-action" onclick="resetTunnelPort({{.ServerPort}}); return false;" title="Back to default {{.DefaultPort}}">reset</a>{{end}}
+        </span>
         {{end}}
       </div>
     </div>
+    <div id="tunnel-override-notice" class="mt-16 hidden"></div>
     {{else}}
     <p class="text-dim">No tunnels configured.</p>
     {{end}}

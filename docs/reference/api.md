@@ -1,6 +1,6 @@
 # API Reference
 
-Tunnel Whisperer exposes two APIs: a **REST/WebSocket API** served by the
+Tunnel Whisperer exposes two APIs: a **REST/WebSocket/SSE API** served by the
 dashboard for browser and HTTP clients, and a **gRPC API** for CLI-to-daemon
 communication.
 
@@ -16,17 +16,24 @@ endpoints accept and return JSON unless noted otherwise.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/status` | Current daemon status (mode, version, relay, server/client state) |
-| `GET` | `/api/config` | Current configuration (sanitized) |
-| `GET` | `/api/relay` | Relay provisioning status (provisioned, domain, IP, provider) |
+| `GET` | `/api/config` | Current configuration |
+| `GET` | `/api/relay` | Relay provisioning status (provisioned, domain, IP, provider, ssh_open) |
 | `GET` | `/api/providers` | List of supported cloud providers for relay provisioning |
 | `GET` | `/api/stats` | Bandwidth statistics snapshots and history (returns `enabled: false` when analytics is off) |
 | `GET` | `/metrics` | Prometheus-format bandwidth metrics |
+
+### Contexts
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/config/contexts` | List stored contexts (name, role, user, relay, id, current) |
+| `POST` | `/api/config/use-context` | Switch the daemon's active context and reconnect. Body: `{ "name": "..." }` |
 
 ### Mode
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/mode` | Set the operating mode (`server` or `client`) |
+| `POST` | `/api/mode` | Set the operating mode |
 
 **Request body:**
 
@@ -67,6 +74,7 @@ endpoints accept and return JSON unless noted otherwise.
   "relay_ssh_port": 22,
   "relay_ssh_user": "ubuntu",
   "remote_port": 2222,
+  "xray_port": 54001,
   "temp_xray_port": 59000
 }
 ```
@@ -129,10 +137,10 @@ collector is created or destroyed on the fly.
 | `POST` | `/api/client/start` | Start the client (Xray + SSH tunnel) |
 | `POST` | `/api/client/stop` | Stop the client |
 | `POST` | `/api/client/reconnect` | Disconnect and reconnect the client |
-| `POST` | `/api/client/upload` | Upload a user config bundle (`.zip`) to configure the client |
+| `POST` | `/api/client/upload` | Upload a client context bundle (`.twctx`) to configure the client |
 
 **Upload:** `POST /api/client/upload` expects a `multipart/form-data` body
-with the zip file.
+with the bundle in a `config` file field (10 MB max).
 
 ### Relay management
 
@@ -142,24 +150,26 @@ with the zip file.
 | `POST` | `/api/relay/provision` | Provision a new relay server via Terraform |
 | `POST` | `/api/relay/destroy` | Destroy the provisioned relay server |
 | `POST` | `/api/relay/test` | Run connectivity tests against the relay |
-| `POST` | `/api/relay/generate-script` | Generate a manual setup script for the relay |
+| `POST` | `/api/relay/generate-script` | Generate the manual install script for a bring-your-own-VM relay |
 | `POST` | `/api/relay/save-manual` | Save relay details from a manual (non-Terraform) setup |
 | `WS` | `/api/relay/ssh` | WebSocket-based interactive SSH shell to the relay server |
-
-**Provision request body:**
-
-```json
-{
-  "domain": "relay.example.com",
-  "provider": "digitalocean",
-  "token": "dop_v1_..."
-}
-```
+| `POST` | `/api/relay/close-ssh` | Close the interactive relay SSH session |
 
 !!! info "WebSocket: `/api/relay/ssh`"
     This endpoint upgrades to a WebSocket connection and provides a full
     interactive terminal session to the relay server. The dashboard uses
     [xterm.js](https://xtermjs.org/) to render the terminal in the browser.
+
+### Enrolled servers (relay mode only)
+
+These endpoints mirror the `tw relay …` enrollment commands and answer only
+when the daemon runs in relay mode.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/servers` | List enrolled servers with live tunnel state (`tw relay get-servers`) |
+| `POST` | `/api/servers/enroll` | Enroll a server: `multipart/form-data` upload of the join-request JSON in a `request` field; the join-response JSON is returned as an attachment (`tw_join_response_<server-id>.json`) |
+| `POST` | `/api/servers/unenroll` | Un-enroll a server. Body: `{ "server_id": "..." }` |
 
 ### User management
 
@@ -169,9 +179,10 @@ with the zip file.
 | `POST` | `/api/users` | Create a new user |
 | `DELETE` | `/api/users/{name}` | Delete a user by name |
 | `PUT` | `/api/users/{name}/mappings` | Update a user's port mappings |
-| `GET` | `/api/users/{name}/download` | Download a user's config bundle as a `.zip` file |
-| `POST` | `/api/users/apply` | Apply user changes (regenerate `authorized_keys`) |
-| `POST` | `/api/users/unregister` | Unregister users from the server |
+| `POST` | `/api/users/{name}/single-session` | Enable/disable the user's single-session flag |
+| `GET` | `/api/users/{name}/download` | Download the user's client context bundle (`{name}-tw-context.twctx`) |
+| `POST` | `/api/users/apply` | Register users on the relay. Body: `{ "names": [...] }` (empty = all) |
+| `POST` | `/api/users/unregister` | Unregister users from the relay |
 | `GET` | `/api/users/online` | List currently connected users |
 
 **Create user request body:**
@@ -197,10 +208,13 @@ with the zip file.
 }
 ```
 
-After updating, the user's `authorized_keys` entry is rewritten with new `permitopen` restrictions and a config outdated flag is set. The flag is cleared when the user's config bundle is downloaded.
+After updating, the user's `authorized_keys` entry is rewritten with new
+`permitopen` restrictions and a mappings-dirty flag is set. The flag is
+cleared when the user's bundle is downloaded.
 
-**Download response:** `application/zip` binary with `Content-Disposition`
-header.
+**Download response:** `application/octet-stream` binary with
+`Content-Disposition` header (a sealed `.twctx` context bundle, no
+passphrase).
 
 ### Application templates
 
@@ -236,41 +250,63 @@ Application templates are reusable port mapping bundles. They are stored in
 The `{session_id}` parameter identifies a browser session so multiple
 dashboard tabs can each receive events independently.
 
-**Event format:**
+**Event format** — unnamed `data:` frames only (no `event:` field). Each frame
+is one `ProgressEvent` (or, on `/api/logs`, one log entry):
 
 ```
-event: status
-data: {"mode":"server","server":{"state":"running",...}}
-
-event: progress
 data: {"step":2,"total":5,"label":"Starting Xray","status":"running"}
 ```
+
+Daemon status is **polled** via `GET /api/status`, not streamed.
 
 ---
 
 ## gRPC API
 
 The gRPC API listens on port **50051** (configurable via `server.api_port`)
-and is used for CLI-to-daemon communication. When a daemon is running (via
-`tw serve` or `tw dashboard`), CLI commands like `tw status`, `tw list users`,
-and `tw delete user` connect to this API instead of reading state directly
-from disk.
+and is used for CLI-to-daemon communication. It starts automatically with
+`tw server start` and `tw dashboard`. When a daemon is running, CLI commands
+like `tw status`, `tw server user list`, and `tw config export-user` connect
+to this API instead of reading state directly from disk.
+
+### JSON codec — the proto is documentation only
+
+The API uses the gRPC server machinery, but **the wire format is JSON, not
+protobuf**. A custom codec (registered under the content-subtype `json`)
+marshals hand-written Go structs directly, so no protoc-generated code is
+involved. The file `proto/api/v1/service.proto` exists as documentation only;
+`make proto` regenerates stubs that are not used on the wire. The service is
+registered as `api.v1.TunnelWhisperer` and every RPC is unary.
+
+Clients must therefore dial with the JSON call option (the built-in client
+does: `grpc.CallContentSubtype("json")`, plaintext, 2-second dial timeout).
 
 !!! note
-    The gRPC API is an internal interface. It is not intended for external
-    consumption and its protobuf schema may change between versions. Use the
-    REST API for integrations.
+    The gRPC API is an internal interface. Its message shapes may change
+    between versions. Use the REST API for integrations.
 
-### Available RPC methods
+### Service: `api.v1.TunnelWhisperer`
 
-| Method | Description |
-|---|---|
-| `GetStatus` | Returns current mode, relay status, server/client state, user count |
-| `ListUsers` | Returns all configured users with their tunnel mappings |
-| `DeleteUser` | Deletes a user by name |
-| `GetUserConfig` | Returns a user's config bundle as a zip byte stream |
-| `TestRelay` | Runs relay connectivity tests and returns step-by-step results |
-| `DestroyRelay` | Destroys the provisioned relay (accepts cloud credentials) |
+| Method | Request → Response | Description |
+|---|---|---|
+| `GetStatus` | `Empty` → `StatusResponse` | Mode, version, relay status, user count, connected-user count, server/client component state |
+| `GetConfig` | `Empty` → `ConfigResponse` | The current on-disk configuration |
+| `SetMode` | `SetModeRequest` → `Empty` | Set the operating mode |
+| `ListProviders` | `Empty` → `ListProvidersResponse` | Supported cloud providers for relay provisioning |
+| `GetRelayStatus` | `Empty` → `RelayStatusResponse` | Relay provisioning/connection status |
+| `TestCredentials` | `TestCredentialsRequest` → `Empty` | Validate cloud-provider credentials |
+| `ProvisionRelay` | `ProvisionRelayRequest` → `ProvisionRelayResponse` | Provision a relay VM via Terraform |
+| `DestroyRelay` | `DestroyRelayRequest` → `Empty` | Destroy the relay (accepts cloud credentials map) |
+| `TestRelay` | `Empty` → `TestRelayResponse` | Run relay connectivity tests; returns per-step results |
+| `StartServer` / `StopServer` | `Empty` → `Empty` | Start/stop all server components |
+| `StartClient` / `StopClient` | `Empty` → `Empty` | Start/stop the client |
+| `UploadClientConfig` | `UploadClientConfigRequest` → `Empty` | Import a client context bundle (bytes) in client mode |
+| `ListUsers` | `Empty` → `ListUsersResponse` | All configured users with tunnel mappings |
+| `CreateUser` | `CreateUserRequest` → `Empty` | Create a user (name + port mappings) |
+| `DeleteUser` | `DeleteUserRequest` → `Empty` | Delete a user by name |
+| `GetUserConfig` | `GetUserConfigRequest` → `UserConfigResponse` | The user's client context bundle (`.twctx` bytes, no passphrase) |
 
-The gRPC server starts automatically when running `tw serve` or
-`tw dashboard`.
+The CLI's built-in client wraps the subset it needs: `GetStatus`,
+`TestRelay`, `ListUsers`, `DeleteUser`, `DestroyRelay`, and `GetUserConfig`;
+every CLI command that can use the daemon falls back to local (on-disk)
+operation when no daemon answers on `server.api_port`.

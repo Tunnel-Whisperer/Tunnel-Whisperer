@@ -14,14 +14,14 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
-var serveCmd = &cobra.Command{
-	Use:   "serve",
+var serverStartCmd = &cobra.Command{
+	Use:   "start",
 	Short: "Start the Tunnel Whisperer server",
 	RunE:  runServe,
 }
 
 func init() {
-	rootCmd.AddCommand(serveCmd)
+	serverCmd.AddCommand(serverStartCmd)
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
@@ -40,10 +40,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// Start dashboard if configured (before server so user can see progress).
 	if cfg.Server.DashboardPort > 0 {
-		dashAddr := fmt.Sprintf(":%d", cfg.Server.DashboardPort)
+		dashAddr := resolveDashboardAddr("", cfg.Server.DashboardListen, cfg.Server.DashboardPort)
+		slog.Info("dashboard listening", "addr", dashAddr)
 		dashSrv := dashboard.NewServer(dashAddr, o)
 		go func() {
-			fmt.Printf("Dashboard on http://localhost%s\n", dashAddr)
+			fmt.Printf("Dashboard on http://%s\n", dashAddr)
 			if err := dashSrv.Run(); err != nil {
 				fmt.Printf("Dashboard error: %v\n", err)
 			}

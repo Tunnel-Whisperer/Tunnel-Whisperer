@@ -68,7 +68,17 @@ Release builds (GitHub Actions) inject the exact git tag (e.g. `v1.2.3`) into th
 ```bash
 tw --version    # prints: tw version v1.2.3
 tw --help
+tw status       # works on any machine, even before setup
 ```
+
+## Shell Completion (zsh)
+
+```bash
+# add to ~/.zshrc
+source <(tw completion)
+```
+
+Completion is dynamic: it offers stored context names and IDs, usernames, server IDs, and application names. See [Status, Service & Completion](../global/status-service.md#shell-completion).
 
 ## Install as a System Service
 
@@ -126,7 +136,7 @@ After building, you can register `tw` as a system service so it starts on boot a
     tw.exe service uninstall    # remove the service
     ```
 
-    You can also manage it from the Services console (`services.msc`) — look for **Tunnel Whisperer**.
+    You can also manage it from the Services console (`services.msc`) — service name `tw`, display name **Tunnel Whisperer**.
 
 === "macOS (launchd)"
 
@@ -171,7 +181,7 @@ After building, you can register `tw` as a system service so it starts on boot a
     cat /var/log/tw.err.log     # view error logs
     ```
 
-The service runs `tw dashboard`, which auto-starts the server or client based on your config mode. See [CLI Reference — Running as a Service](../reference/cli.md#running-as-a-service) for details.
+The service runs `tw dashboard`, which auto-starts the server or client based on your config mode. See [Status, Service & Completion](../global/status-service.md#tw-service-run-as-a-system-service) for details.
 
 ## Config Directory
 
@@ -183,4 +193,13 @@ Tunnel Whisperer stores configuration in a platform-specific directory:
 | macOS | `/etc/tw/config/` |
 | Windows | `C:\ProgramData\tw\config\` |
 
-Override with the `TW_CONFIG_DIR` environment variable.
+Override with the `TW_CONFIG_DIR` environment variable or the `--config-dir` flag.
+
+## Next: Pick Your Role
+
+Every machine plays one of three roles. Continue with the section for yours:
+
+- [Relay](../relay/index.md) — you own the relay VM and admit servers
+- [Server](../server/index.md) — you expose services and manage users
+- [Client](../client/index.md) — you connect to a server's ports
+- [Global](../global/index.md) — the role model and shared commands (contexts, status, service, proxy, dashboard)

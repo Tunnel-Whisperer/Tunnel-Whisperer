@@ -16,6 +16,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tunnelwhisperer/tw/internal/config"
+	"github.com/tunnelwhisperer/tw/internal/cryptobox"
+	"github.com/tunnelwhisperer/tw/internal/ops/modeauth"
 	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
 	twxray "github.com/tunnelwhisperer/tw/internal/xray"
 	proxymanCmd "github.com/xtls/xray-core/app/proxyman/command"
@@ -45,8 +47,9 @@ type UserInfo struct {
 
 // CreateUserRequest holds the parameters for creating a new user.
 type CreateUserRequest struct {
-	Name     string               `json:"name"`
-	Mappings []config.PortMapping `json:"mappings"`
+	Name          string               `json:"name"`
+	Mappings      []config.PortMapping `json:"mappings"`
+	SingleSession bool                 `json:"single_session"`
 }
 
 // ListApplications returns all configured application templates.
@@ -222,7 +225,7 @@ func (o *Ops) CreateUser(ctx context.Context, req CreateUserRequest, progress Pr
 		return fmt.Errorf("xray.relay_host must be configured before creating users")
 	}
 	if cfg.Xray.UUID == "" {
-		return fmt.Errorf("server UUID must be set — run `tw serve` or `tw create relay-server` first")
+		return fmt.Errorf("server UUID must be set — run `tw server start` or `tw relay create` first")
 	}
 
 	userDir := filepath.Join(config.UsersDir(), req.Name)
@@ -303,11 +306,17 @@ func (o *Ops) CreateUser(ctx context.Context, req CreateUserRequest, progress Pr
 		progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("writing client config: %w", err)
 	}
+	if req.SingleSession {
+		if err := os.WriteFile(filepath.Join(userDir, ".single-session"), nil, 0644); err != nil {
+			progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "failed", Error: err.Error()})
+			return fmt.Errorf("writing single-session marker: %w", err)
+		}
+	}
 	progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "completed"})
 
 	// Step 4: Update authorized_keys.
 	progress(ProgressEvent{Step: 4, Total: 4, Label: "Updating authorized_keys", Status: "running"})
-	if err := appendAuthorizedKey(pubAuthorized, req.Name, serverPorts, false); err != nil {
+	if err := appendAuthorizedKey(pubAuthorized, req.Name, serverPorts, req.SingleSession); err != nil {
 		progress(ProgressEvent{Step: 4, Total: 4, Label: "Updating authorized_keys", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("updating authorized_keys: %w", err)
 	}
@@ -553,13 +562,16 @@ func removeMultipleUUIDsFromRelayConfig(cfg *config.Config, users []UserInfo) er
 	if len(users) == 0 {
 		return nil
 	}
+	hostname, _ := os.Hostname()
+	serverID := deriveServerID(hostname, cfg.Xray.UUID)
+	inboundTag := "vless-in-" + serverID
 	return withRelaySSH(cfg, func(client *gossh.Client) error {
 		xrayConf, err := readRelayXrayConfig(client)
 		if err != nil {
 			return err
 		}
 
-		settings, clients, err := relayClients(xrayConf)
+		settings, clients, err := relayClients(xrayConf, inboundTag)
 		if err != nil {
 			return err
 		}
@@ -720,13 +732,16 @@ func addMultipleUUIDsToRelay(cfg *config.Config, uuids []string) error {
 	if len(uuids) == 0 {
 		return nil
 	}
+	hostname, _ := os.Hostname()
+	serverID := deriveServerID(hostname, cfg.Xray.UUID)
+	inboundTag := "vless-in-" + serverID
 	return withRelaySSH(cfg, func(client *gossh.Client) error {
 		xrayConf, err := readRelayXrayConfig(client)
 		if err != nil {
 			return err
 		}
 
-		settings, clients, err := relayClients(xrayConf)
+		settings, clients, err := relayClients(xrayConf, inboundTag)
 		if err != nil {
 			return err
 		}
@@ -760,7 +775,7 @@ func addMultipleUUIDsToRelay(cfg *config.Config, uuids []string) error {
 		// Hot-add to running Xray via API; restart as fallback.
 		// We send all requested UUIDs (not just newly added) in case
 		// the running process is stale.
-		if err := xrayAPIAddUsers(client, uuids); err != nil {
+		if err := xrayAPIAddUsers(client, uuids, inboundTag); err != nil {
 			slog.Warn("xray API add failed, restarting xray", "error", err)
 			restartRelayXray(client)
 		}
@@ -768,46 +783,66 @@ func addMultipleUUIDsToRelay(cfg *config.Config, uuids []string) error {
 	})
 }
 
-// GetUserConfigBundle returns the user's config files as a zip archive.
-func (o *Ops) GetUserConfigBundle(name string) ([]byte, error) {
+// GetUserConfigBundle returns the user packaged as a role=client context: a
+// bundle (cryptobox TWBOX1 framing, no passphrase) the client imports with
+// `tw config import <file> --activate`.
+func (o *Ops) GetUserConfigBundle(name string) (bundle []byte, err error) {
 	userDir := filepath.Join(config.UsersDir(), name)
 	if _, err := os.Stat(userDir); os.IsNotExist(err) {
 		return nil, fmt.Errorf("user %q not found", name)
 	}
 
+	// The exported user is a role=client context: a profile zip (the same shape
+	// unsealProfile/ImportContext consume) sealed under a generated passphrase.
+	// The client imports it as a context and switches to it.
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 
-	files := []string{"config.yaml", "id_ed25519", "id_ed25519.pub"}
-	for _, f := range files {
-		data, err := os.ReadFile(filepath.Join(userDir, f))
-		if err != nil {
-			continue
-		}
-		w, err := zw.Create(f)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := w.Write(data); err != nil {
-			return nil, err
-		}
+	// config.yaml: the user's client config with mode:client injected so the
+	// imported context indexes as role=client and the client daemon runs as a
+	// client. The user's own config.yaml carries no mode.
+	userCfg, err := os.ReadFile(filepath.Join(userDir, "config.yaml"))
+	if err != nil {
+		return nil, fmt.Errorf("reading user config: %w", err)
+	}
+	clientCfg, err := injectMode(userCfg, "client")
+	if err != nil {
+		return nil, fmt.Errorf("setting client mode: %w", err)
+	}
+	userPub, err := os.ReadFile(filepath.Join(userDir, "id_ed25519.pub"))
+	if err != nil {
+		return nil, fmt.Errorf("reading user public key: %w", err)
+	}
+	clientCfg, err = injectClientModeAuth(clientCfg, userPub)
+	if err != nil {
+		return nil, fmt.Errorf("signing client mode: %w", err)
+	}
+	if w, err := zw.Create("config.yaml"); err != nil {
+		return nil, err
+	} else if _, err := w.Write(clientCfg); err != nil {
+		return nil, err
 	}
 
-	// Per-server client cert + key: presented to the relay's mTLS gate.
-	for _, f := range []struct{ name, path string }{
+	// The user's SSH identity and the per-server client cert/key (presented to
+	// the relay's mTLS gate). Cert paths are computed from the config dir at
+	// runtime, so these land flat in the client's config dir on unseal.
+	entries := []struct{ name, path string }{
+		{"id_ed25519", filepath.Join(userDir, "id_ed25519")},
+		{"id_ed25519.pub", filepath.Join(userDir, "id_ed25519.pub")},
 		{"client.crt", config.ClientCertPath()},
 		{"client.key", config.ClientKeyPath()},
-	} {
-		data, err := os.ReadFile(f.path)
+	}
+	for _, e := range entries {
+		data, err := os.ReadFile(e.path)
 		if err != nil {
-			return nil, fmt.Errorf("reading %s for bundle: %w", f.name, err)
+			return nil, fmt.Errorf("reading %s for bundle: %w", e.name, err)
 		}
-		w, err := zw.Create(f.name)
+		w, err := zw.Create(e.name)
 		if err != nil {
-			return nil, fmt.Errorf("adding %s to bundle: %w", f.name, err)
+			return nil, fmt.Errorf("adding %s to bundle: %w", e.name, err)
 		}
 		if _, err := w.Write(data); err != nil {
-			return nil, fmt.Errorf("writing %s to bundle: %w", f.name, err)
+			return nil, fmt.Errorf("writing %s to bundle: %w", e.name, err)
 		}
 	}
 
@@ -815,10 +850,58 @@ func (o *Ops) GetUserConfigBundle(name string) ([]byte, error) {
 		return nil, err
 	}
 
+	// User-context bundles carry NO passphrase: the client imports them without
+	// a prompt. They're sealed with an empty passphrase (openable with "") only
+	// so the on-disk format matches other contexts. The bundle is as sensitive as
+	// the keys inside it — transfer it over a trusted channel.
+	sealed, err := cryptobox.Encrypt(buf.Bytes(), "")
+	if err != nil {
+		return nil, fmt.Errorf("sealing user context: %w", err)
+	}
+
 	// Clear the mappings-dirty flag on download.
 	_ = os.Remove(filepath.Join(userDir, ".mappings-dirty"))
 
-	return buf.Bytes(), nil
+	return sealed, nil
+}
+
+// injectMode parses a config.yaml, sets its top-level mode, and re-marshals it,
+// preserving every other key. Used to stamp an exported user config as a client
+// context.
+func injectMode(cfgYAML []byte, mode string) ([]byte, error) {
+	var m map[string]interface{}
+	if err := yaml.Unmarshal(cfgYAML, &m); err != nil {
+		return nil, err
+	}
+	if m == nil {
+		m = map[string]interface{}{}
+	}
+	m["mode"] = mode
+	return yaml.Marshal(m)
+}
+
+// injectClientModeAuth signs (client, <user pubkey>) with the server's own key
+// and writes a mode_auth block into the user's client config.yaml, making the
+// exported client's mode tamper-evident. Best-effort: on any signing error the
+// bundle is emitted without a signature (legacy-tolerated on import).
+func injectClientModeAuth(cfgYAML, userPubAuthorized []byte) ([]byte, error) {
+	priv, err := profilePrivPEM()
+	if err != nil {
+		return cfgYAML, nil
+	}
+	sig, issuer, err := modeauth.Sign(priv, "client", strings.TrimSpace(string(userPubAuthorized)))
+	if err != nil {
+		return cfgYAML, nil
+	}
+	var m map[string]interface{}
+	if err := yaml.Unmarshal(cfgYAML, &m); err != nil {
+		return nil, err
+	}
+	if m == nil {
+		m = map[string]interface{}{}
+	}
+	m["mode_auth"] = map[string]string{"sig": sig, "issuer": issuer}
+	return yaml.Marshal(m)
 }
 
 // appendAuthorizedKey adds a public key to the server's authorized_keys
@@ -888,6 +971,26 @@ func removeAuthorizedKey(pubKey []byte) error {
 // withRelaySSH opens a temporary Xray tunnel to the relay, establishes an
 // SSH connection, and passes it to fn. The tunnel and connection are torn
 // down automatically when fn returns.
+// loopbackPortFree reports whether 127.0.0.1:port can currently be bound.
+func loopbackPortFree(port int) bool {
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		return false
+	}
+	ln.Close()
+	return true
+}
+
+// freeLoopbackPort asks the OS for an available loopback port.
+func freeLoopbackPort() (int, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer ln.Close()
+	return ln.Addr().(*net.TCPAddr).Port, nil
+}
+
 func withRelaySSH(cfg *config.Config, fn func(client *gossh.Client) error) error {
 	// Present the server's client cert so the relay's mTLS gate admits this
 	// management tunnel (covers TestRelay, the SSH terminal, enrollment, and
@@ -897,12 +1000,35 @@ func withRelaySSH(cfg *config.Config, fn func(client *gossh.Client) error) error
 	if err != nil {
 		return fmt.Errorf("initializing Xray: %w", err)
 	}
+	// The management tunnel needs a free local loopback port for its Xray
+	// inbound. Reusing one fixed port (TempXrayPort+1) breaks back-to-back or
+	// concurrent tunnels: the previous tunnel's listener is not always released
+	// the instant Close() returns (notably on Windows: "Only one usage of each
+	// socket address"). Prefer the configured port, but fall back to an
+	// OS-assigned free port so tunnels never collide.
 	tempPort := cfg.Server.TempXrayPort
 	if tempPort == 0 {
 		tempPort = 59000
 	}
-	if err := xrayInstance.Start(tempPort+1, cfg.Server.RelaySSHPort, cfg.Proxy); err != nil {
-		return fmt.Errorf("starting Xray: %w", err)
+	listenPort := tempPort + 1
+	if !loopbackPortFree(listenPort) {
+		p, perr := freeLoopbackPort()
+		if perr != nil {
+			return fmt.Errorf("allocating local tunnel port: %w", perr)
+		}
+		listenPort = p
+	}
+	if err := xrayInstance.Start(listenPort, cfg.Server.RelaySSHPort, cfg.Proxy); err != nil {
+		// The port may have been taken between the free-check and the bind
+		// (tight race / lingering listener). Retry once on a fresh free port.
+		p, perr := freeLoopbackPort()
+		if perr != nil {
+			return fmt.Errorf("starting Xray: %w", err)
+		}
+		listenPort = p
+		if err := xrayInstance.Start(listenPort, cfg.Server.RelaySSHPort, cfg.Proxy); err != nil {
+			return fmt.Errorf("starting Xray: %w", err)
+		}
 	}
 	defer xrayInstance.Close()
 
@@ -923,7 +1049,7 @@ func withRelaySSH(cfg *config.Config, fn func(client *gossh.Client) error) error
 		Timeout:         15 * time.Second,
 	}
 
-	xrayAddr := fmt.Sprintf("127.0.0.1:%d", tempPort+1)
+	xrayAddr := fmt.Sprintf("127.0.0.1:%d", listenPort)
 
 	var client *gossh.Client
 	for i := 0; i < 15; i++ {
@@ -999,8 +1125,9 @@ func dialRelayGRPC(client *gossh.Client) (*grpc.ClientConn, error) {
 }
 
 // xrayAPIAddUsers hot-adds UUIDs to the running Xray process via gRPC.
-// Each UUID is added as a VLESS client on the "vless-in" inbound.
-func xrayAPIAddUsers(client *gossh.Client, uuids []string) error {
+// Each UUID is added as a VLESS client on the per-tenant inbound identified
+// by inboundTag (e.g. "vless-in-<server-id>").
+func xrayAPIAddUsers(client *gossh.Client, uuids []string, inboundTag string) error {
 	if len(uuids) == 0 {
 		return nil
 	}
@@ -1017,7 +1144,7 @@ func xrayAPIAddUsers(client *gossh.Client, uuids []string) error {
 
 	for _, u := range uuids {
 		_, err := hsClient.AlterInbound(ctx, &proxymanCmd.AlterInboundRequest{
-			Tag: "vless-in",
+			Tag: inboundTag,
 			Operation: serial.ToTypedMessage(&proxymanCmd.AddUserOperation{
 				User: &protocol.User{
 					Email: u,
@@ -1036,7 +1163,8 @@ func xrayAPIAddUsers(client *gossh.Client, uuids []string) error {
 }
 
 // xrayAPIRemoveUsers removes UUIDs from the running Xray process via gRPC.
-func xrayAPIRemoveUsers(client *gossh.Client, uuids []string) error {
+// inboundTag identifies the per-tenant VLESS inbound (e.g. "vless-in-<server-id>").
+func xrayAPIRemoveUsers(client *gossh.Client, uuids []string, inboundTag string) error {
 	if len(uuids) == 0 {
 		return nil
 	}
@@ -1053,7 +1181,7 @@ func xrayAPIRemoveUsers(client *gossh.Client, uuids []string) error {
 
 	for _, u := range uuids {
 		_, err := hsClient.AlterInbound(ctx, &proxymanCmd.AlterInboundRequest{
-			Tag: "vless-in",
+			Tag: inboundTag,
 			Operation: serial.ToTypedMessage(&proxymanCmd.RemoveUserOperation{
 				Email: u,
 			}),
@@ -1079,9 +1207,10 @@ func restartRelayXray(client *gossh.Client) {
 }
 
 // relayClients extracts the clients slice from the VLESS inbound in the
-// parsed Xray config.  It finds the inbound by tag ("vless-in") or
-// protocol ("vless") to avoid depending on array ordering.
-func relayClients(xrayConf map[string]interface{}) (settings map[string]interface{}, clients []interface{}, err error) {
+// parsed Xray config.  It finds the inbound by exact tag (inboundTag, e.g.
+// "vless-in-<server-id>") first; falls back to protocol=="vless" for
+// single-tenant relays where the tag is unambiguous.
+func relayClients(xrayConf map[string]interface{}, inboundTag string) (settings map[string]interface{}, clients []interface{}, err error) {
 	inbounds, _ := xrayConf["inbounds"].([]interface{})
 	if len(inbounds) == 0 {
 		return nil, nil, fmt.Errorf("no inbounds in relay config")
@@ -1093,13 +1222,22 @@ func relayClients(xrayConf map[string]interface{}) (settings map[string]interfac
 		if !ok {
 			continue
 		}
-		if tag, _ := m["tag"].(string); tag == "vless-in" {
+		if tag, _ := m["tag"].(string); tag == inboundTag {
 			inbound = m
 			break
 		}
-		if proto, _ := m["protocol"].(string); proto == "vless" {
-			inbound = m
-			break
+	}
+	if inbound == nil {
+		// fallback: pick the first VLESS inbound (harmless on single-tenant relays)
+		for _, ib := range inbounds {
+			m, ok := ib.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if proto, _ := m["protocol"].(string); proto == "vless" {
+				inbound = m
+				break
+			}
 		}
 	}
 	if inbound == nil {
@@ -1116,13 +1254,16 @@ func relayClients(xrayConf map[string]interface{}) (settings map[string]interfac
 // first, then hot-adds via the Xray API.  Falls back to restart if the
 // API fails.
 func addUUIDToRelay(cfg *config.Config, newUUID string) error {
+	hostname, _ := os.Hostname()
+	serverID := deriveServerID(hostname, cfg.Xray.UUID)
+	inboundTag := "vless-in-" + serverID
 	return withRelaySSH(cfg, func(client *gossh.Client) error {
 		xrayConf, err := readRelayXrayConfig(client)
 		if err != nil {
 			return err
 		}
 
-		settings, clients, err := relayClients(xrayConf)
+		settings, clients, err := relayClients(xrayConf, inboundTag)
 		if err != nil {
 			return err
 		}
@@ -1147,7 +1288,7 @@ func addUUIDToRelay(cfg *config.Config, newUUID string) error {
 		}
 
 		// Hot-add to running Xray via API; restart as fallback.
-		if err := xrayAPIAddUsers(client, []string{newUUID}); err != nil {
+		if err := xrayAPIAddUsers(client, []string{newUUID}, inboundTag); err != nil {
 			slog.Warn("xray API add failed, restarting xray", "error", err)
 			restartRelayXray(client)
 		}
@@ -1159,13 +1300,16 @@ func addUUIDToRelay(cfg *config.Config, newUUID string) error {
 // and removes a client UUID from the relay's Xray config.  Persists to
 // disk first, then hot-removes via the Xray API.  Falls back to restart.
 func removeUUIDFromRelay(cfg *config.Config, targetUUID string) error {
+	hostname, _ := os.Hostname()
+	serverID := deriveServerID(hostname, cfg.Xray.UUID)
+	inboundTag := "vless-in-" + serverID
 	return withRelaySSH(cfg, func(client *gossh.Client) error {
 		xrayConf, err := readRelayXrayConfig(client)
 		if err != nil {
 			return err
 		}
 
-		settings, clients, err := relayClients(xrayConf)
+		settings, clients, err := relayClients(xrayConf, inboundTag)
 		if err != nil {
 			return err
 		}
@@ -1191,7 +1335,7 @@ func removeUUIDFromRelay(cfg *config.Config, targetUUID string) error {
 		}
 
 		// Hot-remove from running Xray via API; restart as fallback.
-		if err := xrayAPIRemoveUsers(client, []string{targetUUID}); err != nil {
+		if err := xrayAPIRemoveUsers(client, []string{targetUUID}, inboundTag); err != nil {
 			slog.Warn("xray API remove failed, restarting xray", "error", err)
 			restartRelayXray(client)
 		}

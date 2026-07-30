@@ -57,6 +57,7 @@ type Ops struct {
 	trafficReset  bool       // true after first traffic stats reset
 }
 
+
 // New loads the configuration and returns a ready Ops instance.
 func New() (*Ops, error) {
 	cfg, err := config.Load()
@@ -108,7 +109,7 @@ func (o *Ops) ReloadConfig() error {
 	return nil
 }
 
-// Mode returns the current operating mode ("server", "client", or "").
+// Mode returns the current operating mode ("server", "client", "relay", or "").
 func (o *Ops) Mode() string {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -117,8 +118,9 @@ func (o *Ops) Mode() string {
 
 // SetMode persists the operating mode to config.
 func (o *Ops) SetMode(mode string) error {
-	if mode != "server" && mode != "client" {
-		return fmt.Errorf("invalid mode: %q (must be \"server\" or \"client\")", mode)
+	mode = config.CanonicalMode(mode)
+	if !config.ValidMode(mode) {
+		return fmt.Errorf("invalid mode: %q (must be \"server\", \"client\", or \"relay\")", mode)
 	}
 	o.mu.Lock()
 	o.cfg.Mode = mode
@@ -345,9 +347,10 @@ func (o *Ops) ServerStatus() ServerStatus {
 	return o.srv.Status()
 }
 
-// StartClient starts the client connection.
-func (o *Ops) StartClient(progress ProgressFunc) error {
-	return o.cli.Start(o, progress)
+// StartClient starts the client connection. overrides (server port →
+// local port, from `tw client connect --map`) apply to this run only.
+func (o *Ops) StartClient(progress ProgressFunc, overrides map[int]int) error {
+	return o.cli.Start(o, progress, overrides)
 }
 
 // StopClient stops the client connection.
@@ -380,7 +383,7 @@ func (o *Ops) ReconnectClient(progress ProgressFunc) error {
 		logging.SetLevel(cfg.LogLevel)
 	}
 
-	return o.cli.Start(o, progress)
+	return o.cli.Start(o, progress, nil)
 }
 
 // ClientStatus returns the client lifecycle state.

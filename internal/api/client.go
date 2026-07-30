@@ -70,7 +70,8 @@ func (c *Client) DestroyRelay(ctx context.Context, creds map[string]string) erro
 	return c.invoke(ctx, "DestroyRelay", &DestroyRelayRequest{Creds: creds}, &Empty{})
 }
 
-// GetUserConfig calls the GetUserConfig RPC and returns the zip bundle.
+// GetUserConfig calls the GetUserConfig RPC and returns the context bundle
+// (which carries no passphrase).
 func (c *Client) GetUserConfig(ctx context.Context, name string) ([]byte, error) {
 	resp := &UserConfigResponse{}
 	err := c.invoke(ctx, "GetUserConfig", &GetUserConfigRequest{Name: name}, resp)

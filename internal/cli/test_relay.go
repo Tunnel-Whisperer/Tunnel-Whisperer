@@ -11,23 +11,51 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
-var testCmd = &cobra.Command{
+// testRelayCmd is the relay-mode relay test; gated to relay.
+var testRelayCmd = &cobra.Command{
 	Use:   "test",
-	Short: "Run diagnostic tests",
+	Short: "Test connectivity to the relay server",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireMode("relay"); err != nil {
+			return err
+		}
+		return sharedTestRelay()
+	},
 }
 
-var testRelayCmd = &cobra.Command{
-	Use:   "relay",
+// serverTestCmd is the server-mode relay test; gated to server.
+var serverTestCmd = &cobra.Command{
+	Use:   "test",
 	Short: "Test connectivity to the relay server",
-	RunE:  runTestRelay,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireMode("server"); err != nil {
+			return err
+		}
+		return sharedTestRelay()
+	},
+}
+
+// clientTestCmd is the client-mode relay test; gated to client.
+var clientTestCmd = &cobra.Command{
+	Use:   "test",
+	Short: "Test connectivity to the relay server",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireMode("client"); err != nil {
+			return err
+		}
+		return sharedTestRelay()
+	},
 }
 
 func init() {
-	testCmd.AddCommand(testRelayCmd)
-	rootCmd.AddCommand(testCmd)
+	relayCmd.AddCommand(testRelayCmd)
+	serverCmd.AddCommand(serverTestCmd)
+	clientCmd.AddCommand(clientTestCmd)
 }
 
-func runTestRelay(cmd *cobra.Command, args []string) error {
+// sharedTestRelay contains the shared relay-test logic used by all three role
+// variants (relay, server, client).
+func sharedTestRelay() error {
 	cfg, _ := config.Load()
 	addr := fmt.Sprintf("localhost:%d", cfg.Server.APIPort)
 
@@ -76,7 +104,7 @@ func runTestRelayLocal() error {
 
 	status := o.GetRelayStatus()
 	if !status.Provisioned {
-		return fmt.Errorf("no relay provisioned — run `tw create relay-server` first")
+		return fmt.Errorf("no relay provisioned — run `tw relay create` first")
 	}
 
 	fmt.Println()

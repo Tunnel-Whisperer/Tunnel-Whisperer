@@ -21,7 +21,7 @@ The main page shows real-time status for all components with color-coded indicat
 ## Testing the Relay
 
 ```bash
-tw test relay
+tw relay test
 ```
 
 Runs a 3-step diagnostic:
@@ -37,7 +37,7 @@ Increase verbosity for debugging:
 ### CLI
 
 ```bash
-tw --log-level debug serve
+tw --log-level debug server start
 ```
 
 ### Dashboard
@@ -77,13 +77,28 @@ The client and server automatically reconnect with exponential backoff (2s → 4
 
 **Fix:** Check the debug logs for specific error messages. Ensure keepalive traffic can pass through any intermediate proxies.
 
+### "local port … is already in use"
+
+`tw client connect` checks every tunnel's local port before starting and
+refuses to connect if one is taken:
+
+```text
+local port 8080 (→ server port 15432) is already in use — override it with
+'tw client set-port 15432 <port>' or 'tw client connect --map <port>:15432'
+```
+
+Either stop whatever is using the port, or remap the tunnel to a free local
+port — persistently with `tw client set-port 15432 4000`, or for one run
+with `tw client connect --map 4000:15432`. See
+[Local Port Conflicts & Overrides](../client/connect.md#local-port-conflicts-overrides).
+
 ### Mode Enforcement Errors
 
 ```
-Error: this is a server command, but tw is configured in client mode
+this command requires server mode, but tw is configured in client mode
 ```
 
-Server-only commands (like `tw create user`) cannot run in client mode, and vice versa.
+Server-only commands (like `tw server user create`) cannot run in client mode, and vice versa.
 
 **Fix:** Ensure you're running the command on the correct machine, or check `mode` in your `config.yaml`.
 
@@ -92,3 +107,20 @@ Server-only commands (like `tw create user`) cannot run in client mode, and vice
 The dashboard shows "Configuration has changed. Restart/Reconnect to apply." when the config file on disk differs from what was loaded at startup.
 
 **Fix:** Click the Restart (server) or Reconnect (client) button to apply changes.
+
+### "VLESS (with no Flow, etc.) is deprecated" Warning on the Relay
+
+Relays provisioned by an older `tw` (which pinned Xray v26.2.6) may show this in the Xray logs (`journalctl -u xray`) at startup — newer Xray versions (the current pin is v26.6.27) no longer print it:
+
+```
+[Warning] common/errors: The feature VLESS (with no Flow, etc.) is deprecated, not recommended for using and might be removed. Please migrate to VLESS with Flow & Seed as soon as possible.
+```
+
+This is **normal and harmless**. It is an upstream xray-core advisory aimed at setups where VLESS is the only encryption layer. Tunnel Whisperer intentionally runs "plain" VLESS:
+
+- **Flow** (XTLS Vision) requires a raw TCP+TLS transport. Tunnel Whisperer runs VLESS over XHTTP behind Caddy, where Flow does not apply by design.
+- **Seed** (VLESS Encryption) would add encryption at the VLESS layer, but the stream is already wrapped in Caddy's TLS 1.3 with mutual TLS, and the payload inside is end-to-end SSH-encrypted. A third encryption layer adds nothing.
+
+Upstream explicitly keeps plain VLESS working (it is their "non-removal" deprecation class), so no configuration change is needed.
+
+**Fix:** None required — safe to ignore.

@@ -48,7 +48,7 @@ func init() {
 	appCmd.AddCommand(appCreateCmd)
 	appCmd.AddCommand(appEditCmd)
 	appCmd.AddCommand(appDeleteCmd)
-	rootCmd.AddCommand(appCmd)
+	serverCmd.AddCommand(appCmd)
 }
 
 func runAppList(cmd *cobra.Command, args []string) error {

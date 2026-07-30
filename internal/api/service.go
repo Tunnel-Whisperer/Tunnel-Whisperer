@@ -1,4 +1,4 @@
-// Package api implements the Tunnel Whisperer control API served by `tw serve`
+// Package api implements the Tunnel Whisperer control API served by `tw server start`
 // on :50051. It uses the gRPC server machinery, but the proto in
 // proto/api/v1/service.proto is documentation only: a JSON codec (codec.go) is
 // registered so the hand-written Go structs in this package are the wire
@@ -31,8 +31,11 @@ type StatusResponse struct {
 	Version   string             `json:"version"`
 	Relay     ops.RelayStatus    `json:"relay"`
 	UserCount int                `json:"user_count"`
-	Server    *ops.ServerStatus  `json:"server,omitempty"`
-	Client    *ops.ClientStatus  `json:"client,omitempty"`
+	// ConnectedUsers is how many of those users have a live session right now
+	// (server mode only; always 0 otherwise).
+	ConnectedUsers int               `json:"connected_users"`
+	Server         *ops.ServerStatus `json:"server,omitempty"`
+	Client         *ops.ClientStatus `json:"client,omitempty"`
 }
 
 // ConfigResponse carries the current on-disk configuration.
@@ -123,7 +126,8 @@ type GetUserConfigRequest struct {
 	Name string `json:"name"`
 }
 
-// UserConfigResponse carries an exported client config bundle.
+// UserConfigResponse carries an exported client context bundle. The bundle
+// carries no passphrase.
 type UserConfigResponse struct {
 	Data []byte `json:"data"`
 }

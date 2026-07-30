@@ -464,3 +464,76 @@ function copyText(text, el) {
   setInterval(pollStats, 3000);
   pollStats();
 })();
+
+/* ── Tunnel local-port overrides (client mode) ─────────────────────── */
+
+function tunnelNotice(html, isError) {
+  const box = $('#tunnel-override-notice');
+  if (!box) return;
+  box.classList.remove('hidden');
+  box.innerHTML = `<div class="alert${isError ? ' alert-error' : ''}">${html}</div>`;
+}
+
+async function submitTunnelOverride(body, okMessage) {
+  try {
+    await api.post('/api/client/port-override', body);
+    tunnelNotice(`${okMessage} — takes effect on next reconnect. ` +
+      `<a href="#" id="tunnel-reconnect-now">Reconnect now</a>`, false);
+    const reloadTimer = setTimeout(() => window.location.reload(), 1500);
+    const reconnectLink = $('#tunnel-reconnect-now');
+    if (reconnectLink) {
+      reconnectLink.onclick = (ev) => {
+        ev.preventDefault();
+        clearTimeout(reloadTimer);
+        clientReconnect();
+      };
+    }
+  } catch (e) {
+    let msg = e.message;
+    try {
+      const parsed = JSON.parse(e.message);
+      if (parsed && parsed.error) msg = parsed.error;
+    } catch (_) {}
+    tunnelNotice(msg, true);
+  }
+}
+
+function editTunnelPort(serverPort) {
+  const row = $(`.tunnel-row[data-server-port="${serverPort}"]`);
+  if (!row || row.querySelector('input')) return;
+  const label = row.querySelector('.tunnel-port');
+  const current = label.textContent.replace('localhost:', '');
+  label.classList.add('hidden');
+  const editor = document.createElement('span');
+  editor.innerHTML =
+    `<input type="number" min="1" max="65535" value="${current}" class="input-inline" style="width:7em">` +
+    ` <a href="#" class="tunnel-action">save</a> <a href="#" class="tunnel-action">cancel</a>`;
+  const [saveLink, cancelLink] = editor.querySelectorAll('a');
+  const input = editor.querySelector('input');
+  saveLink.onclick = (ev) => {
+    ev.preventDefault();
+    const port = parseInt(input.value, 10);
+    if (!port) return;
+    submitTunnelOverride({ server_port: serverPort, local_port: port },
+      `Server port ${serverPort} now binds locally on ${port}`);
+  };
+  cancelLink.onclick = (ev) => {
+    ev.preventDefault();
+    editor.remove();
+    label.classList.remove('hidden');
+  };
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') saveLink.onclick(ev);
+    if (ev.key === 'Escape') cancelLink.onclick(ev);
+  });
+  row.appendChild(editor);
+  input.focus();
+  input.select();
+}
+
+function resetTunnelPort(serverPort) {
+  const row = $(`.tunnel-row[data-server-port="${serverPort}"]`);
+  const def = row ? row.dataset.defaultPort : '';
+  submitTunnelOverride({ server_port: serverPort, clear: true },
+    `Override for server port ${serverPort} cleared (back to default ${def})`);
+}

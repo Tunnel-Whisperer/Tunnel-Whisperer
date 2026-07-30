@@ -2,6 +2,9 @@
 
 Tunnel Whisperer adds encryption and relay-routing overhead to every connection. This page documents measured performance characteristics and explains how to reproduce the benchmarks.
 
+!!! note "Measured on v1.5.x"
+    These figures were recorded against Tunnel Whisperer v1.5.x on the setup below. They characterize the transport's shape (per-connection overhead, throughput ceiling, RTT sensitivity), not the current build — re-run the benchmarks below for numbers on your own version and network.
+
 ## Test Environment
 
 | Component | Details |
@@ -109,14 +112,14 @@ Client app
               → Server app
 ```
 
-Each request-response adds **two relay hops** (~60ms minimum). The XHTTP transport splits data into HTTP requests, adding per-chunk framing overhead on top of the network latency.
+Each request-response adds **two relay hops** (~60ms minimum). The XHTTP transport frames the tunnel as HTTP/2 streams (proxied by Caddy as h2c), adding framing overhead on top of the network latency.
 
 ### Latency vs throughput
 
 Tunnel Whisperer is optimized for **throughput over restrictive networks**, not for minimizing latency. The design prioritizes:
 
-- Traversing firewalls and DPI (looks like normal HTTPS)
-- Surviving aggressive connection timeouts (XHTTP splits long-lived streams)
+- Traversing firewalls and DPI (looks like normal HTTPS, TLS 1.3 with a client certificate)
+- Surviving aggressive connection timeouts (XHTTP keeps the tunnel inside ordinary HTTP semantics)
 - Zero-trust relay operation (relay never sees plaintext)
 
 For latency-sensitive workloads, the overhead is dominated by network round-trip time to the relay. Placing the relay geographically closer to both endpoints reduces this proportionally.

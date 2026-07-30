@@ -216,7 +216,7 @@ func (s *Server) apiClientStart(w http.ResponseWriter, r *http.Request) {
 	sessionID, progress := s.sse.create()
 
 	go func() {
-		if err := s.ops.StartClient(progress); err != nil {
+		if err := s.ops.StartClient(progress, nil); err != nil {
 			slog.Error("client start failed", "error", err)
 		}
 	}()
@@ -641,8 +641,9 @@ func (s *Server) apiUserDownload(w http.ResponseWriter, r *http.Request, name st
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+name+"-tw-config.zip\"")
+	// The bundle is a client context that imports with no passphrase.
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+name+"-tw-context.twctx\"")
 	w.Write(data)
 }
 
@@ -824,6 +825,43 @@ func (s *Server) apiSetClientSettings(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]string{"status": "ok"})
 }
 
+func (s *Server) apiClientPortOverride(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.ops.Config().Mode != "client" {
+		jsonError(w, "dashboard port overrides are client-mode only", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		ServerPort int  `json:"server_port"`
+		LocalPort  int  `json:"local_port"`
+		Clear      bool `json:"clear"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Clear {
+		cleared, err := s.ops.ClearClientPortOverride(req.ServerPort)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		jsonOK(w, map[string]any{"status": "ok", "cleared": cleared})
+		return
+	}
+
+	if err := s.ops.SetClientPortOverride(req.ServerPort, req.LocalPort); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	jsonOK(w, map[string]string{"status": "ok"})
+}
+
 // ── Log streaming ───────────────────────────────────────────────────────────
 
 func (s *Server) apiLogs(w http.ResponseWriter, r *http.Request) {
@@ -862,6 +900,49 @@ func (s *Server) apiLogs(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+// ── Context endpoints ────────────────────────────────────────────────────────
+
+// apiListContexts returns the stored contexts as JSON.
+func (s *Server) apiListContexts(w http.ResponseWriter, r *http.Request) {
+	list, err := s.ops.ListContexts()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(list)
+}
+
+// apiUseContext switches the daemon's active context and reconnects.
+func (s *Server) apiUseContext(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	progress := func(e ops.ProgressEvent) {
+		switch e.Status {
+		case "running":
+			slog.Info(e.Label, "step", e.Step, "total", e.Total, "status", "running")
+		case "completed":
+			slog.Info(e.Label, "step", e.Step, "total", e.Total, "status", "completed")
+		case "failed":
+			slog.Error(e.Label, "step", e.Step, "total", e.Total, "error", e.Error)
+		}
+	}
+	if err := s.ops.UseContext(req.Name, progress); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ── Applications ────────────────────────────────────────────────────────────
@@ -914,4 +995,96 @@ func (s *Server) apiAppAction(w http.ResponseWriter, r *http.Request) {
 	default:
 		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// requireDashboardMode is the dashboard's requireMode: true if the profile
+// runs in the wanted mode, else a 403 with the reason is written.
+func (s *Server) requireDashboardMode(w http.ResponseWriter, mode string) bool {
+	if got := s.ops.Mode(); got != mode {
+		jsonError(w, fmt.Sprintf("only available in %s mode (this profile: %q)", mode, got), http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
+// apiServers mirrors `tw relay get-servers`: registry + ONE live relay
+// query. Relay unreachable is an error, never a stale table.
+func (s *Server) apiServers(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDashboardMode(w, "relay") {
+		return
+	}
+	details, err := s.ops.GetServerDetails()
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	if details == nil {
+		details = []ops.ServerDetail{}
+	}
+	jsonOK(w, details)
+}
+
+// apiEnrollServer mirrors `tw relay enroll-server`: multipart upload of the
+// join request, join-response JSON returned as a download.
+func (s *Server) apiEnrollServer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireDashboardMode(w, "relay") {
+		return
+	}
+	f, _, err := r.FormFile("request")
+	if err != nil {
+		jsonError(w, "missing join-request upload: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, 1<<20))
+	if err != nil {
+		jsonError(w, "reading upload: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	req, err := ops.DecodeJoinRequest(data)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	resp, err := s.ops.EnrollServer(req, nil)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	out, err := resp.Encode()
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", "tw_join_response_"+resp.ServerID+".json"))
+	_, _ = w.Write(out)
+}
+
+// apiUnenrollServer mirrors `tw relay un-enroll-server --yes` (the
+// confirmation lives in the browser).
+func (s *Server) apiUnenrollServer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireDashboardMode(w, "relay") {
+		return
+	}
+	var req struct {
+		ServerID string `json:"server_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ServerID == "" {
+		jsonError(w, "bad request: server_id required", http.StatusBadRequest)
+		return
+	}
+	if err := s.ops.UnenrollServer(req.ServerID, nil); err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, map[string]string{"status": "ok"})
 }

@@ -39,6 +39,11 @@ func (h *handler) GetStatus(ctx context.Context, req *Empty) (*StatusResponse, e
 	if mode == "server" {
 		ss := h.ops.ServerStatus()
 		resp.Server = &ss
+		for _, on := range h.ops.GetOnlineUsers() {
+			if on {
+				resp.ConnectedUsers++
+			}
+		}
 	}
 	if mode == "client" {
 		cs := h.ops.ClientStatus()
@@ -126,7 +131,7 @@ func (h *handler) StopServer(ctx context.Context, req *Empty) (*Empty, error) {
 }
 
 func (h *handler) StartClient(ctx context.Context, req *Empty) (*Empty, error) {
-	if err := h.ops.StartClient(slogProgress); err != nil {
+	if err := h.ops.StartClient(slogProgress, nil); err != nil {
 		return nil, status.Errorf(codes.Internal, "%v", err)
 	}
 	return &Empty{}, nil

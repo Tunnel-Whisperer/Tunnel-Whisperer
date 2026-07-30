@@ -11,35 +11,23 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
-var applyCmd = &cobra.Command{
-	Use:   "apply",
-	Short: "Apply resources to the relay",
-}
-
 var applyUsersCmd = &cobra.Command{
-	Use:   "users [name...]",
+	Use:   "apply [name...]",
 	Short: "Register users on the relay",
 	Long:  "Register users on the relay. Specify user names, or omit to apply all.",
 	RunE:  runApplyUsers,
 }
 
-var unregisterCmd = &cobra.Command{
-	Use:   "unregister",
-	Short: "Remove resources from the relay",
-}
-
 var unregisterUserCmd = &cobra.Command{
-	Use:   "user <name>",
+	Use:   "unregister <name>",
 	Short: "Unregister a user from the relay",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runUnregisterUser,
 }
 
 func init() {
-	applyCmd.AddCommand(applyUsersCmd)
-	unregisterCmd.AddCommand(unregisterUserCmd)
-	rootCmd.AddCommand(applyCmd)
-	rootCmd.AddCommand(unregisterCmd)
+	serverUserCmd.AddCommand(applyUsersCmd)
+	serverUserCmd.AddCommand(unregisterUserCmd)
 }
 
 func runApplyUsers(cmd *cobra.Command, args []string) error {

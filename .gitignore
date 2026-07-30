@@ -1,7 +1,11 @@
 .claude
+.superpowers
+docs/superpowers
 .tmp
 bin/
 site/
 .ssh-over-xray
 CLAUDE.md
 .vscode/
+e2e/e2e-report.md
+e2e/video/out/

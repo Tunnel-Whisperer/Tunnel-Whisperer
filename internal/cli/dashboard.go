@@ -3,8 +3,10 @@ package cli
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -17,8 +19,9 @@ import (
 )
 
 var (
-	dashboardPort  int
-	runAsService   bool
+	dashboardPort   int
+	dashboardListen string
+	runAsService    bool
 )
 
 var dashboardCmd = &cobra.Command{
@@ -29,6 +32,7 @@ var dashboardCmd = &cobra.Command{
 
 func init() {
 	dashboardCmd.Flags().IntVar(&dashboardPort, "port", 0, "dashboard listen port (overrides config)")
+	dashboardCmd.Flags().StringVar(&dashboardListen, "listen", "", "dashboard listen interface (default 127.0.0.1; 0.0.0.0 exposes it on all interfaces)")
 	dashboardCmd.Flags().BoolVar(&runAsService, "run-as-service", false, "run under the system service manager")
 	_ = dashboardCmd.Flags().MarkHidden("run-as-service")
 	rootCmd.AddCommand(dashboardCmd)
@@ -44,6 +48,19 @@ func slogProgress(e ops.ProgressEvent) {
 	case "failed":
 		slog.Error(e.Label, "step", fmt.Sprintf("%d/%d", e.Step, e.Total), "error", e.Error)
 	}
+}
+
+// resolveDashboardAddr picks the dashboard bind address: --listen flag,
+// then server.dashboard_listen, then loopback.
+func resolveDashboardAddr(flagListen, cfgListen string, port int) string {
+	host := "127.0.0.1"
+	if cfgListen != "" {
+		host = cfgListen
+	}
+	if flagListen != "" {
+		host = flagListen
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
 func runDashboard(cmd *cobra.Command, args []string) error {
@@ -81,7 +98,8 @@ func runDashboard(cmd *cobra.Command, args []string) error {
 		port = dashboardPort
 	}
 
-	addr := fmt.Sprintf(":%d", port)
+	addr := resolveDashboardAddr(dashboardListen, cfg.Server.DashboardListen, port)
+	slog.Info("dashboard listening", "addr", addr)
 	srv := dashboard.NewServer(addr, o)
 
 	// Auto-start server or client if ready.
@@ -94,7 +112,7 @@ func runDashboard(cmd *cobra.Command, args []string) error {
 			}
 		} else if mode == "client" && cfg.Xray.RelayHost != "" {
 			slog.Info("auto-connecting client")
-			if err := o.StartClient(slogProgress); err != nil {
+			if err := o.StartClient(slogProgress, nil); err != nil {
 				slog.Error("auto-connect client failed", "error", err)
 			}
 		}
@@ -136,7 +154,7 @@ func runDashboard(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	fmt.Printf("Starting dashboard on http://localhost%s\n", addr)
+	fmt.Printf("Starting dashboard on http://%s\n", addr)
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)

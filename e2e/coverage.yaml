@@ -1,0 +1,52 @@
+# Every runnable tw command must map to the e2e scenario(s) that exercise it,
+# or carry an explicit {exempt: "reason"}. Enforced by
+# internal/cli/coverage_test.go (fails `go test ./...` on drift).
+commands:
+  "relay create":            [TestE2E/RelayInstall]
+  "relay test":              [TestE2E/RelayInstall]
+  "relay status":            [TestE2E/RelayInstall, TestE2E/Teardown]
+  "relay enroll-server":            [TestE2E/ServerJoin, TestE2E/SecondTenant]
+  "relay un-enroll-server":        [TestE2E/SecondTenant]
+  "relay get-servers":           [TestE2E/SecondTenant]
+  "relay destroy":           [TestE2E/Teardown]
+  "relay ssh":               {exempt: "interactive relay terminal; no scriptable assertion yet"}
+  "server join-relay":       [TestE2E/ServerJoin, TestE2E/SecondTenant]
+  "server start":            [TestE2E/ServerJoin]
+  "server test":             [TestE2E/ServerJoin]
+  "server status":           [TestE2E/ServerJoin]
+  "server user create":      [TestE2E/UserLifecycle]
+  "server user apply":       [TestE2E/UserLifecycle]
+  "server user list":        [TestE2E/UserLifecycle]
+  "server user delete":      [TestE2E/Revocation]
+  "server user unregister":  [TestE2E/Revocation]
+  "server user edit":        {exempt: "pending: interactive wizard; cover when mappings-edit gets flags"}
+  "server user single-session": [TestE2E/PermitOpen]
+  "server app list":         {exempt: "pending: app catalog scenario not yet written"}
+  "server app create":       {exempt: "pending: app catalog scenario not yet written"}
+  "server app edit":         {exempt: "pending: app catalog scenario not yet written"}
+  "server app delete":       {exempt: "pending: app catalog scenario not yet written"}
+  "client connect":          [TestE2E/UserLifecycle, TestE2E/PortOverride]
+  "client test":             [TestE2E/UserLifecycle]
+  "client status":           [TestE2E/UserLifecycle]
+  "client listen":           [TestE2E/UserLifecycle]
+  "client set-port":         [TestE2E/PortOverride]
+  "config import":           [TestE2E/UserLifecycle]
+  "config export":           [TestE2E/Contexts]
+  "config export-user":      [TestE2E/UserLifecycle]
+  "config get-contexts":     [TestE2E/Contexts]
+  "config current-context":  [TestE2E/Contexts]
+  "config use-context":      [TestE2E/Contexts]
+  "config new-context":      [TestE2E/Contexts]
+  "config rename-context":   [TestE2E/Contexts]
+  "config delete-context":   [TestE2E/Contexts]
+  "config view":             [TestE2E/Contexts]
+  "status":                  [TestE2E/Contexts]
+  "service install":         {exempt: "native service-manager integration (systemd/SCM/launchd); exercised via the manual Windows flow in CLAUDE.md"}
+  "service uninstall":       {exempt: "native service-manager integration; see 'service install'"}
+  "service start":           {exempt: "native service-manager integration; see 'service install'"}
+  "service stop":            {exempt: "native service-manager integration; see 'service install'"}
+  "proxy":                   {exempt: "pending: upstream-proxy scenario needs a SOCKS5 container"}
+  "proxy set":               {exempt: "pending: upstream-proxy scenario needs a SOCKS5 container"}
+  "proxy clear":             {exempt: "pending: upstream-proxy scenario needs a SOCKS5 container"}
+  "dashboard":               [TestE2E/Dashboard, TestE2E/PortOverride]
+  "completion":              {exempt: "shell completion generation; no runtime behavior"}

@@ -13,7 +13,7 @@ import (
 
 // Config holds all Tunnel Whisperer settings.
 type Config struct {
-	Mode      string          `yaml:"mode,omitempty"`       // "server" or "client"
+	Mode      string          `yaml:"mode,omitempty"`       // "server", "client", or "relay"
 	LogLevel  string          `yaml:"log_level,omitempty"`  // debug, info, warn, error
 	LogFormat string          `yaml:"log_format,omitempty"` // "text" (default) or "json"
 	Proxy     string          `yaml:"proxy,omitempty"`      // e.g. "socks5://user:pass@host:port" or "http://host:port"
@@ -21,6 +21,29 @@ type Config struct {
 	Server    ServerConfig    `yaml:"server"`
 	Client    ClientConfig    `yaml:"client"`
 	Analytics AnalyticsConfig `yaml:"analytics,omitempty"`
+	ModeAuth  *ModeAuth       `yaml:"mode_auth,omitempty"`
+}
+
+// ModeAuth is a detached signature over the profile's (mode, identity),
+// making the mode field tamper-evident. See internal/ops/modeauth.
+type ModeAuth struct {
+	Sig    string `yaml:"sig"`
+	Issuer string `yaml:"issuer"`
+}
+
+// ValidMode reports whether m is a recognized canonical operating mode.
+func ValidMode(m string) bool {
+	return m == "server" || m == "client" || m == "relay"
+}
+
+// CanonicalMode maps legacy mode names to their canonical form. The relay
+// role was historically called "admin"; it is accepted on read and rewritten
+// to "relay". Any other value is returned unchanged.
+func CanonicalMode(m string) string {
+	if m == "admin" {
+		return "relay"
+	}
+	return m
 }
 
 // AnalyticsConfig controls bandwidth statistics collection.
@@ -39,17 +62,21 @@ type XrayConfig struct {
 	ClientKeyPath  string `yaml:"client_key_path,omitempty"`  // matching private key
 }
 
-// ServerConfig holds settings only used by `tw serve`.
+// ServerConfig holds settings only used by `tw server start`.
 type ServerConfig struct {
-	SSHPort       int           `yaml:"ssh_port"`
-	APIPort       int           `yaml:"api_port"`
-	DashboardPort int           `yaml:"dashboard_port"`
-	RelaySSHPort  int           `yaml:"relay_ssh_port"`
-	RelaySSHUser  string        `yaml:"relay_ssh_user"`
-	RemotePort    int           `yaml:"remote_port"`
-	XrayPort      int           `yaml:"xray_port,omitempty"`
-	TempXrayPort  int           `yaml:"temp_xray_port,omitempty"`
-	Applications  []Application `yaml:"applications,omitempty" json:"applications,omitempty"`
+	SSHPort       int `yaml:"ssh_port"`
+	APIPort       int `yaml:"api_port"`
+	DashboardPort int `yaml:"dashboard_port"`
+	// DashboardListen is the interface the web dashboard binds.
+	// Defaults to 127.0.0.1; set to 0.0.0.0 to expose it (the dashboard is
+	// unauthenticated — only do this on a trusted network).
+	DashboardListen string        `yaml:"dashboard_listen,omitempty"`
+	RelaySSHPort    int           `yaml:"relay_ssh_port"`
+	RelaySSHUser    string        `yaml:"relay_ssh_user"`
+	RemotePort      int           `yaml:"remote_port"`
+	XrayPort        int           `yaml:"xray_port,omitempty"`
+	TempXrayPort    int           `yaml:"temp_xray_port,omitempty"`
+	Applications    []Application `yaml:"applications,omitempty" json:"applications,omitempty"`
 }
 
 // PortMapping defines a client-port → server-port pair.
@@ -64,7 +91,7 @@ type Application struct {
 	Mappings []PortMapping `yaml:"mappings" json:"mappings"`
 }
 
-// ClientConfig holds settings only used by `tw connect`.
+// ClientConfig holds settings only used by `tw client connect`.
 type ClientConfig struct {
 	SSHUser       string `yaml:"ssh_user"`
 	ServerSSHPort int    `yaml:"server_ssh_port"`
@@ -73,6 +100,10 @@ type ClientConfig struct {
 	// Defaults to 127.0.0.1; set to 0.0.0.0 to expose tunnels (e.g. in containers).
 	ListenAddress string   `yaml:"listen_address,omitempty"`
 	Tunnels       []Tunnel `yaml:"tunnels"`
+	// PortOverrides maps a tunnel's server port (remote_port) to a
+	// client-chosen local port, overriding the admin default in Tunnels.
+	// Client-owned: user bundles never ship this field.
+	PortOverrides map[int]int `yaml:"port_overrides,omitempty"`
 }
 
 // Tunnel defines a single local-port → remote-host:remote-port mapping.
@@ -80,6 +111,25 @@ type Tunnel struct {
 	LocalPort  int    `yaml:"local_port"`
 	RemoteHost string `yaml:"remote_host"`
 	RemotePort int    `yaml:"remote_port"`
+}
+
+// EffectiveTunnels returns Tunnels with each LocalPort replaced by the
+// persisted override (PortOverrides) or, with higher precedence, a runtime
+// override (from `tw client connect --map`). Both maps are keyed by server
+// port (RemotePort). The receiver's Tunnels slice is not mutated; unknown
+// keys are ignored here and rejected by ops-level validation.
+func (c ClientConfig) EffectiveTunnels(runtime map[int]int) []Tunnel {
+	out := make([]Tunnel, len(c.Tunnels))
+	for i, t := range c.Tunnels {
+		if p, ok := c.PortOverrides[t.RemotePort]; ok {
+			t.LocalPort = p
+		}
+		if p, ok := runtime[t.RemotePort]; ok {
+			t.LocalPort = p
+		}
+		out[i] = t
+	}
+	return out
 }
 
 // Hash returns a SHA-256 hex digest of the YAML-serialised config.
@@ -199,6 +249,11 @@ func Load() (*Config, error) {
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
+	}
+
+	if canon := CanonicalMode(cfg.Mode); canon != cfg.Mode {
+		cfg.Mode = canon
+		_ = Save(cfg) // best-effort in-place migration; read-only dir is not fatal
 	}
 
 	return cfg, nil

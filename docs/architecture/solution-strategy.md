@@ -36,8 +36,8 @@ graph LR
     end
 
     subgraph "Relay VM"
-        CADDY[Caddy<br/>mTLS + reverse proxy]
-        XRAY_R[Xray<br/>VLESS inbound]
+        CADDY[Caddy<br/>mTLS + per-tenant handles]
+        XRAY_R[Xray<br/>per-tenant VLESS inbounds]
         OSSH[OpenSSH<br/>127.0.0.1 only]
     end
 
@@ -80,12 +80,17 @@ graph LR
 | Firewalls block non-HTTPS traffic | Encapsulate all traffic in TLS on port 443 | Xray (VLESS + XHTTP) |
 | Server and client are behind NAT | All connections are outbound-only; relay is the rendezvous point | SSH reverse port forwarding |
 | Relay must never see plaintext | End-to-end encryption between client and server | SSH session layer |
-| Relay must admit only trusted servers | Mutual-TLS gate verifying an X.509 client cert against a per-server CA at the handshake | Caddy `client_auth require_and_verify` + `internal/pki` |
+| Relay must admit only trusted servers | Mutual-TLS gate verifying an X.509 client cert against a per-tenant CA trust pool at the handshake | Caddy `client_auth require_and_verify` + `internal/pki` |
 | TLS certificates for the relay | Automatic issuance and renewal | Caddy (ACME / Let's Encrypt) |
-| Per-server relay admission | One CA-issued client cert per server, presented by Xray (`usage: "client-cert"`) | xray-core mTLS + `internal/pki` |
-| Per-user access control | Public key auth with port restrictions | SSH `authorized_keys` + `permitopen` |
-| Infrastructure provisioning | Interactive wizard generates Terraform + cloud-init | Terraform (Hetzner, DigitalOcean, AWS) |
-| Cross-platform operation | Single binary for both server and client | Go (Linux + Windows + macOS) |
+| Per-server relay admission | One CA-issued client cert per server (CN = server-id), presented by Xray (`usage: "client-cert"`); Caddy routes only when path and cert CN match | xray-core mTLS + `internal/pki` |
+| Multiple servers on one relay | Per-tenant VLESS inbound on `127.0.0.1:<remote-port>+10000`, per-tenant Caddy `handle`, per-tenant allow/deny routing rules | `internal/relay/{caddy,xray}` |
+| Relay must not become an open proxy | Freedom outbound carries `finalRules` allowing loopback only; each tenant's allow rule permits exactly ports 22 + its own remote port, then a blackhole deny | Xray routing + freedom `finalRules` |
+| Adding a server must not disrupt others | Enrollment live-adds the tenant's inbound + rules over the Xray gRPC API (`:10085`, loopback, reached over the admin's SSH tunnel) — no Xray restart | `AddInbound` / `AddRule` via `internal/ops/enroll.go` |
+| Hand-edited role field | Config `mode` is ed25519-signed against the profile's own identity (tamper-evidence, not a security wall) | `internal/ops/modeauth` |
+| Multiple relays / identities per machine | kubectl-style contexts: sealed profile bundles switched with `tw config use-context` | `internal/ops/context.go` + `internal/cryptobox` |
+| Per-user access control | Public key auth with port restrictions | SSH `authorized_keys` + `permitopen` (+ optional `single-session`) |
+| Infrastructure provisioning | Interactive wizard generates Terraform + cloud-init, or an install script for a bring-your-own VM | Terraform (Hetzner, DigitalOcean, AWS) / manual install script |
+| Cross-platform operation | Single binary for all three roles | Go (Linux + Windows + macOS) |
 | Dynamic user management | Re-read authorized_keys on every auth attempt | No server restart needed |
 | Config change detection | SHA-256 hash comparison of config file | `crypto/sha256` |
 | Real-time dashboard | SSE for progress + log streaming, WebSocket for SSH terminal | Go `net/http`, `gorilla/websocket`, xterm.js |

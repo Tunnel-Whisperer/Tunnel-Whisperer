@@ -8,7 +8,10 @@
         protocols tls1.3
     }
 {{range .Servers}}
-    @{{.ID}} path {{.Path}}*
+    @{{.ID}} {
+        path {{.Path}}*
+        expression {http.request.tls.client.subject} == "CN={{.ID}}"
+    }
     handle @{{.ID}} {
         reverse_proxy {{.Upstream}} {
             flush_interval -1
@@ -21,4 +24,7 @@
         }
     }
 {{end}}
+    handle {
+        respond 404
+    }
 }

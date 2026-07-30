@@ -16,16 +16,47 @@ echo "=== Tunnel Whisperer Relay Setup ==="
 echo "Domain: {{.Domain}}"
 echo ""
 
+# ── Clean any previous installation (idempotent) ─────────────
+# Re-running must not leak state from a prior install: stale per-tenant CA
+# certs (an old server-id .crt left in the trust dir), an old Caddyfile or
+# Xray config, a previous sshd drop-in, or leftover firewall rules (e.g. an
+# "allow 22" from an earlier --ssh-open run when SSH is now tunnel-only).
+# Host SSH keys and the OS are left untouched.
+echo "[*] Cleaning previous installation..."
+systemctl stop caddy 2>/dev/null || true
+systemctl stop xray 2>/dev/null || true
+rm -rf /etc/caddy/ca /etc/caddy/Caddyfile
+rm -rf /usr/local/etc/xray
+rm -f /etc/ssh/sshd_config.d/99-tw-localhost.conf
+# Stale caddy repo bits: gpg --dearmor aborts on an existing keyring file
+# under set -e, so a re-run died at step 3 until these were cleaned.
+rm -f /usr/share/keyrings/caddy-stable-archive-keyring.gpg /etc/apt/sources.list.d/caddy-stable.list
+if command -v ufw >/dev/null 2>&1; then ufw --force reset >/dev/null 2>&1 || true; fi
+
 # ── Create SSH user ──────────────────────────────────────────
 echo "[1/7] Creating SSH user '{{.SSHUser}}'..."
 useradd -m -s /bin/bash {{.SSHUser}} 2>/dev/null || true
 echo "{{.SSHUser}} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/99-{{.SSHUser}}
 mkdir -p /home/{{.SSHUser}}/.ssh
-cat > /home/{{.SSHUser}}/.ssh/authorized_keys <<'KEYEOF'
-{{.PublicKey}}
-KEYEOF
+AK=/home/{{.SSHUser}}/.ssh/authorized_keys
+touch "$AK"
+# tw's management key is bound to the tunnel: from="127.0.0.1" means it only
+# authenticates for connections arriving through the VLESS tunnel (which egress
+# at localhost on the relay) — never over public port 22, even when 22 is open.
+# Existing keys (e.g. your own maintenance key) are preserved; only a stale
+# tw-key line is stripped so a re-run can't leave an unrestricted copy behind.
+TW_PUBKEY='{{.PublicKey}}'
+TW_KEYBODY=$(printf '%s' "$TW_PUBKEY" | awk '{print $2}')
+if [ -n "$TW_KEYBODY" ]; then
+  grep -vF "$TW_KEYBODY" "$AK" > "$AK.tmp" 2>/dev/null || true
+  mv "$AK.tmp" "$AK"
+fi
+{{if .SSHOpen}}# --ssh-open: the tw key must work over the open port 22, so no loopback pin.
+echo "$TW_PUBKEY" >> "$AK"
+{{else}}echo "from=\"127.0.0.1\" $TW_PUBKEY" >> "$AK"
+{{end}}
 chmod 700 /home/{{.SSHUser}}/.ssh
-chmod 600 /home/{{.SSHUser}}/.ssh/authorized_keys
+chmod 600 "$AK"
 chown -R {{.SSHUser}}:{{.SSHUser}} /home/{{.SSHUser}}/.ssh
 
 # ── Install packages ─────────────────────────────────────────
@@ -37,7 +68,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
 # ── Install Caddy ────────────────────────────────────────────
 echo "[3/7] Installing Caddy..."
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
-  | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  | gpg --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
   | tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null
 apt-get update -qq
@@ -52,57 +83,7 @@ echo "[4/7] Installing Xray {{.XrayVersion}}..."
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --version {{.XrayVersion}}
 
 mkdir -p /usr/local/etc/xray
-cat > /usr/local/etc/xray/config.json <<'XRAYEOF'
-{
-  "log": { "loglevel": "warning" },
-  "stats": {},
-  "api": {
-    "tag": "api",
-    "services": ["HandlerService", "StatsService"]
-  },
-  "policy": {
-    "system": {
-      "statsInboundUplink": true, "statsInboundDownlink": true,
-      "statsOutboundUplink": true, "statsOutboundDownlink": true
-    },
-    "levels": { "0": { "statsUserUplink": true, "statsUserDownlink": true, "statsUserOnline": true } }
-  },
-  "inbounds": [
-    {
-      "tag": "vless-in",
-      "listen": "127.0.0.1",
-      "port": 10000,
-      "protocol": "vless",
-      "settings": {
-        "clients": [{ "id": "{{.UUID}}", "email": "{{.UUID}}" }],
-        "decryption": "none"
-      },
-      "streamSettings": {
-        "network": "xhttp",
-        "xhttpSettings": {
-          "path": "{{.XrayPath}}",
-          "mode": "stream-one"
-        }
-      }
-    },
-    {
-      "tag": "api-in",
-      "listen": "127.0.0.1",
-      "port": 10085,
-      "protocol": "dokodemo-door",
-      "settings": { "address": "127.0.0.1" }
-    }
-  ],
-  "outbounds": [
-    { "tag": "freedom", "protocol": "freedom" }
-  ],
-  "routing": {
-    "rules": [
-      { "type": "field", "inboundTag": ["api-in"], "outboundTag": "api" }
-    ]
-  }
-}
-XRAYEOF
+echo '{{.XrayConfigB64}}' | base64 -d > /usr/local/etc/xray/config.json
 
 # ── Configure SSH ────────────────────────────────────────────
 {{if .SSHOpen}}echo "[5/7] Configuring SSH (public access, key-only)..."

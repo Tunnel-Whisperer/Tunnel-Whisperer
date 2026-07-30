@@ -12,21 +12,20 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
-var exportCmd = &cobra.Command{
-	Use:   "export",
-	Short: "Export resources",
-}
-
 var exportUserCmd = &cobra.Command{
-	Use:   "user <name>",
-	Short: "Export a user's config bundle as a zip file",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runExportUser,
+	Use:   "export-user <name>",
+	Short: "Issue a user as a client context bundle (server only; unprotected — send over a trusted channel)",
+	Long: `Package one of this server's users as a role=client context (the same
+format as tw config export). The client imports it with: tw config import <file>
+
+The bundle carries no passphrase — the client imports it without a prompt. It is
+as sensitive as the keys inside it, so send it over a trusted channel.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runExportUser,
 }
 
 func init() {
-	exportCmd.AddCommand(exportUserCmd)
-	rootCmd.AddCommand(exportCmd)
+	configCmd.AddCommand(exportUserCmd)
 }
 
 func runExportUser(cmd *cobra.Command, args []string) error {
@@ -39,7 +38,6 @@ func runExportUser(cmd *cobra.Command, args []string) error {
 	addr := fmt.Sprintf("localhost:%d", cfg.Server.APIPort)
 
 	var data []byte
-	var err error
 
 	client, dialErr := api.Dial(addr)
 	if dialErr != nil {
@@ -54,13 +52,14 @@ func runExportUser(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		defer client.Close()
+		var err error
 		data, err = client.GetUserConfig(context.Background(), name)
 		if err != nil {
 			return fmt.Errorf("exporting user config: %w", err)
 		}
 	}
 
-	filename := name + "-tw-config.zip"
+	filename := name + "-tw-context.twctx"
 	outPath := filepath.Join(".", filename)
 
 	if err := os.WriteFile(outPath, data, 0644); err != nil {
@@ -68,5 +67,8 @@ func runExportUser(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("  Exported %s (%d bytes)\n", filename, len(data))
+	fmt.Println("  Send this file to the client (it needs no passphrase to import).")
+	fmt.Println("  The client imports it with:")
+	fmt.Printf("    tw config import %s --activate\n", filename)
 	return nil
 }

@@ -10,20 +10,14 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
-var listCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List resources",
-}
-
 var listUsersCmd = &cobra.Command{
-	Use:   "users",
+	Use:   "list",
 	Short: "List all configured users",
 	RunE:  runListUsers,
 }
 
 func init() {
-	listCmd.AddCommand(listUsersCmd)
-	rootCmd.AddCommand(listCmd)
+	serverUserCmd.AddCommand(listUsersCmd)
 }
 
 func runListUsers(cmd *cobra.Command, args []string) error {

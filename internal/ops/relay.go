@@ -20,6 +20,7 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/relay/caddy"
 	"github.com/tunnelwhisperer/tw/internal/relay/terraform"
+	relayxray "github.com/tunnelwhisperer/tw/internal/relay/xray"
 	gossh "golang.org/x/crypto/ssh"
 )
 
@@ -119,7 +120,71 @@ func (o *Ops) GetRelayStatus() RelayStatus {
 		}
 	}
 
+	// Marker-less fallback: a configured manual relay whose marker file was lost
+	// (e.g. a config-dir wipe or a bundle import that predated marker round-trip).
+	// If the config points at a relay (RelayHost set) and this machine holds an
+	// issued client cert, treat it as provisioned so management (SSH, status) is
+	// not blocked by a missing marker file alone. No Terraform state means it is a
+	// manual relay; cloud relays are covered by the tfstate branch above.
+	if !status.Provisioned && cfg.Xray.RelayHost != "" {
+		if _, err := os.Stat(config.ClientCertPath()); err == nil {
+			status.Provisioned = true
+			status.Provider = "Manual"
+		}
+	}
+
 	return status
+}
+
+// renderRelayConfigs derives the relay's tenant identity from the local
+// hostname + UUID and renders both relay configs (Caddyfile + Xray config.json)
+// for the single tenant this server represents. It is the single seam shared by
+// the cloud (ProvisionRelay) and manual (GenerateManualInstallScript) provisioning
+// paths so they can never drift. The derived path (/tw/<server-id>) is persisted
+// to config so client bundles and the server Xray config use it. It returns the
+// server ID plus base64-encoded Caddyfile and Xray config; reading the CA PEM
+// remains the caller's job (each sets CACertB64 itself).
+func (o *Ops) renderRelayConfigs(cfg *config.Config) (serverID, caddyfileB64, xrayConfigB64 string, err error) {
+	osHost, _ := os.Hostname()
+	serverID = deriveServerID(osHost, cfg.Xray.UUID)
+	relayPath := "/tw/" + serverID
+	remotePort := cfg.Server.RemotePort
+	vlessInPort := remotePort + 10000
+	role := "server"
+	if cfg.Mode == "relay" {
+		role = "relay"
+	}
+
+	caddyfile, err := caddy.RenderCaddyfile(caddy.Config{
+		Domain: cfg.Xray.RelayHost,
+		Servers: []caddy.Server{{
+			ID:         serverID,
+			Path:       relayPath,
+			CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", serverID),
+			Upstream:   fmt.Sprintf("h2c://127.0.0.1:%d", vlessInPort),
+			Role:       role,
+		}},
+	})
+	if err != nil {
+		return "", "", "", fmt.Errorf("rendering relay Caddyfile: %w", err)
+	}
+
+	relayXrayJSON, err := relayxray.RenderConfig(relayxray.Config{
+		Tenants: []relayxray.Tenant{{ServerID: serverID, UUID: cfg.Xray.UUID, RemotePort: remotePort}},
+	})
+	if err != nil {
+		return "", "", "", fmt.Errorf("rendering relay Xray config: %w", err)
+	}
+
+	// Persist the derived path so client bundles and the server Xray config use /tw/<id>.
+	if err := o.SetXraySettings(config.XrayConfig{Path: relayPath}); err != nil {
+		return "", "", "", fmt.Errorf("persisting derived path: %w", err)
+	}
+
+	return serverID,
+		base64.StdEncoding.EncodeToString([]byte(caddyfile)),
+		base64.StdEncoding.EncodeToString([]byte(relayXrayJSON)),
+		nil
 }
 
 // ProvisionRelay runs the full 9-step relay provisioning flow.
@@ -145,12 +210,25 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 	}
 	progress(ProgressEvent{Step: 1, Total: 9, Label: "SSH keys", Status: "completed"})
 
-	// Step 2: Xray UUID.
+	// Step 2: Xray UUID (also stamps the relay mode — creating a relay makes
+	// this profile the relay identity; only an unset mode is stamped, and
+	// requireMode("relay") already blocks server/client profiles).
 	progress(ProgressEvent{Step: 2, Total: 9, Label: "Xray UUID", Status: "running"})
 	o.mu.Lock()
 	cfg := o.cfg
+	changed := false
+	if cfg.Mode == "" {
+		cfg.Mode = "relay"
+		changed = true
+		if err := o.stampModeAuth(cfg); err != nil {
+			slog.Warn("stamping mode_auth", "error", err)
+		}
+	}
 	if cfg.Xray.UUID == "" {
 		cfg.Xray.UUID = uuid.New().String()
+		changed = true
+	}
+	if changed {
 		if err := config.Save(cfg); err != nil {
 			o.mu.Unlock()
 			progress(ProgressEvent{Step: 2, Total: 9, Label: "Xray UUID", Status: "failed", Error: err.Error()})
@@ -208,41 +286,25 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 		progress(ProgressEvent{Step: 7, Total: 9, Label: "Provisioning", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("reading CA certificate (run key init first): %w", err)
 	}
-	serverID := cfg.Xray.RelayHost
-	if serverID == "" {
-		serverID = "tw-server"
-	}
-	relayPath := cfg.Xray.Path
-	if relayPath == "" {
-		relayPath = "/tw"
-	}
-	caddyfile, err := caddy.RenderCaddyfile(caddy.Config{
-		Domain: cfg.Xray.RelayHost,
-		Servers: []caddy.Server{{
-			ID:         serverID,
-			Path:       relayPath,
-			CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", serverID),
-			Upstream:   "h2c://127.0.0.1:10000",
-			Role:       "server",
-		}},
-	})
+	serverID, caddyfileB64, xrayConfigB64, err := o.renderRelayConfigs(cfg)
 	if err != nil {
 		progress(ProgressEvent{Step: 7, Total: 9, Label: "Provisioning", Status: "failed", Error: err.Error()})
-		return fmt.Errorf("rendering relay Caddyfile: %w", err)
+		return err
 	}
 
 	tfCfg := terraform.Config{
-		Domain:       cfg.Xray.RelayHost,
-		UUID:         cfg.Xray.UUID,
-		XrayPath:     relayPath,
-		SSHUser:      cfg.Server.RelaySSHUser,
-		PublicKey:    strings.TrimSpace(string(pubKeyBytes)),
-		Provider:     req.ProviderKey,
-		SSHOpen:      req.SSHOpen,
-		Name:         req.Name,
-		ServerID:     serverID,
-		CACertB64:    base64.StdEncoding.EncodeToString(caCertPEM),
-		CaddyfileB64: base64.StdEncoding.EncodeToString([]byte(caddyfile)),
+		Domain:        cfg.Xray.RelayHost,
+		UUID:          cfg.Xray.UUID,
+		XrayPath:      cfg.Xray.Path,
+		SSHUser:       cfg.Server.RelaySSHUser,
+		PublicKey:     strings.TrimSpace(string(pubKeyBytes)),
+		Provider:      req.ProviderKey,
+		SSHOpen:       req.SSHOpen,
+		Name:          req.Name,
+		ServerID:      serverID,
+		CACertB64:     base64.StdEncoding.EncodeToString(caCertPEM),
+		CaddyfileB64:  caddyfileB64,
+		XrayConfigB64: xrayConfigB64,
 	}
 
 	// Load saved TLS certificates for reuse (avoids Let's Encrypt rate limits).
@@ -351,15 +413,27 @@ func (o *Ops) GenerateManualInstallScript(domain string, sshOpen bool) (string, 
 
 	o.mu.Lock()
 	cfg := o.cfg
+	changed := false
+	// Creating a relay makes this profile the relay identity: the mode gates
+	// commands (requireMode) and renders the relay handle with the relay role.
+	// Only an unset mode is stamped — requireMode("relay") already blocks
+	// server/client profiles from reaching this point.
+	if cfg.Mode == "" {
+		cfg.Mode = "relay"
+		changed = true
+		if err := o.stampModeAuth(cfg); err != nil {
+			slog.Warn("stamping mode_auth", "error", err)
+		}
+	}
 	if cfg.Xray.UUID == "" {
 		cfg.Xray.UUID = uuid.New().String()
-		if err := config.Save(cfg); err != nil {
-			o.mu.Unlock()
-			return "", fmt.Errorf("saving config: %w", err)
-		}
+		changed = true
 	}
 	if domain != "" {
 		cfg.Xray.RelayHost = domain
+		changed = true
+	}
+	if changed {
 		if err := config.Save(cfg); err != nil {
 			o.mu.Unlock()
 			return "", fmt.Errorf("saving config: %w", err)
@@ -377,38 +451,23 @@ func (o *Ops) GenerateManualInstallScript(domain string, sshOpen bool) (string, 
 	if err != nil {
 		return "", fmt.Errorf("reading CA certificate (run key init first): %w", err)
 	}
-	serverID := cfg.Xray.RelayHost
-	if serverID == "" {
-		serverID = "tw-server"
-	}
-	relayPath := cfg.Xray.Path
-	if relayPath == "" {
-		relayPath = "/tw"
-	}
-	caddyfile, err := caddy.RenderCaddyfile(caddy.Config{
-		Domain: cfg.Xray.RelayHost,
-		Servers: []caddy.Server{{
-			ID:         serverID,
-			Path:       relayPath,
-			CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", serverID),
-			Upstream:   "h2c://127.0.0.1:10000",
-			Role:       "server",
-		}},
-	})
+
+	serverID, caddyfileB64, xrayConfigB64, err := o.renderRelayConfigs(cfg)
 	if err != nil {
-		return "", fmt.Errorf("rendering relay Caddyfile: %w", err)
+		return "", err
 	}
 
 	tfCfg := terraform.Config{
-		Domain:       cfg.Xray.RelayHost,
-		UUID:         cfg.Xray.UUID,
-		XrayPath:     relayPath,
-		SSHUser:      cfg.Server.RelaySSHUser,
-		PublicKey:    strings.TrimSpace(string(pubKeyBytes)),
-		SSHOpen:      sshOpen,
-		ServerID:     serverID,
-		CACertB64:    base64.StdEncoding.EncodeToString(caCertPEM),
-		CaddyfileB64: base64.StdEncoding.EncodeToString([]byte(caddyfile)),
+		Domain:        cfg.Xray.RelayHost,
+		UUID:          cfg.Xray.UUID,
+		XrayPath:      cfg.Xray.Path,
+		SSHUser:       cfg.Server.RelaySSHUser,
+		PublicKey:     strings.TrimSpace(string(pubKeyBytes)),
+		SSHOpen:       sshOpen,
+		ServerID:      serverID,
+		CACertB64:     base64.StdEncoding.EncodeToString(caCertPEM),
+		CaddyfileB64:  caddyfileB64,
+		XrayConfigB64: xrayConfigB64,
 	}
 
 	return terraform.GenerateInstallScript(tfCfg)
@@ -432,6 +491,37 @@ func (o *Ops) SaveManualRelay(domain, ip string, sshOpen bool) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(relayDir, "manual-relay.json"), data, 0644)
+}
+
+// ensureRelayMarker makes the relay show as provisioned after an admin-bundle
+// re-attach, so importing a bundle switches the admin to managing that relay
+// (status, SSH, etc.) without a manual step. The admin bundle carries the real
+// marker when available; this is the fallback + reconcile path:
+//   - Terraform-managed relay (tfstate present): leave it — tfstate is the marker.
+//   - A manual marker already matching the imported relay's domain: keep it.
+//   - Otherwise (no marker, or a stale marker from a previously-imported relay):
+//     synthesize the manual marker from the imported config (IP via DNS).
+// ssh_open defaults false; it only affects whether the UI offers direct SSH.
+func (o *Ops) ensureRelayMarker() error {
+	relayDir := config.RelayDir()
+	domain := o.Config().Xray.RelayHost
+	if domain == "" {
+		return nil // bundle describes no relay
+	}
+	if _, err := os.Stat(filepath.Join(relayDir, "terraform.tfstate")); err == nil {
+		return nil // cloud-provisioned; tfstate is the source of truth
+	}
+	if data, err := os.ReadFile(filepath.Join(relayDir, "manual-relay.json")); err == nil {
+		var m ManualRelayMarker
+		if json.Unmarshal(data, &m) == nil && m.Domain == domain {
+			return nil // marker already matches this relay
+		}
+	}
+	ip := ""
+	if addrs, err := net.LookupHost(domain); err == nil && len(addrs) > 0 {
+		ip = addrs[0]
+	}
+	return o.SaveManualRelay(domain, ip, false)
 }
 
 // caddyCertsPath returns the local path for a domain's archived Caddy TLS
@@ -527,6 +617,10 @@ func (o *Ops) DestroyRelay(ctx context.Context, creds map[string]string, progres
 
 		progress(ProgressEvent{Step: 2, Total: 2, Label: "Cleaning up", Status: "running"})
 		deactivateAllUsers()
+		if err := o.clearRelayHost(); err != nil {
+			progress(ProgressEvent{Step: 2, Total: 2, Label: "Cleaning up", Status: "failed", Error: err.Error()})
+			return err
+		}
 		progress(ProgressEvent{Step: 2, Total: 2, Label: "Cleaning up", Status: "completed"})
 		return nil
 	}
@@ -558,9 +652,27 @@ func (o *Ops) DestroyRelay(ctx context.Context, creds map[string]string, progres
 	// Deactivate all users — their UUIDs are no longer on any relay.
 	deactivateAllUsers()
 
+	if err := o.clearRelayHost(); err != nil {
+		progress(ProgressEvent{Step: 3, Total: 3, Label: "Cleaning up", Status: "failed", Error: err.Error()})
+		return err
+	}
+
 	progress(ProgressEvent{Step: 3, Total: 3, Label: "Cleaning up", Status: "completed"})
 
 	return nil
+}
+
+// clearRelayHost removes the destroyed relay's address from config.
+// GetRelayStatus's marker-less fallback treats a set RelayHost plus an issued
+// client cert as a provisioned manual relay (so a lost marker file doesn't
+// block management); without this, a deliberately destroyed relay would be
+// resurrected by that fallback and status would never reflect the destroy.
+func (o *Ops) clearRelayHost() error {
+	o.mu.Lock()
+	o.cfg.Xray.RelayHost = ""
+	cfg := o.cfg
+	o.mu.Unlock()
+	return config.Save(cfg)
 }
 
 // TestRelay runs connectivity checks against the relay, streaming each
@@ -614,7 +726,17 @@ func (o *Ops) TestRelay(progress ProgressFunc) {
 		return
 	}
 
-	// 3. Xray + SSH through tunnel.
+	// 3. Xray + SSH through tunnel. A client's key is only valid on the
+	// SERVER's embedded SSH; relay/server keys are valid on the relay VM.
+	if cfg.Mode == "client" {
+		progress(ProgressEvent{Step: 3, Total: 3, Label: "Xray + SSH (server auth)", Status: "running"})
+		if err := testClientSSH(cfg); err != nil {
+			progress(ProgressEvent{Step: 3, Total: 3, Label: "Xray + SSH (server auth)", Status: "failed", Error: err.Error()})
+		} else {
+			progress(ProgressEvent{Step: 3, Total: 3, Label: "Xray + SSH (server auth)", Status: "completed", Message: "authenticated as " + cfg.Client.SSHUser})
+		}
+		return
+	}
 	progress(ProgressEvent{Step: 3, Total: 3, Label: "Xray + SSH", Status: "running"})
 	err = withRelaySSH(cfg, func(client *gossh.Client) error {
 		session, err := client.NewSession()
@@ -650,44 +772,6 @@ func runRelayCmd(client *gossh.Client, cmd string) error {
 		return fmt.Errorf("relay command %q failed: %w (output: %s)", cmd, err, string(out))
 	}
 	return nil
-}
-
-// enrollServerOnRelay installs each server's CA into the relay trust pool and
-// (re)writes the relay Caddyfile from the full server list, then reloads Caddy
-// with zero downtime. In v1 `servers` contains exactly this server; the
-// multi-tenant branch passes the full list. This is the single seam the admin
-// profile will reuse to enroll servers without recreating the relay.
-//
-// caCerts maps a server ID to its CA certificate PEM; each is written to
-// /etc/caddy/ca/<id>.crt (which the rendered Caddyfile's trust_pool references).
-func (o *Ops) enrollServerOnRelay(domain string, servers []caddy.Server, caCerts map[string][]byte) error {
-	caddyfile, err := caddy.RenderCaddyfile(caddy.Config{Domain: domain, Servers: servers})
-	if err != nil {
-		return fmt.Errorf("rendering Caddyfile: %w", err)
-	}
-	return o.RelaySSH(func(client *gossh.Client) error {
-		if err := runRelayCmd(client, "sudo mkdir -p /etc/caddy/ca"); err != nil {
-			return err
-		}
-		for id, pem := range caCerts {
-			b64 := base64.StdEncoding.EncodeToString(pem)
-			cmd := fmt.Sprintf("echo %s | base64 -d | sudo tee /etc/caddy/ca/%s.crt >/dev/null", b64, id)
-			if err := runRelayCmd(client, cmd); err != nil {
-				return fmt.Errorf("writing CA for %s: %w", id, err)
-			}
-		}
-		b64 := base64.StdEncoding.EncodeToString([]byte(caddyfile))
-		if err := runRelayCmd(client, fmt.Sprintf("echo %s | base64 -d | sudo tee /etc/caddy/Caddyfile >/dev/null", b64)); err != nil {
-			return fmt.Errorf("writing Caddyfile: %w", err)
-		}
-		if err := runRelayCmd(client, "sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile"); err != nil {
-			return fmt.Errorf("relay Caddyfile failed validation (not reloaded): %w", err)
-		}
-		if err := runRelayCmd(client, "sudo systemctl reload caddy"); err != nil {
-			return fmt.Errorf("reloading caddy: %w", err)
-		}
-		return nil
-	})
 }
 
 // DirectRelaySSH connects to the relay over plain SSH (port 22) without an
@@ -748,10 +832,31 @@ func (o *Ops) CloseRelaySSH(progress ProgressFunc) error {
 	progress(ProgressEvent{Step: 1, Total: 3, Label: "Connecting to relay", Status: "completed"})
 	progress(ProgressEvent{Step: 2, Total: 3, Label: "Closing SSH port 22", Status: "running"})
 
+	// Re-pin the admin key to loopback: an --ssh-open provision wrote it
+	// unpinned so it could authenticate over the open port; closing must
+	// restore the tunnel-only invariant. Full rewrite from the tenant list,
+	// same as enroll/un-enroll.
+	adminPubKey, err := os.ReadFile(filepath.Join(config.Dir(), "id_ed25519.pub"))
+	if err != nil {
+		progress(ProgressEvent{Step: 2, Total: 3, Label: "Closing SSH port 22", Status: "failed", Error: err.Error()})
+		return fmt.Errorf("reading admin public key: %w", err)
+	}
+	servers, err := o.ListServers()
+	if err != nil {
+		progress(ProgressEvent{Step: 2, Total: 3, Label: "Closing SSH port 22", Status: "failed", Error: err.Error()})
+		return fmt.Errorf("listing registered servers: %w", err)
+	}
+	akContent := renderRelayAuthorizedKeys(string(adminPubKey), servers, false)
+	sshUser := o.Config().Server.RelaySSHUser
+	akPath := fmt.Sprintf("/home/%s/.ssh/authorized_keys", sshUser)
+	akB64 := base64.StdEncoding.EncodeToString([]byte(akContent))
+
 	err = sshFn(func(client *gossh.Client) error {
 		cmds := []string{
 			"sudo ufw deny 22/tcp",
 			"sudo sed -i 's/^ListenAddress 0.0.0.0/ListenAddress 127.0.0.1/' /etc/ssh/sshd_config.d/99-tw-localhost.conf",
+			fmt.Sprintf("echo %s | base64 -d | sudo tee %s >/dev/null && sudo chown %s:%s %s && sudo chmod 600 %s",
+				akB64, akPath, sshUser, sshUser, akPath, akPath),
 			"sudo systemctl restart ssh 2>/dev/null || sudo systemctl restart sshd 2>/dev/null || true",
 		}
 		for _, cmd := range cmds {

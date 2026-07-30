@@ -1,0 +1,20 @@
+
+
+   Tunnel Whisperer — Multi-Server Walkthrough
+   1 relay · 2 servers · 2 clients — from nothing to SSH-over-tunnel
+
+                           ┌──────────────┐
+      outbound 443 only    │  RELAY VM    │    outbound 443 only
+    ┌─────────────────────►│ (cloud VPS,  │◄─────────────────────┐
+    │                      │  80+443 open)│                      │
+    │                      └──────▲───────┘                      │
+    │                             │                              │
+   ┌┴────────┐  ┌─────────┐   ┌───┴────────┐              ┌──────┴──┐  ┌─────────┐
+   │ server1 │  │ server2 │   │ admin      │              │ client1 │  │ client2 │
+   │ sshd:22 │  │ sshd:22 │   │ laptop     │              │         │  │         │
+   └─────────┘  └─────────┘   │ (owns the  │              └─────────┘  └─────────┘
+                              │  relay)    │
+                              └────────────┘
+
+   Everything below runs live in a real topology (Docker) — the domain
+   relay.tw.test stands in for your real domain.

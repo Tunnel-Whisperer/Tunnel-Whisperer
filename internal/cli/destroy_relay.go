@@ -13,24 +13,18 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
-var destroyCmd = &cobra.Command{
-	Use:   "destroy",
-	Short: "Destroy infrastructure resources",
-}
-
 var destroyRelayServerCmd = &cobra.Command{
-	Use:   "relay-server",
+	Use:   "destroy",
 	Short: "Destroy the provisioned relay server",
 	RunE:  runDestroyRelayServer,
 }
 
 func init() {
-	destroyCmd.AddCommand(destroyRelayServerCmd)
-	rootCmd.AddCommand(destroyCmd)
+	relayCmd.AddCommand(destroyRelayServerCmd)
 }
 
 func runDestroyRelayServer(cmd *cobra.Command, args []string) error {
-	if err := requireMode("server"); err != nil {
+	if err := requireMode("relay"); err != nil {
 		return err
 	}
 	o, err := ops.New()

@@ -12,9 +12,14 @@
     <li><a href="/apps" class="{{if eq .Active "apps"}}active{{end}}">Apps</a></li>
     <li><a href="/bandwidth" class="{{if eq .Active "bandwidth"}}active{{end}}">Stats</a></li>
     {{end}}
+    {{if eq .Mode "relay"}}
+    <li><a href="/relay" class="{{if eq .Active "relay"}}active{{end}}">Relay</a></li>
+    <li><a href="/servers" class="{{if eq .Active "servers"}}active{{end}}">Servers</a></li>
+    {{end}}
     <li><a href="/config" class="{{if eq .Active "config"}}active{{end}}">Config</a></li>
   </ul>
   <div class="navbar-mode">
+    {{if .Context}}<span class="badge badge-dim">{{.Context}}</span>{{end}}
     <span class="badge badge-dim">{{.Mode}}</span>
   </div>
   {{end}}

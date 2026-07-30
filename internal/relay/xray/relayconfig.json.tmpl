@@ -1,0 +1,54 @@
+{
+  "log": { "loglevel": "warning" },
+  "stats": {},
+  "api": { "tag": "api", "services": ["HandlerService", "StatsService", "RoutingService"] },
+  "policy": {
+    "system": {
+      "statsInboundUplink": true, "statsInboundDownlink": true,
+      "statsOutboundUplink": true, "statsOutboundDownlink": true
+    },
+    "levels": { "0": { "statsUserUplink": true, "statsUserDownlink": true, "statsUserOnline": true } }
+  },
+  "inbounds": [
+    {
+      "tag": "api-in",
+      "listen": "127.0.0.1",
+      "port": 10085,
+      "protocol": "dokodemo-door",
+      "settings": { "address": "127.0.0.1" }
+    }{{range .Tenants}},
+    {
+      "tag": "vless-in-{{.ServerID}}",
+      "listen": "127.0.0.1",
+      "port": {{.VlessInPort}},
+      "protocol": "vless",
+      "settings": {
+        "clients": [{ "id": "{{.UUID}}", "email": "{{.ServerID}}" }],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "xhttpSettings": { "path": "{{.Path}}", "mode": "stream-one" }
+      }
+    }{{end}}
+  ],
+  "outbounds": [
+    {
+      "tag": "freedom",
+      "protocol": "freedom",
+      "settings": {
+        "finalRules": [
+          { "action": "allow", "ip": ["127.0.0.1/32"] }
+        ]
+      }
+    },
+    { "tag": "blackhole", "protocol": "blackhole" }
+  ],
+  "routing": {
+    "rules": [
+      { "type": "field", "inboundTag": ["api-in"], "outboundTag": "api" }{{range .Tenants}},
+      { "type": "field", "ruleTag": "allow-{{.ServerID}}", "inboundTag": ["vless-in-{{.ServerID}}"], "port": "22,{{.RemotePort}}", "outboundTag": "freedom" },
+      { "type": "field", "ruleTag": "deny-{{.ServerID}}", "inboundTag": ["vless-in-{{.ServerID}}"], "outboundTag": "blackhole" }{{end}}
+    ]
+  }
+}

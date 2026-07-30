@@ -12,10 +12,10 @@ stateDiagram-v2
     TransportError --> Cleanup
 
     Cleanup --> Wait_2s: Attempt 1-8
-    Cleanup --> Wait_4s: Attempt 9
-    Cleanup --> Wait_8s: Attempt 10
-    Cleanup --> Wait_16s: Attempt 11
-    Cleanup --> Wait_30s: Attempt 12+
+    Cleanup --> Wait_4s: Attempt 9-12
+    Cleanup --> Wait_8s: Attempt 13-16
+    Cleanup --> Wait_16s: Attempt 17-20
+    Cleanup --> Wait_30s: Attempt 21+
 
     Wait_2s --> Reconnecting
     Wait_4s --> Reconnecting
@@ -29,7 +29,7 @@ stateDiagram-v2
 
 Both the forward tunnel (client) and reverse tunnel (server) implement exponential backoff reconnection:
 
-- **Backoff:** 2s -> 4s -> 8s -> 16s -> 30s (max)
+- **Backoff:** 2s -> 4s -> 8s -> 16s -> 30s (max), staying roughly four attempts at each level; a drop *after* a successful connection resets the backoff so re-connection is fast
 - **Keepalive:** SSH keepalive every 15 seconds; on failure, triggers reconnect
 - **TCP Keepalive:** 30-second TCP keepalive on all connections
 - **Forward tunnel cleanup:** On keepalive failure, all local listeners are closed first (unblocking Accept loops), then the SSH connection is closed, triggering the reconnect loop
@@ -40,15 +40,15 @@ Both the forward tunnel (client) and reverse tunnel (server) implement exponenti
 
 The SSH server re-reads `authorized_keys` on every authentication attempt. This means:
 
-- `tw create user` takes effect immediately -- no need to restart `tw serve`
+- `tw server user create` takes effect immediately -- no need to restart the running server
 - Revoking a user (removing their key from `authorized_keys`) takes effect on the next connection attempt
-- Each key entry can have independent `permitopen` restrictions
+- Each key entry can have independent `permitopen` restrictions (and an optional `single-session` flag)
 
 ---
 
 ## Permitopen Enforcement
 
-When the SSH server authenticates a client, it parses `permitopen` options from the matching `authorized_keys` entry and stores them in `gossh.Permissions.Extensions["permitopen"]`. On every `direct-tcpip` channel request, the server checks the target `host:port` against the permitted list. If no `permitopen` options are set (e.g., the server's own key), all destinations are allowed.
+When the SSH server authenticates a client, it parses `permitopen` options from the matching `authorized_keys` entry and stores them in `gossh.Permissions.Extensions["permitopen"]`. On every `direct-tcpip` channel request, the server checks the target `host:port` against the permitted list. If no `permitopen` options are set (e.g., the server's own key), all destinations are allowed. A custom `single-session` option, enforced in `checkAuthorizedKey`, rejects a second concurrent connection for the same user.
 
 ---
 
@@ -57,17 +57,17 @@ When the SSH server authenticates a client, it parses `permitopen` options from 
 ```mermaid
 sequenceDiagram
     participant S as Server (tw)
-    participant TX as Temp Xray (configurable port)
+    participant TX as Temp Xray (management tunnel)
     participant R as Relay (SSH)
     participant XR as Relay Xray
 
-    S ->> TX: Start temporary Xray instance
+    S ->> TX: Start temporary Xray instance (presents mTLS client cert)
     S ->> R: SSH through temp tunnel
     S ->> R: sudo cat /usr/local/etc/xray/config.json
     R -->> S: JSON config
-    S ->> S: Parse JSON, check duplicate UUID, add client
+    S ->> S: Parse JSON, check duplicate UUID,<br/>add client to vless-in-<server-id>
     S ->> R: sudo tee config.json (updated)
-    S ->> XR: gRPC AlterInbound / AddUserOperation
+    S ->> XR: gRPC AlterInbound / AddUserOperation (:10085)
     alt gRPC fails
         S ->> R: sudo systemctl restart xray
     end
@@ -75,14 +75,16 @@ sequenceDiagram
     Note over TX: Tunnel destroyed (expected)
 ```
 
-`tw create user` updates the relay's Xray config remotely:
+`tw server user create` (and delete/unregister) updates the relay's Xray config remotely:
 
-1. Starts a temporary Xray instance (dokodemo-door on `server.temp_xray_port+1`, default 59001, separate from `tw serve`)
+1. Starts a temporary Xray instance (dokodemo-door on `server.temp_xray_port+1`, default 59001, falling back to any free loopback port — separate from a running `tw server start`)
 2. SSHs into the relay through the temporary tunnel using the server's SSH key
 3. Reads `/usr/local/etc/xray/config.json` via `sudo cat`
-4. Parses the JSON, checks for duplicate UUID, adds new client entry
-5. Writes the updated config via `sudo tee /usr/local/etc/xray/config.json`
-6. Hot-adds the UUID via the Xray gRPC API (`AlterInbound` / `AddUserOperation`); falls back to `systemctl restart xray` if the API call fails
+4. Parses the JSON, checks for duplicate UUID, adds the new client entry to this server's own `vless-in-<server-id>` inbound
+5. Writes the updated config via `sudo tee /usr/local/etc/xray/config.json` (persistence)
+6. Hot-adds the UUID via the Xray gRPC API (`AlterInbound` / `AddUserOperation` on loopback `:10085`, forwarded over the SSH connection); falls back to `systemctl restart xray` if the API call fails
+
+Relay-side *tenant* changes (server enroll / un-enroll) follow the same live-update philosophy but at a bigger granularity: the admin re-renders the Caddyfile, `authorized_keys`, and Xray `config.json` wholesale from the registry, then live-adds (`AddInbound` + `AddRule`) or live-removes the affected tenant via the same gRPC API — no Xray restart. Enroll and un-enroll are serialized by a local file lock (`internal/ops/oplock.go`).
 
 ---
 
@@ -91,8 +93,8 @@ sequenceDiagram
 Xray VLESS + XHTTP over TLS:
 
 - **VLESS:** Lightweight proxy protocol with UUID-based authentication
-- **XHTTP:** HTTP-based transport that splits data into standard HTTP requests/responses
-- **TLS:** Terminated by Caddy on the relay; SNI matches the relay domain
+- **XHTTP:** HTTP-based transport that splits data into standard HTTP requests/responses (per-tenant path `/tw/<server-id>`, `stream-one` mode)
+- **TLS:** Terminated by Caddy on the relay (mutual TLS — the client presents the per-server certificate); SNI matches the relay domain
 - **Result:** Traffic is indistinguishable from normal HTTPS browsing to firewalls and DPI
 
 ---
@@ -147,21 +149,29 @@ The dashboard polls `ConfigChanged()` every 3 seconds via the `/api/status` endp
 
 ## Mode Enforcement
 
-The `mode` field in `config.yaml` can be `"server"`, `"client"`, or empty. When set:
+The `mode` field in `config.yaml` can be `"relay"`, `"server"`, `"client"`, or empty (bootstrap). The legacy value `"admin"` is canonicalized to `"relay"` on read. When set:
 
-- **CLI**: `requireMode()` in `root.go` checks the configured mode before executing a command. Server-only commands (e.g., `tw serve`, `tw create user`) return an error in client mode, and vice versa.
-- **Dashboard**: The `pageData.Mode` field is passed to all templates. Navigation links and page content adapt -- server-only pages (relay management, user management) are hidden when mode is `"client"`.
+- **CLI**: `requireMode(allowed ...string)` in `root.go` checks the configured mode before executing a command. Relay-only commands (e.g., `tw relay create`, `tw relay enroll-server`) return an error in server or client mode, and so on for each role; the variadic form lets a command be allowed in more than one mode.
+- **Dashboard**: The `pageData.Mode` field is passed to all templates. Navigation links and page content adapt -- pages belonging to other roles are hidden.
 
 ```go
-func requireMode(expected string) error {
-    cfg, err := config.Load()
-    if cfg.Mode != "" && cfg.Mode != expected {
-        return fmt.Errorf("this is a %s command, but tw is configured in %s mode",
-            expected, cfg.Mode)
+// modeError is the pure decision behind requireMode:
+// nil if current is unset or present in allowed, otherwise a descriptive error.
+func modeError(current string, allowed []string) error {
+    if current == "" {
+        return nil // mode not set yet, allow
     }
-    return nil
+    for _, a := range allowed {
+        if current == a {
+            return nil
+        }
+    }
+    return fmt.Errorf("this command requires %s mode, but tw is configured in %s mode",
+        strings.Join(allowed, " or "), current)
 }
 ```
+
+**Mode signature (tamper-evidence).** The mode is additionally protected by a detached ed25519 signature (`mode_auth: {sig, issuer}` in config, `internal/ops/modeauth`) over `(mode, profile identity)`, where the identity is the profile's own `id_ed25519.pub`. The relay signs its own mode with its own key; a server's mode is signed by the relay admin in the join-response; a client's mode is signed by its server in the exported user bundle. `requireMode` verifies the signature on every gated command: a present-but-invalid signature (a hand-edited `mode` field) is refused with a re-enroll/re-import hint; a missing signature is legacy-tolerated with a warning (the relay self-heals by re-signing). This is deliberately *not* a security boundary — the real role boundary is the relay's `authorized_keys` restrictions and the mTLS/PKI trust chain.
 
 ---
 
@@ -196,12 +206,12 @@ The server tracks which client users are currently connected by polling the rela
 2. **Primary method**: Queries `QueryStats` with pattern `"online"` looking for `user>>>{UUID}>>>online` stats entries (Xray `statsUserOnline` feature).
 3. **Fallback**: If no online stats are available, falls back to traffic-based detection: queries `user>>>` pattern with `Reset_: true`, and any UUID with non-zero `traffic>>>uplink` or `traffic>>>downlink` since the last poll is considered online. The server's own UUID is excluded.
 4. **Caching**: Results are cached with a 20-second TTL (`onlinePoll` timestamp). Concurrent refresh attempts return the stale cache instead of blocking.
-5. **Relay setup**: `EnsureRelayStats()` runs at server startup, patching the relay's Xray config to add `stats`, `StatsService`, and `policy` (both system-level and user-level stats) if missing. If patching occurs, Xray is restarted on the relay.
+5. **Relay setup**: freshly provisioned relays already carry `stats`, `StatsService`, and the stats `policy` in the rendered Xray config (`relayconfig.json.tmpl`). `EnsureRelayStats()` still runs in the background at server startup to patch legacy relays that predate the template; if patching occurs, Xray is restarted on the relay.
 
 The dashboard's users page calls `/api/users/online` which returns the online map. Online users are shown with a badge in the UI.
 
 !!! warning "Relay compatibility"
-    The `statsUserOnline` feature requires Xray v26.2.6+. Older relays fall back to traffic-based detection, which has lower granularity (a user appears online only while actively transferring data).
+    The `statsUserOnline` feature requires Xray v26.2.6+; the relay's pinned Xray (`v26.6.27`) includes it. Older hand-managed relays fall back to traffic-based detection, which has lower granularity (a user appears online only while actively transferring data).
 
 ---
 
@@ -333,18 +343,18 @@ The Xray version installed on the relay is controlled by a single constant:
 
 ```go
 // internal/relay/terraform/generate.go
-const XrayVersion = "v26.2.6"
+XrayVersion = "v26.6.27" // must stay compatible with the xray-core in go.mod (pinned mtls commit)
 ```
 
 This constant is injected into both:
 
-- **cloud-init.yaml.tmpl**: used during `tw create relay-server` to provision new relays
-- **install-script.sh.tmpl**: used for manual relay setup via `tw dashboard`
+- **cloud-init.yaml.tmpl**: used during `tw relay create` to provision new cloud relays
+- **install-script.sh.tmpl**: used for manual (bring-your-own VM) relay setup
 
-Both templates pass `--version {{ .XrayVersion }}` to the official Xray install script. This ensures the relay runs the exact same Xray version as the in-process `xray-core` dependency in `go.mod`, preventing protocol incompatibilities.
+Both templates pass `--version {{ .XrayVersion }}` to the official Xray install script. The relay's standalone Xray release must stay protocol-compatible with the in-process `xray-core` dependency in `go.mod` (currently a pinned upstream mtls-branch commit rather than a tagged release), preventing VLESS/XHTTP incompatibilities.
 
 !!! warning "Version sync"
-    When upgrading `github.com/xtls/xray-core` in `go.mod`, the `XrayVersion` constant in `generate.go` must be updated to match. Existing relays will continue running the old version until reprovisioned or manually updated.
+    When bumping `github.com/xtls/xray-core` in `go.mod`, check whether the `XrayVersion` constant in `generate.go` needs to move too. Existing relays will continue running the old version until reprovisioned or manually updated.
 
 ---
 
@@ -353,22 +363,31 @@ Both templates pass `--version {{ .XrayVersion }}` to the official Xray install 
 The relay admits connections via mutual TLS, backed by a per-server certificate
 authority. The lifecycle is handled transparently:
 
-- **Generation** — on the first `tw serve`, `internal/ops/keys.go` (`ensureCerts`)
-  creates the CA (`ca.crt`/`ca.key`) and issues the server's client certificate
-  (`client.crt`/`client.key`) via `internal/pki`. Generation is **idempotent and
-  self-healing**: an existing CA is never regenerated, but a missing client cert
-  is re-issued from the existing CA. It is skipped in client mode.
-- **Distribution to the relay** — at provisioning, the CA *public* certificate is
-  base64-embedded into cloud-init and written to `/etc/caddy/ca/<server-id>.crt`;
-  the rendered Caddyfile (with `client_auth require_and_verify`) is embedded the
-  same way. The CA signing key never leaves the server.
-- **Distribution to clients** — `client.crt`/`client.key` are bundled into every
-  user export zip. The same per-server certificate is shared by all users;
-  `applyClientCertPaths` derives the on-disk paths at runtime so a bundle works
-  regardless of platform or `TW_CONFIG_DIR`.
-- **Rotation** — re-provisioning the relay regenerates the trust pool. There is
-  no per-user certificate and no CRL on the relay; per-user revocation is an SSH
-  `authorized_keys` operation (see [Access Control](../security/access-control.md)).
+- **Generation** — on the first `tw server start` (or `tw server join-relay` /
+  `tw relay create`), `internal/ops/keys.go` (`ensureCerts`) creates the CA
+  (`ca.crt`/`ca.key`) and issues the server's client certificate
+  (`client.crt`/`client.key`, CN = server-id) via `internal/pki`. Generation is
+  **idempotent and self-healing**: an existing CA is never regenerated, but a
+  missing client cert is re-issued from the existing CA. It is skipped in client
+  mode.
+- **Distribution to the relay** — for the admin's own entry, the CA *public*
+  certificate is base64-embedded into cloud-init / the install script and written
+  to `/etc/caddy/ca/<server-id>.crt` at provisioning; for joined servers, the
+  admin writes their CA cert (carried in the join-request) to the same location
+  during enrollment and reloads Caddy. The rendered Caddyfile
+  (`client_auth require_and_verify` with one trust-pool entry per tenant) is
+  rewritten the same way. CA signing keys never leave their servers — the relay
+  only ever holds public certificates.
+- **Distribution to clients** — `client.crt`/`client.key` are included in every
+  exported user context bundle (`tw config export-user`). The same per-server
+  certificate is shared by all of that server's users; `applyClientCertPaths`
+  derives the on-disk paths at runtime so a bundle works regardless of platform
+  or `TW_CONFIG_DIR`.
+- **Rotation** — re-provisioning the relay (or un-enrolling and re-enrolling a
+  server) regenerates that tenant's trust-pool entry. There is no per-user
+  certificate and no CRL on the relay; per-user revocation is an SSH
+  `authorized_keys` operation (see [Access Control](../security/access-control.md)),
+  and per-server revocation is `tw relay un-enroll-server`.
 
 Validity: CA 10 years, client certificate 5 years (ECDSA P-256). Full detail on
 [Relay Authentication](../security/relay-authentication.md).
@@ -389,10 +408,10 @@ Validity: CA 10 years, client certificate 5 years (ECDSA P-256). Full detail on
 
 | Dependency | Version | Purpose |
 | ---------- | ------- | ------- |
-| `github.com/xtls/xray-core` | v26.2.6 | In-process VLESS + XHTTP transport |
-| `golang.org/x/crypto/ssh` | v0.31.0 | Embedded SSH server + client tunnels |
+| `github.com/xtls/xray-core` | pinned upstream mtls commit (`v1.260327.1-0.20260617150841-…`) | In-process VLESS + XHTTP + mTLS transport |
+| `golang.org/x/crypto` | v0.51.0 | Embedded SSH server + client tunnels |
 | `github.com/spf13/cobra` | v1.8.1 | CLI framework |
 | `github.com/google/uuid` | v1.6.0 | UUID generation for Xray clients |
 | `github.com/gorilla/websocket` | v1.5.3 | WebSocket for dashboard SSH terminal |
-| `google.golang.org/grpc` | v1.69.2 | gRPC API server + relay stats queries |
+| `google.golang.org/grpc` | v1.81.1 | gRPC API server + relay live-add/stats queries |
 | `gopkg.in/yaml.v3` | v3.0.1 | Configuration file handling |

@@ -12,21 +12,15 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/ops"
 )
 
-var editCmd = &cobra.Command{
-	Use:   "edit",
-	Short: "Edit resources",
-}
-
 var editUserCmd = &cobra.Command{
-	Use:   "user <name>",
+	Use:   "edit <name>",
 	Short: "Edit a user's port mappings",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runEditUser,
 }
 
 func init() {
-	editCmd.AddCommand(editUserCmd)
-	rootCmd.AddCommand(editCmd)
+	serverUserCmd.AddCommand(editUserCmd)
 }
 
 func runEditUser(cmd *cobra.Command, args []string) error {

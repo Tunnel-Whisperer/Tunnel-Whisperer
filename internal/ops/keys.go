@@ -1,6 +1,8 @@
 package ops
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -8,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/google/uuid"
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/pki"
 	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
@@ -79,17 +82,33 @@ func (o *Ops) EnsureKeys() error {
 func (o *Ops) ensureCerts() error {
 	o.mu.Lock()
 	mode := o.cfg.Mode
-	host := o.cfg.Xray.RelayHost
+	xrayUUID := o.cfg.Xray.UUID
 	o.mu.Unlock()
 
 	if mode == "client" {
 		return nil
 	}
 
-	id := host
-	if id == "" {
-		id = "tw-server"
+	// The server-id (cert CN) is derived as "<host>-<first8(uuid)>". If the UUID
+	// is still empty here, the id truncates to "<host>-" and permanently desyncs
+	// the cert from the relay config (Caddyfile subject matcher / path / xray),
+	// which is rendered later once the UUID is populated. Assign and persist a
+	// UUID first so the identity is stable across cert issuance and rendering.
+	if xrayUUID == "" {
+		o.mu.Lock()
+		if o.cfg.Xray.UUID == "" {
+			o.cfg.Xray.UUID = uuid.New().String()
+			if err := config.Save(o.cfg); err != nil {
+				o.mu.Unlock()
+				return fmt.Errorf("assigning Xray UUID: %w", err)
+			}
+		}
+		xrayUUID = o.cfg.Xray.UUID
+		o.mu.Unlock()
 	}
+
+	osHost, _ := os.Hostname()
+	id := deriveServerID(osHost, xrayUUID)
 
 	caExists, err := statExists(config.CACertPath())
 	if err != nil {
@@ -100,7 +119,11 @@ func (o *Ops) ensureCerts() error {
 		return fmt.Errorf("checking client certificate: %w", err)
 	}
 	if caExists && clientExists {
-		return nil
+		if certCN(config.ClientCertPath()) == id {
+			return nil
+		}
+		slog.Info("re-issuing identity: cert CN changed", "id", id)
+		caExists, clientExists = false, false
 	}
 
 	var caCertPEM, caKeyPEM []byte
@@ -138,6 +161,24 @@ func (o *Ops) ensureCerts() error {
 		slog.Info("server client certificate written", "dir", config.Dir())
 	}
 	return nil
+}
+
+// certCN returns the Common Name from the PEM-encoded X.509 certificate at
+// path, or "" if the file cannot be read or parsed.
+func certCN(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	blk, _ := pem.Decode(b)
+	if blk == nil {
+		return ""
+	}
+	crt, err := x509.ParseCertificate(blk.Bytes)
+	if err != nil {
+		return ""
+	}
+	return crt.Subject.CommonName
 }
 
 // applyClientCertPaths points the Xray config at this host's local client

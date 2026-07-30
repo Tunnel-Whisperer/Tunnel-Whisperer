@@ -6,7 +6,13 @@ users:
     shell: /bin/bash
     sudo: ALL=(ALL) NOPASSWD:ALL
     ssh_authorized_keys:
-      - {{.PublicKey}}
+      # from="127.0.0.1" binds tw's key to the VLESS tunnel (which egresses at
+      # localhost); it never authenticates over public port 22. cloud-init
+      # preserves the option prefix. Any provider-injected launch key stays a
+      # separate entry, so your own public-22 access is unaffected.
+{{if .SSHOpen}}      - '{{.PublicKey}}'
+{{else}}      - 'from="127.0.0.1" {{.PublicKey}}'
+{{end}}
 
 package_update: true
 
@@ -21,56 +27,8 @@ packages:
 write_files:
   - path: /usr/local/etc/xray/config.json
     permissions: "0644"
-    content: |
-      {
-        "log": { "loglevel": "warning" },
-        "stats": {},
-        "api": {
-          "tag": "api",
-          "services": ["HandlerService", "StatsService"]
-        },
-        "policy": {
-          "system": {
-            "statsInboundUplink": true, "statsInboundDownlink": true,
-            "statsOutboundUplink": true, "statsOutboundDownlink": true
-          },
-          "levels": { "0": { "statsUserUplink": true, "statsUserDownlink": true, "statsUserOnline": true } }
-        },
-        "inbounds": [
-          {
-            "tag": "vless-in",
-            "listen": "127.0.0.1",
-            "port": 10000,
-            "protocol": "vless",
-            "settings": {
-              "clients": [{ "id": "{{.UUID}}", "email": "{{.UUID}}" }],
-              "decryption": "none"
-            },
-            "streamSettings": {
-              "network": "xhttp",
-              "xhttpSettings": {
-                "path": "{{.XrayPath}}",
-                "mode": "stream-one"
-              }
-            }
-          },
-          {
-            "tag": "api-in",
-            "listen": "127.0.0.1",
-            "port": 10085,
-            "protocol": "dokodemo-door",
-            "settings": { "address": "127.0.0.1" }
-          }
-        ],
-        "outbounds": [
-          { "tag": "freedom", "protocol": "freedom" }
-        ],
-        "routing": {
-          "rules": [
-            { "type": "field", "inboundTag": ["api-in"], "outboundTag": "api" }
-          ]
-        }
-      }
+    encoding: b64
+    content: {{.XrayConfigB64}}
 
   - path: /etc/caddy/ca/{{.ServerID}}.crt
     permissions: "0644"
