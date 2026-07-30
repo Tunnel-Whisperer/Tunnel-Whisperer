@@ -132,6 +132,13 @@ func testUserLifecycle(t *testing.T) {
 	}
 }
 
+// permitOpenProbePort is a local port used only to probe single-session
+// enforcement without tripping the client-side bind preflight added by
+// PortOverride — see the deviation note inside testPermitOpen. Distinct from
+// userPort (18080), bob's 18081 (RelayResilience), and PortOverride's
+// 18090/18091.
+const permitOpenProbePort = "18092"
+
 // testPermitOpen asserts the server-side gate: alice's authorized_keys entry
 // carries only the granted permitopen target plus single-session, and a
 // second concurrent connect for the same user is genuinely rejected by the
@@ -203,7 +210,25 @@ func testPermitOpen(t *testing.T) {
 	// moment it rejects the second auth attempt. Confirm the client attempt
 	// genuinely didn't connect, then confirm the server's log shows the
 	// single-session mechanism (not some other failure) is what stopped it.
-	out, err := execInOK("client", "timeout 20 tw client connect 2>&1")
+	//
+	// Deviation (added after PortOverride, see task-6-report.md): plain
+	// `tw client connect` here would now be rejected earlier than the SSH
+	// layer. PortOverride's new client-side bind preflight (internal/ops/
+	// client.go, preflightBind) test-binds every local port before touching
+	// SSH, and alice's default local port (userPort) is already held by the
+	// FIRST, still-live connection this scenario depends on — so a second
+	// plain `tw client connect` now fails at "Config validation" with the
+	// preflight's own "already in use" message, never reaching the SSH auth
+	// step this test means to exercise. That's the client-side feature
+	// working exactly as designed (real per-machine local-port conflicts
+	// really should fail fast) — single-session enforcement itself is a
+	// server-side, per-user check keyed on the SSH identity and is
+	// independent of which local port the client binds. Route the second
+	// attempt through --map onto a free local port (permitOpenProbePort,
+	// unused elsewhere) so it clears the client-side preflight and actually
+	// reaches the server's public-key callback, where single-session must
+	// reject it.
+	out, err := execInOK("client", "timeout 20 tw client connect --map "+permitOpenProbePort+":"+echoPort+" 2>&1")
 	if err == nil {
 		fatalf(t, "second concurrent session's `tw client connect` exited 0 (expected timeout/error):\n%s", out)
 	}
