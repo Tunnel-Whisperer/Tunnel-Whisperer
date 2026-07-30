@@ -20,6 +20,7 @@ commands:
   "server user delete":      [TestE2E/Revocation]
   "server user unregister":  [TestE2E/Revocation]
   "server user edit":        {exempt: "pending: interactive wizard; cover when mappings-edit gets flags"}
+  "server user single-session": [TestE2E/PermitOpen]
   "server app list":         {exempt: "pending: app catalog scenario not yet written"}
   "server app create":       {exempt: "pending: app catalog scenario not yet written"}
   "server app edit":         {exempt: "pending: app catalog scenario not yet written"}

@@ -47,8 +47,9 @@ type UserInfo struct {
 
 // CreateUserRequest holds the parameters for creating a new user.
 type CreateUserRequest struct {
-	Name     string               `json:"name"`
-	Mappings []config.PortMapping `json:"mappings"`
+	Name          string               `json:"name"`
+	Mappings      []config.PortMapping `json:"mappings"`
+	SingleSession bool                 `json:"single_session"`
 }
 
 // ListApplications returns all configured application templates.
@@ -305,11 +306,17 @@ func (o *Ops) CreateUser(ctx context.Context, req CreateUserRequest, progress Pr
 		progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("writing client config: %w", err)
 	}
+	if req.SingleSession {
+		if err := os.WriteFile(filepath.Join(userDir, ".single-session"), nil, 0644); err != nil {
+			progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "failed", Error: err.Error()})
+			return fmt.Errorf("writing single-session marker: %w", err)
+		}
+	}
 	progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "completed"})
 
 	// Step 4: Update authorized_keys.
 	progress(ProgressEvent{Step: 4, Total: 4, Label: "Updating authorized_keys", Status: "running"})
-	if err := appendAuthorizedKey(pubAuthorized, req.Name, serverPorts, false); err != nil {
+	if err := appendAuthorizedKey(pubAuthorized, req.Name, serverPorts, req.SingleSession); err != nil {
 		progress(ProgressEvent{Step: 4, Total: 4, Label: "Updating authorized_keys", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("updating authorized_keys: %w", err)
 	}

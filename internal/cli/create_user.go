@@ -14,8 +14,9 @@ import (
 )
 
 var (
-	createUserFrom string
-	createUserMaps []string
+	createUserFrom   string
+	createUserMaps   []string
+	createUserSingle bool
 )
 
 var createUserCmd = &cobra.Command{
@@ -37,6 +38,7 @@ func init() {
 	createUserCmd.Flags().StringVar(&createUserFrom, "from", "", "copy port mappings from an existing user")
 	createUserCmd.Flags().StringArrayVarP(&createUserMaps, "map", "m", nil,
 		"port mapping clientPort:serverPort (repeatable), e.g. -m 8080:80")
+	createUserCmd.Flags().BoolVar(&createUserSingle, "single-session", false, "enforce one concurrent session for this user")
 	serverUserCmd.AddCommand(createUserCmd)
 }
 
@@ -125,7 +127,7 @@ func createUserInline(o *ops.Ops, name string) error {
 		return fmt.Errorf("at least one port mapping is required (use --map clientPort:serverPort or --from <user>)")
 	}
 
-	req := ops.CreateUserRequest{Name: name, Mappings: mappings}
+	req := ops.CreateUserRequest{Name: name, Mappings: mappings, SingleSession: createUserSingle}
 	if err := o.CreateUser(context.Background(), req, cliProgress); err != nil {
 		return err
 	}

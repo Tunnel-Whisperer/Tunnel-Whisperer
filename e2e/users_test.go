@@ -126,27 +126,12 @@ func testPermitOpen(t *testing.T) {
 		"the entry carries the single-session option",
 		"a second concurrent connect for alice is rejected — confirmed from the server log's 'single-session: rejecting duplicate connection', not just the client's exit code")
 
-	// Deviation from the brief: `tw server user create` hardcodes
-	// singleSession=false (internal/ops/user.go, CreateUser's
-	// appendAuthorizedKey call) and there is currently no CLI command that
-	// can turn it on — SetUserSingleSession (internal/ops/user.go) is only
-	// reachable via the dashboard's PUT /api/users/<name>/single-session
-	// (internal/dashboard/handlers_api.go, apiUserSingleSession; found to be
-	// unauthenticated). So a plain `tw server user create` alice does NOT
-	// produce a single-session entry — confirmed live: the authorized_keys
-	// line right after create+apply was
-	// `permitopen="127.0.0.1:7777" ssh-ed25519 ... alice@tw` with no
-	// single-session option. This looks like a real product gap (a
-	// documented security feature, see CLAUDE.md and
-	// relay-ssh-security-model memory, with zero CLI reachability) worth
-	// flagging — see task-7-report.md — but fixing it is out of scope here
-	// (no product-code changes for this task). The dashboard API is the only
-	// currently-reachable path, so use it to turn single-session on for
-	// alice, which lets this scenario genuinely exercise the feature.
-	dashOut := execIn(t, "server",
-		`curl -sS -X PUT -d '{"enabled":true}' http://127.0.0.1:8080/api/users/alice/single-session`)
-	if !strings.Contains(dashOut, `"status":"ok"`) {
-		fatalf(t, "enabling single-session for alice via the dashboard API failed:\n%s", dashOut)
+	// Enable via the CLI (this used to be reachable only through the
+	// dashboard API — the documented product gap, now closed).
+	execIn(t, "server", "tw server user single-session alice on")
+	ssOut := execIn(t, "server", "tw server user single-session alice")
+	if !strings.Contains(ssOut, "on") {
+		fatalf(t, "single-session state not reported as on:\n%s", ssOut)
 	}
 
 	// The authorized_keys entry for alice must carry ONLY the granted
