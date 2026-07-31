@@ -242,7 +242,8 @@ Analytics works in both server and client modes. In server mode, stats are track
 Prefer the CLI/dashboard over hand-editing: config mutations go through
 validated setters that persist atomically (`tw proxy set`, `tw client
 listen`, the dashboard settings pages). `tw config view` prints the active
-file. Note that hand-editing the `mode` field breaks the `mode_auth`
+file (add `--as-json` for JSON output). Note that hand-editing the `mode`
+field breaks the `mode_auth`
 signature and makes role commands fail.
 
 ## Config change detection

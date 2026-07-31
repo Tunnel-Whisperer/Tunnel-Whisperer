@@ -22,6 +22,7 @@ CURRENT   NAME              ID         ROLE     USER      RELAY
 ```bash
 tw config current-context    # print just the active context's name
 tw config view               # print the active context's config.yaml
+tw config view --as-json     # same config as indented JSON (for scripts/jq)
 ```
 
 ## IDs as Selectors

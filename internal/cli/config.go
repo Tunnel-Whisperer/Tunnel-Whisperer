@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/api"
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/ops"
+	"gopkg.in/yaml.v3"
 )
 
 var configCmd = &cobra.Command{
@@ -87,10 +89,13 @@ var configViewCmd = &cobra.Command{
 	RunE:  runConfigView,
 }
 
+var configViewAsJSON bool
+
 func init() {
 	configImportCmd.Flags().StringVar(&configImportName, "name", "", "context name (default: relay domain)")
 	configImportCmd.Flags().BoolVar(&configImportActivate, "activate", false, "switch to the imported context immediately (applies its mode)")
 	configImportCmd.Flags().BoolVar(&configImportForce, "force", false, "replace an existing context of the same name without prompting")
+	configViewCmd.Flags().BoolVar(&configViewAsJSON, "as-json", false, "output the config as JSON")
 	configCmd.AddCommand(configGetContextsCmd, configCurrentContextCmd, configUseContextCmd,
 		configNewContextCmd, configRenameContextCmd, configDeleteContextCmd, configImportCmd, configExportCmd,
 		configViewCmd)
@@ -198,12 +203,50 @@ func runConfigView(cmd *cobra.Command, args []string) error {
 		}
 		return fmt.Errorf("reading config: %w", err)
 	}
+	if configViewAsJSON {
+		var v any
+		if err := yaml.Unmarshal(data, &v); err != nil {
+			return fmt.Errorf("parsing config: %w", err)
+		}
+		out, err := json.MarshalIndent(jsonSafe(v), "", "  ")
+		if err != nil {
+			return fmt.Errorf("encoding config as JSON: %w", err)
+		}
+		fmt.Println(string(out))
+		return nil
+	}
 	fmt.Printf("# %s\n", path)
 	if len(data) > 0 && data[len(data)-1] != '\n' {
 		data = append(data, '\n')
 	}
 	os.Stdout.Write(data)
 	return nil
+}
+
+// jsonSafe makes YAML-decoded values JSON-encodable: yaml.v3 decodes maps with
+// non-string keys (e.g. client.port_overrides) as map[any]any, which
+// encoding/json rejects.
+func jsonSafe(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, val := range t {
+			t[k] = jsonSafe(val)
+		}
+		return t
+	case map[any]any:
+		m := make(map[string]any, len(t))
+		for k, val := range t {
+			m[fmt.Sprint(k)] = jsonSafe(val)
+		}
+		return m
+	case []any:
+		for i := range t {
+			t[i] = jsonSafe(t[i])
+		}
+		return t
+	default:
+		return v
+	}
 }
 
 func runConfigRenameContext(cmd *cobra.Command, args []string) error {

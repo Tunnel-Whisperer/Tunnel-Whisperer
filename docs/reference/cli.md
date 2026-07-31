@@ -189,7 +189,7 @@ profile to disk and unseals the target. These commands work in any mode.
 | `tw config import <bundle.twctx>` | Import a bundle as a new context. Prompts before replacing an existing context of the same name. |
 | `tw config export [name\|id]` | Export a context as a portable bundle (`tw_<name>.twctx`). No argument exports the active context. |
 | `tw config export-user <name>` | **Server only.** Package one of this server's users as a `role: client` context bundle (`<name>-tw-context.twctx`). The client imports it with `tw config import <file> --activate`. |
-| `tw config view` | Print the active config file (path header + raw YAML). |
+| `tw config view` | Print the active config file (path header + raw YAML). `--as-json` prints it as indented JSON instead (no path header). |
 
 ### `tw config import` flags
 
