@@ -49,6 +49,25 @@ tw config delete-context <name|id>
 tw server join-relay relay2.example.com --new-context relay2
 ```
 
+## One Person, All Roles
+
+Running relay admin and server (or client) as one person on one machine is a
+first-class setup — each role simply lives in its own context. To make the
+relay admin's own machine a server, don't do the join-file handshake with
+yourself; from the relay context run:
+
+```bash
+tw relay add-server            # creates context server-<relay label>, e.g. server-relay2
+tw config use-context server-relay2
+tw server start
+```
+
+One command enrolls a freshly generated server identity on the relay and
+stores it as a new, mode-signed context (`--switch` also activates it). The
+relay context is untouched, and the new context gets its own dashboard/API
+ports so both daemons can run side by side. See
+[Tenant Management](../relay/tenants.md#same-machine-self-enrollment).
+
 !!! warning "Deleting the last context is a full reset"
     If you delete the only remaining (active) context, `tw` removes **all** configuration from the machine — identity, keys, relay data — after an explicit confirmation. It refuses if the `tw` service is running (stop it first with `tw service stop`).
 

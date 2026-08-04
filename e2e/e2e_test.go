@@ -43,6 +43,7 @@ func TestE2E(t *testing.T) {
 		{"Revocation", testRevocation},
 		{"Contexts", testContexts},
 		{"SecondTenant", testSecondTenant},
+		{"SelfEnroll", testSelfEnroll},
 		{"Dashboard", testDashboard},
 		{"RelayResilience", testRelayResilience},
 		{"Teardown", testTeardown},

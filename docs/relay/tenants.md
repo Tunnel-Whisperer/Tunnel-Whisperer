@@ -86,6 +86,40 @@ The response carries the admin-assigned coordinates (relay host, path,
 port, SSH user) plus a signature binding the server's mode to its keypair.
 `tw server start` brings the tunnel up.
 
+## Same machine? Self-enrollment
+
+When the server you want to enroll **is the admin machine itself** (the
+single-operator setup: one person runs relay, server, and client), skip the
+file exchange — from the relay context:
+
+```bash
+tw relay add-server [<context-name>] [--switch]
+```
+
+One command performs the whole handshake in-process: it generates a fresh
+server identity (UUID, SSH keypair, CA, client certificate) in memory, runs
+the same five enrollment steps as `tw relay enroll-server`, signs the new
+profile's mode with the relay key, and stores the result as a new context
+(default name `server-<relay's first DNS label>`). Then:
+
+```bash
+tw config use-context server-relay   # or pass --switch above
+tw server start
+```
+
+Notes:
+
+- The active relay context is never modified, and no `tw_join_*.json` files
+  are written.
+- The new context is **born mode-signed** — none of the "mode is unsigned"
+  warnings that appear mid-way through the file-based handshake.
+- If the relay context uses the default dashboard/API ports, the new context
+  gets free ones (printed on creation), so both contexts' daemons can run
+  side by side on the one machine.
+- If storing the context fails after the tenant was enrolled, the enrollment
+  is rolled back automatically; the error names the tenant to remove with
+  `tw relay un-enroll-server` if even the rollback fails.
+
 ## Listing tenants
 
 ```bash

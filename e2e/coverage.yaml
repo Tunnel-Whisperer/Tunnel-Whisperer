@@ -6,7 +6,8 @@ commands:
   "relay test":              [TestE2E/RelayInstall]
   "relay status":            [TestE2E/RelayInstall, TestE2E/Teardown]
   "relay enroll-server":            [TestE2E/ServerJoin, TestE2E/SecondTenant]
-  "relay un-enroll-server":        [TestE2E/SecondTenant]
+  "relay add-server":        [TestE2E/SelfEnroll]
+  "relay un-enroll-server":        [TestE2E/SecondTenant, TestE2E/SelfEnroll]
   "relay get-servers":           [TestE2E/SecondTenant]
   "relay destroy":           [TestE2E/Teardown]
   "relay ssh":               {exempt: "interactive relay terminal; no scriptable assertion yet"}

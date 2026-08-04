@@ -52,6 +52,7 @@ Everything the relay owner does to the relay. All subcommands require
 | Command | Description |
 |---|---|
 | `tw relay create` | Provision a relay server — interactive wizard (cloud providers via Terraform, or a manual bring-your-own-VM flow). Writes the relay's portable context bundle (domain sanitized: `tw_relay-example-com.twctx`) on success. |
+| `tw relay add-server [<context-name>]` | Enroll **this machine** as a server tenant in one command and store the result as a new, ready-to-use context (default name `server-<relay's first DNS label>`). The single-operator shortcut: no join/response files, no context switching, and the context is born mode-signed. |
 | `tw relay destroy` | Destroy the provisioned relay (Terraform for cloud relays; prompts for AWS credentials when needed). |
 | `tw relay enroll-server <join-request.json>` | Enroll a joining server onto the relay: registers it, allocates its port, rewrites the relay's Caddyfile/Xray config/`authorized_keys`, and writes a `tw_join_response_<server-id>.json` file to send back. |
 | `tw relay get-servers` | List servers registered on the relay (`SERVER-ID`, `PATH`, `PORT`, `ENROLLED`, `TUNNEL` up/down — live-checked against the relay). |
@@ -81,6 +82,16 @@ The manual flow generates an install script (`tw-install-<domain>.sh`, printed
 and saved to the current directory) that you run as root on your own VM — no
 Terraform, no cloud credentials. The Terraform flow requires `terraform` in
 `PATH` and prompts for provider credentials.
+
+### `tw relay add-server` flags
+
+| Flag | Description |
+|---|---|
+| `--switch` | Switch to the new server context right after creating it (`tw server start` is then the only remaining step). |
+
+If the relay context uses the default daemon ports, the new server context is
+given free ones instead, so both contexts' daemons can run side by side on the
+same machine; the chosen ports are printed.
 
 ### `tw relay un-enroll-server` flags
 
@@ -120,6 +131,10 @@ tw relay enroll-server tw_join_<server-id>.json
 tw server join-relay --apply tw_join_response_<server-id>.json
 tw server start
 ```
+
+When the server *is* the relay admin's own machine, skip the file handshake
+entirely: [`tw relay add-server`](#tw-relay-relay-role) does the whole
+exchange in-process.
 
 ### `tw server user`
 
