@@ -86,6 +86,10 @@ func (o *Ops) TestCloudCredentials(providerName, token, awsSecret string) error 
 	case "DigitalOcean":
 		return testHTTPToken("https://api.digitalocean.com/v2/account", token)
 	case "AWS":
+		// Both empty: use the AWS credentials from the environment.
+		if token == "" && awsSecret == "" {
+			return nil
+		}
 		if len(token) < 16 {
 			return fmt.Errorf("Access Key ID looks too short")
 		}

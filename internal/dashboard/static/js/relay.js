@@ -170,6 +170,7 @@ function buildCredFields(provider) {
 
   if (provider.name === 'AWS') {
     fields.innerHTML = `
+      <p class="text-dim mb-16">Leave both blank to use the AWS credentials from the environment of the machine running tw.</p>
       <div class="form-group">
         <label>AWS Access Key ID</label>
         <input type="text" id="cred-token">

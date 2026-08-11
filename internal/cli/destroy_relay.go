@@ -49,18 +49,21 @@ func runDestroyRelayServer(cmd *cobra.Command, args []string) error {
 	var creds map[string]string
 	if status.Provider == "AWS" {
 		fmt.Println("  AWS credentials needed to destroy resources.")
+		fmt.Println("  Leave both blank to use the AWS credentials from your environment.")
 		fmt.Print("  AWS Access Key ID: ")
 		scanner.Scan()
 		keyID := strings.TrimSpace(scanner.Text())
 		fmt.Print("  AWS Secret Access Key: ")
 		scanner.Scan()
 		secret := strings.TrimSpace(scanner.Text())
-		if keyID == "" || secret == "" {
-			return fmt.Errorf("both AWS Access Key ID and Secret Access Key are required")
+		if (keyID == "") != (secret == "") {
+			return fmt.Errorf("provide both AWS Access Key ID and Secret Access Key, or leave both blank")
 		}
-		creds = map[string]string{
-			"AWS_ACCESS_KEY_ID":     keyID,
-			"AWS_SECRET_ACCESS_KEY": secret,
+		if keyID != "" {
+			creds = map[string]string{
+				"AWS_ACCESS_KEY_ID":     keyID,
+				"AWS_SECRET_ACCESS_KEY": secret,
+			}
 		}
 		fmt.Println()
 	}

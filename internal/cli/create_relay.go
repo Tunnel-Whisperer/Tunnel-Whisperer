@@ -208,14 +208,15 @@ func runCreateRelayServer(cmd *cobra.Command, args []string) error {
 
 	var token, awsSecretKey string
 	if selected.Name == "AWS" {
+		fmt.Println("      Leave both blank to use the AWS credentials from your environment.")
 		fmt.Print("      AWS Access Key ID: ")
 		scanner.Scan()
 		token = strings.TrimSpace(scanner.Text())
 		fmt.Print("      AWS Secret Access Key: ")
 		scanner.Scan()
 		awsSecretKey = strings.TrimSpace(scanner.Text())
-		if token == "" || awsSecretKey == "" {
-			return fmt.Errorf("both AWS Access Key ID and Secret Access Key are required")
+		if (token == "") != (awsSecretKey == "") {
+			return fmt.Errorf("provide both AWS Access Key ID and Secret Access Key, or leave both blank")
 		}
 	} else {
 		fmt.Printf("      %s: ", selected.TokenName)

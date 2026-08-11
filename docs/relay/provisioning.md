@@ -57,7 +57,10 @@ walks through:
 2. **Cloud provider** — Hetzner, DigitalOcean, or AWS.
 3. **Credentials** — API token (Hetzner/DO) or Access Key + Secret (AWS). The
    wizard prints the exact console page where to generate them, then validates
-   them against the provider API before touching anything.
+   them against the provider API before touching anything. For AWS, leave both
+   fields blank to use the credentials from your environment instead
+   (`AWS_PROFILE`, SSO session, instance role — whatever Terraform's AWS
+   provider resolves); `tw relay destroy` behaves the same way.
 4. **Confirm and provision** — `tw` generates cloud-init + Terraform config
    into `<config-dir>/relay/` and runs `terraform init` and
    `terraform apply`. SSH keys, the Xray UUID, and the CA/client certificates
@@ -71,7 +74,7 @@ walks through:
 | -------- | -------- | -------------- | ---------- |
 | Hetzner | cx22 | nbg1 (Nuremberg) | API Token |
 | DigitalOcean | s-1vcpu-1gb | fra1 (Frankfurt) | API Token |
-| AWS | t3.micro | us-east-1 | Access Key + Secret Key |
+| AWS | t3.micro | us-east-1 | Access Key + Secret Key, or the environment |
 
 All providers use an Ubuntu 24.04 image on the smallest sensible tier — the
 relay only shuffles encrypted bytes and needs almost no resources.
@@ -188,7 +191,8 @@ tw relay destroy
 - **Cloud relays** — saves the Caddy TLS certificates for reuse (best-effort,
   30-second timeout if the relay is unreachable), runs
   `terraform destroy`, then removes the local relay state. AWS asks for
-  credentials again; Hetzner/DO reuse the stored token.
+  credentials again (or blank, to use your environment); Hetzner/DO reuse the
+  stored token.
 - **Manual relays** — nothing is executed on the VM; `tw` forgets the relay
   marker and local state. Decommission the VM yourself.
 

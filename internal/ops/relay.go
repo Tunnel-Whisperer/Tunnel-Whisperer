@@ -329,8 +329,11 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 	tfEnv := map[string]string{}
 	var tfvars string
 	if req.ProviderName == "AWS" {
-		tfEnv["AWS_ACCESS_KEY_ID"] = req.Token
-		tfEnv["AWS_SECRET_ACCESS_KEY"] = req.AWSSecretKey
+		// Exported only when given (terraform inherits our environment automatically)
+		if req.Token != "" && req.AWSSecretKey != "" {
+			tfEnv["AWS_ACCESS_KEY_ID"] = req.Token
+			tfEnv["AWS_SECRET_ACCESS_KEY"] = req.AWSSecretKey
+		}
 	} else {
 		for _, p := range CloudProviders() {
 			if p.Key == req.ProviderKey {
@@ -501,6 +504,7 @@ func (o *Ops) SaveManualRelay(domain, ip string, sshOpen bool) error {
 //   - A manual marker already matching the imported relay's domain: keep it.
 //   - Otherwise (no marker, or a stale marker from a previously-imported relay):
 //     synthesize the manual marker from the imported config (IP via DNS).
+//
 // ssh_open defaults false; it only affects whether the UI offers direct SSH.
 func (o *Ops) ensureRelayMarker() error {
 	relayDir := config.RelayDir()
