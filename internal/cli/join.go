@@ -19,7 +19,9 @@ var joinCmd = &cobra.Command{
 The issuer decides the role (server tenant or client user). When prompted,
 READ THE DISPLAYED STRING ALOUD to the issuer — they approve only on an
 exact match. The result is stored as a new context; on a fresh machine it
-is activated immediately.`,
+is activated immediately. The context name is auto-derived from the relay
+host (server role) or the granted username (client role) unless --name is
+given.`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		o, err := ops.New() // same constructor as relay_addserver.go:42
@@ -64,5 +66,6 @@ func promptResolvePort(t config.Tunnel) int {
 }
 
 func init() {
+	joinCmd.Flags().StringVar(&joinName, "name", "", "context name (default: auto-derived from relay host / username)")
 	rootCmd.AddCommand(joinCmd)
 }
