@@ -23,6 +23,8 @@ type Server struct {
 	CACertPath string // path to this server's CA PEM on the relay, e.g. /etc/caddy/ca/<id>.crt
 	Upstream   string // reverse_proxy upstream, e.g. "h2c://127.0.0.1:10000"
 	Role       string // "server" or "relay"
+	EnrollTok  string // /enroll route token (first 8 hex of the tenant UUID)
+	EnrollPort int    // loopback port the issuer's enroll listener binds on the relay
 }
 
 // Config holds everything needed to render the relay Caddyfile.

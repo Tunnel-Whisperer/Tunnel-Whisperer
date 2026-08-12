@@ -52,8 +52,8 @@ func renderRelayAuthorizedKeys(adminPubKey string, servers []RegisteredServer, s
 	lines := []string{adminLine}
 	for _, s := range servers {
 		lines = append(lines, fmt.Sprintf(
-			`from="127.0.0.1",restrict,port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:%d" %s`,
-			s.RemotePort, strings.TrimSpace(s.SSHPubkey)))
+			`from="127.0.0.1",restrict,port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:%d",permitlisten="127.0.0.1:%d" %s`,
+			s.RemotePort, enrollPort(s.RemotePort), strings.TrimSpace(s.SSHPubkey)))
 	}
 	return strings.Join(lines, "\n") + "\n"
 }
@@ -78,6 +78,8 @@ func (o *Ops) relayTenantState(registered []RegisteredServer) ([]caddy.Server, [
 		CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", adminID),
 		Upstream:   fmt.Sprintf("h2c://127.0.0.1:%d", adminRemotePort+10000),
 		Role:       "relay",
+		EnrollTok:  first8(cfg.Xray.UUID),
+		EnrollPort: enrollPort(adminRemotePort),
 	}}
 	tenants := []relayxray.Tenant{{
 		ServerID:   adminID,
@@ -93,6 +95,8 @@ func (o *Ops) relayTenantState(registered []RegisteredServer) ([]caddy.Server, [
 			CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", s.ServerID),
 			Upstream:   fmt.Sprintf("h2c://127.0.0.1:%d", s.RemotePort+10000),
 			Role:       "server",
+			EnrollTok:  first8(s.UUID),
+			EnrollPort: enrollPort(s.RemotePort),
 		})
 		tenants = append(tenants, relayxray.Tenant{
 			ServerID:   s.ServerID,

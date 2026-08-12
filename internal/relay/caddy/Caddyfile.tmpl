@@ -1,7 +1,11 @@
 {{.Domain}} {
     tls {
         client_auth {
-            mode require_and_verify
+            # verify_if_given: enrollees have no client cert yet, so the
+            # /enroll routes must admit a bare TLS handshake. Presented certs
+            # are still verified against the trust pool, and every tunnel
+            # route below requires a verified CN — no cert, no tunnel.
+            mode verify_if_given
             trust_pool file{{range .Servers}} {{.CACertPath}}{{end}}
         }
         # TLS 1.3 only: a single arg to `protocols` sets the minimum, pinning 1.3.
@@ -23,8 +27,15 @@
             }
         }
     }
+    @enroll_{{.ID}} path /enroll/{{.EnrollTok}}/*
+    handle @enroll_{{.ID}} {
+        reverse_proxy 127.0.0.1:{{.EnrollPort}}
+    }
 {{end}}
     handle {
+        respond 404
+    }
+    handle_errors {
         respond 404
     }
 }

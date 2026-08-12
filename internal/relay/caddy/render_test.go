@@ -21,7 +21,7 @@ func TestRenderCaddyfileSingleServer(t *testing.T) {
 	}
 	for _, want := range []string{
 		"relay.example.com {",
-		"mode require_and_verify",
+		"mode verify_if_given",
 		"trust_pool file /etc/caddy/ca/tw-server.crt",
 		"protocols tls1.3",
 		"path /tw*",
@@ -86,5 +86,33 @@ func TestRenderCaddyfileIsolation(t *testing.T) {
 	a := out[strings.Index(out, "@web-01-a1b2c3d4"):strings.Index(out, "@db-02-99887766")]
 	if strings.Contains(a, "db-02-99887766") {
 		t.Errorf("web-01 handle leaks db-02 id:\n%s", a)
+	}
+}
+
+func TestRenderEnrollRoutes(t *testing.T) {
+	out, err := RenderCaddyfile(Config{
+		Domain: "relay.example.com",
+		Servers: []Server{{
+			ID: "host-a1b2c3d4", Path: "/tw/host-a1b2c3d4",
+			CACertPath: "/etc/caddy/ca/host-a1b2c3d4.crt",
+			Upstream:   "h2c://127.0.0.1:30000", Role: "relay",
+			EnrollTok: "a1b2c3d4", EnrollPort: 40000,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	for _, want := range []string{
+		"mode verify_if_given",
+		"@enroll_host-a1b2c3d4 path /enroll/a1b2c3d4/*",
+		"reverse_proxy 127.0.0.1:40000",
+		"handle_errors {",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("Caddyfile missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "require_and_verify") {
+		t.Error("require_and_verify must be gone — enrollees have no cert yet")
 	}
 }
