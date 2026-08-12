@@ -12,6 +12,7 @@ commands:
   "relay destroy":           [TestE2E/Teardown]
   "relay ssh":               {exempt: "interactive relay terminal; no scriptable assertion yet"}
   "relay invite":            {exempt: "pending: zero-file-enrollment e2e scenario lands in task 12 of the SDD plan (ServerJoin/InviteBurn rewrite)"}
+  "join":                    {exempt: "pending: zero-file-enrollment e2e scenario lands in task 12 of the SDD plan (ServerJoin/InviteBurn rewrite)"}
   "server join-relay":       [TestE2E/ServerJoin, TestE2E/SecondTenant]
   "server start":            [TestE2E/ServerJoin]
   "server test":             [TestE2E/ServerJoin]
