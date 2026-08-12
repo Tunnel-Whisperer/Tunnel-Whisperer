@@ -1,8 +1,9 @@
 # Zero-file enrollment: invite codes + PAKE — design
 
-2026-08-12. Status: draft for user review. Consolidates the 2026-07-31 design
-session (Approach 1 locked, then paused) plus the local/remote split pinned by
-the shipped `tw relay add-server` (2026-08-04 spec).
+2026-08-12. Status: APPROVED by user 2026-08-12 with one amendment —
+`port_overrides` is retained (see Port handling). Consolidates the 2026-07-31
+design session (Approach 1 locked, then paused) plus the local/remote split
+pinned by the shipped `tw relay add-server` (2026-08-04 spec).
 
 ## Problem
 
@@ -112,17 +113,20 @@ yet, which is exactly why it must not be `requireMode`-gated (the lesson from
 5. Enrollee writes a locally-born client context. No private key ever left
    the client machine — a strict improvement over today's bundle.
 
-### Port handling (replaces port_overrides)
+### Port handling
 
-`port_overrides` existed only because config.yaml was authored server-side
-and re-imports clobbered local edits. With locally-born configs it is
-**deleted**. The server sends down only *server-side* ports plus optional
-suggested local ports; `tw join` preflight-binds each local port on the
-client during enrollment, prompts the human on conflict, and writes the
-final mapping into the local config. LocalPort becomes client-owned — a plain
-config edit later, nothing to survive a re-import. (Post-enrollment mapping
-updates when the admin adds services: follow-up feature — discover permitted
-ports over the live tunnel; not in this spec.)
+The server sends down only *server-side* ports plus optional suggested local
+ports; `tw join` preflight-binds each local port on the client during
+enrollment, prompts the human on conflict, and writes the final mapping into
+the locally-born config.
+
+**`port_overrides` STAYS** (user amendment, 2026-08-12): the persisted
+client-side `remote_port → local_port` map and its setters
+(`ops.SetClientPortOverride`, CLI, dashboard API) remain the supported way to
+change a local port *after* the config is created — the user may need it
+post-enrollment, and it beats hand-editing config.yaml. `EffectiveTunnels`
+precedence is unchanged. (Post-enrollment discovery of newly-permitted ports
+over the live tunnel: still a follow-up feature, not in this spec.)
 
 ## Deletions
 
@@ -131,7 +135,6 @@ ports over the live tunnel; not in this spec.)
 - `tw relay enroll-server <file>` — superseded by `tw relay invite`;
   `EnrollServer(req)` core stays, only the file front-end goes.
 - `tw config export-user` and the user-bundle flow (private-key transfer).
-- `port_overrides` mechanism end to end.
 - Dashboard "Enroll a Server" file upload/download — replaced by the invite
   flow's CLI; dashboard mirror is follow-up (CLI-first rule).
 
@@ -140,7 +143,9 @@ machine migration — the relay bundle is the relay's only backup). Open
 question below confirms this scoping, since the 2026-07-31 wording ("bundle
 export deleted") was broader.
 
-## Open questions (settle at user review, before writing-plans)
+## Open questions — SETTLED at user review 2026-08-12: proposals below stand
+as written ("the rest is ok"). The only review amendment was port_overrides
+retention, recorded in Port handling above.
 
 1. **Code format/entropy** — proposal: `NN-word-word` wormhole-style
    (channel-id + 2 diceware words); low entropy is safe *because* PAKE +
