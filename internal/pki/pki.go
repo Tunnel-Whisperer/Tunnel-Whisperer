@@ -104,6 +104,65 @@ func IssueClientCert(caCertPEM, caKeyPEM []byte, commonName string) (certPEM, ke
 	return certPEM, keyPEM, nil
 }
 
+// GenerateKeyAndCSR generates a fresh ECDSA P-256 key and a CSR for it. The
+// CSR subject is informational only — the signer forces the final CN.
+func GenerateKeyAndCSR(commonName string) (keyPEM, csrPEM []byte, err error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, fmt.Errorf("generating key: %w", err)
+	}
+	der, err := x509.CreateCertificateRequest(rand.Reader,
+		&x509.CertificateRequest{Subject: pkix.Name{CommonName: commonName}}, key)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating CSR: %w", err)
+	}
+	csrPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der})
+	keyPEM, err = marshalKey(key)
+	if err != nil {
+		return nil, nil, err
+	}
+	return keyPEM, csrPEM, nil
+}
+
+// SignClientCSR issues a client-auth certificate for the CSR's public key,
+// signed by the CA. The subject CN is FORCED to commonName — the relay's CN
+// matcher admits only the server's own CN — and the CSR's subject is ignored.
+// The private key never appears here: it stays with the requester.
+func SignClientCSR(caCertPEM, caKeyPEM, csrPEM []byte, commonName string) ([]byte, error) {
+	caCert, caKey, err := parseCA(caCertPEM, caKeyPEM)
+	if err != nil {
+		return nil, err
+	}
+	blk, _ := pem.Decode(csrPEM)
+	if blk == nil || blk.Type != "CERTIFICATE REQUEST" {
+		return nil, fmt.Errorf("decoding CSR PEM")
+	}
+	csr, err := x509.ParseCertificateRequest(blk.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parsing CSR: %w", err)
+	}
+	if err := csr.CheckSignature(); err != nil {
+		return nil, fmt.Errorf("CSR signature invalid: %w", err)
+	}
+	serial, err := serialNumber()
+	if err != nil {
+		return nil, fmt.Errorf("generating serial: %w", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: commonName},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(certValidity),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, caCert, csr.PublicKey, caKey)
+	if err != nil {
+		return nil, fmt.Errorf("creating client certificate: %w", err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), nil
+}
+
 func parseCA(caCertPEM, caKeyPEM []byte) (*x509.Certificate, *ecdsa.PrivateKey, error) {
 	certBlock, _ := pem.Decode(caCertPEM)
 	if certBlock == nil {
