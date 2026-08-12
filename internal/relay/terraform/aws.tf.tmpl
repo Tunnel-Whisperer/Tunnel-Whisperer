@@ -8,16 +8,8 @@ terraform {
   }
 }
 
-variable "region" {
-  default = "us-east-1"
-}
-
 variable "instance_type" {
   default = "t3.micro"
-}
-
-provider "aws" {
-  region = var.region
 }
 
 data "aws_ami" "ubuntu" {

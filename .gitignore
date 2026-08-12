@@ -10,5 +10,6 @@ CLAUDE.md
 e2e/e2e-report.md
 e2e/video/out/
 .env
-.config/
 *.twctx
+.config/
+.config_*/
