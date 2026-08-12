@@ -197,19 +197,10 @@ func (o *Ops) ListUsers() ([]UserInfo, error) {
 	return users, nil
 }
 
-// CreateUser runs the user creation flow: generates credentials, updates the
-// relay, saves config, and updates authorized_keys.
-func (o *Ops) CreateUser(ctx context.Context, req CreateUserRequest, progress ProgressFunc) error {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-
-	if progress == nil {
-		progress = func(ProgressEvent) {}
-	}
-
-	cfg := o.cfg
-
-	// Validate.
+// validateCreateUser runs the guards shared by CreateUser and InviteUser:
+// name shape, non-empty mappings, a configured relay/UUID, and that the
+// user doesn't already exist.
+func validateCreateUser(cfg config.Config, req CreateUserRequest) error {
 	if req.Name == "" {
 		return fmt.Errorf("user name is required")
 	}
@@ -232,6 +223,26 @@ func (o *Ops) CreateUser(ctx context.Context, req CreateUserRequest, progress Pr
 	if _, err := os.Stat(userDir); err == nil {
 		return fmt.Errorf("user %q already exists", req.Name)
 	}
+	return nil
+}
+
+// CreateUser runs the user creation flow: generates credentials, updates the
+// relay, saves config, and updates authorized_keys.
+func (o *Ops) CreateUser(ctx context.Context, req CreateUserRequest, progress ProgressFunc) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	if progress == nil {
+		progress = func(ProgressEvent) {}
+	}
+
+	cfg := o.cfg
+
+	if err := validateCreateUser(*cfg, req); err != nil {
+		return err
+	}
+
+	userDir := filepath.Join(config.UsersDir(), req.Name)
 
 	// Step 1: Generate credentials.
 	progress(ProgressEvent{Step: 1, Total: 4, Label: "Generating credentials", Status: "running"})

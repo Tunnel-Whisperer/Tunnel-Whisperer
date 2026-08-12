@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/tunnelwhisperer/tw/internal/config"
@@ -17,6 +18,7 @@ var (
 	createUserFrom   string
 	createUserMaps   []string
 	createUserSingle bool
+	createUserInvite bool
 )
 
 var createUserCmd = &cobra.Command{
@@ -39,6 +41,7 @@ func init() {
 	createUserCmd.Flags().StringArrayVarP(&createUserMaps, "map", "m", nil,
 		"port mapping clientPort:serverPort (repeatable), e.g. -m 8080:80")
 	createUserCmd.Flags().BoolVar(&createUserSingle, "single-session", false, "enforce one concurrent session for this user")
+	createUserCmd.Flags().BoolVar(&createUserInvite, "invite", false, "enroll the client over a one-time invite code instead of local key generation")
 	serverUserCmd.AddCommand(createUserCmd)
 }
 
@@ -100,6 +103,10 @@ func runCreateUser(cmd *cobra.Command, args []string) error {
 		return createUserInline(o, strings.TrimSpace(args[0]))
 	}
 
+	if createUserInvite {
+		return fmt.Errorf("--invite requires the user name argument")
+	}
+
 	return createUserInteractive(o)
 }
 
@@ -128,6 +135,23 @@ func createUserInline(o *ops.Ops, name string) error {
 	}
 
 	req := ops.CreateUserRequest{Name: name, Mappings: mappings, SingleSession: createUserSingle}
+
+	if createUserInvite {
+		return o.InviteUser(req, 15*time.Minute, ops.InviteUI{
+			ShowCode: func(code string, expires time.Time) {
+				fmt.Printf("Invite code: %s\n", code)
+				fmt.Printf("Expires:     %s\n", expires.Format(time.Kitchen))
+				fmt.Printf("Waiting for %s to run: tw join <relay-host> <code> ...\n", req.Name)
+			},
+			ConfirmSAS: func(sas string) bool {
+				fmt.Printf("\nSAS: %s\n", sas)
+				fmt.Print("Does the enrollee read back EXACTLY this string? [y/N]: ")
+				line, _ := sharedLine()
+				return line == "y" || line == "Y" || line == "yes"
+			},
+		}, cliProgress)
+	}
+
 	if err := o.CreateUser(context.Background(), req, cliProgress); err != nil {
 		return err
 	}
