@@ -1,17 +1,18 @@
 # Client Role
 
-A **client** is a machine that consumes tunnels: it connects outbound to the relay over HTTPS and gets local `localhost:<port>` listeners that transparently reach services on a remote server's private network. Which ports, and to which server, is decided entirely by the server operator — the client just imports a bundle and connects.
+A **client** is a machine that consumes tunnels: it connects outbound to the relay over HTTPS and gets local `localhost:<port>` listeners that transparently reach services on a remote server's private network. Which ports, and to which server, is decided entirely by the server operator — the client just redeems an invite and connects.
 
-Everything a client needs arrives in one file: a `.twctx` context bundle issued by the server operator (`tw config export-user <name>` on their side). It contains the relay coordinates, the user's port mappings, their SSH key, and the client certificate for the relay's mutual-TLS gate. There is nothing to configure by hand.
+Everything a client needs arrives over one spoken exchange: the server operator runs `tw server user create <name> --invite`, reads you the resulting code over any channel, and you redeem it with `tw join`. Your SSH key and a certificate signing request are generated locally — the private halves never leave this machine — and the server signs the CSR and hands back the relay coordinates, your port mappings, and the signed client certificate for the relay's mutual-TLS gate, all over the same encrypted channel. There is nothing to configure by hand and no file to receive.
 
 !!! warning "One role per profile"
-    Importing and activating a client bundle sets the active profile to `client`; server and relay commands then refuse to run in it. This locks the *profile*, not the machine — to act in another role on the same machine, switch to (or create) a separate [context](../global/contexts.md).
+    Redeeming an invite as a client stores a new profile with mode `client`; server and relay commands then refuse to run in it. This locks the *profile*, not the machine — to act in another role on the same machine, switch to (or create) a separate [context](../global/contexts.md).
 
 ## Lifecycle
 
 ```bash
-# 1. Import the bundle you received (context is auto-named after your user)
-tw config import alice-tw-context.twctx --activate
+# 1. Redeem the invite code the server operator read you
+#    (context is auto-named after your user; read the SAS back to them)
+tw join relay.example.com <code>
 
 # 2. Connect (foreground; or install as a service)
 tw client connect

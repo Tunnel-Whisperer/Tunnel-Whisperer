@@ -43,10 +43,10 @@ tw config rename-context <old|id> <new>
 tw config delete-context <name|id>
 ```
 
-`new-context` preserves the current context — it is sealed to disk and stays in the list, ready to switch back to. A typical use is joining a second relay from an already-configured server:
+`new-context` preserves the current context — it is sealed to disk and stays in the list, ready to switch back to. A typical use is joining a second relay from an already-configured server: `tw join` always stores its result as a new context (auto-named from the relay host or username, or pass `--name` to choose), so joining a second relay doesn't disturb the first:
 
 ```bash
-tw server join-relay relay2.example.com --new-context relay2
+tw join relay2.example.com <code> --name relay2
 ```
 
 ## One Person, All Roles
@@ -113,23 +113,21 @@ When `--name` is omitted, the name is derived from the bundle:
 
 Names are sanitized to lowercase alphanumerics and dashes.
 
-## Issuing User Bundles: `export-user`
+## Issuing Client Identities: `--invite`
 
-Server operators hand out client identities as context bundles too. On the **server**:
-
-```bash
-tw config export-user alice
-# → alice-tw-context.twctx
-```
-
-This packages the user `alice` as a ready-to-import **client** context (keys, client certificate, port mappings). Send the file to the client, who runs:
+Server operators no longer hand out client identities as files. On the **server**:
 
 ```bash
-tw config import alice-tw-context.twctx --activate
-tw client connect
+tw server user create alice -m 8080:80 --invite
 ```
 
-`export-user` is server-mode only. It works whether or not the server daemon is running.
+This mints a one-time code carrying alice's port mappings, and blocks waiting for her to redeem it. She runs, on her own machine:
+
+```bash
+tw join relay.example.com <code>
+```
+
+Both sides show a short authentication string; she reads hers aloud, the server operator approves on an exact match, and her SSH key (generated locally — it never transits) plus a signed CSR complete the exchange. The result lands as a ready, mode-signed **client** context on her machine — activated immediately if it's a fresh install, otherwise `tw config use-context <name>` to switch to it. See [Users](../server/users.md) and [Tenants — enrolling a server](../relay/tenants.md#enrolling-a-server) for the full invite mechanics (the client and server flows share the same code+SAS design).
 
 ## Tab Completion
 

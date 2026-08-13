@@ -40,12 +40,12 @@ A server enrolled on a relay, with two users, has this layout:
 ├── client.key               # Private key (PEM) for client.crt
 └── users/
     ├── alice/
-    │   ├── config.yaml      # Client config pre-filled for this user (no mode field; mode is injected on export)
-    │   ├── id_ed25519       # User's SSH private key
+    │   ├── config.yaml      # Client config pre-filled for this user (mode/mode_auth are injected into the invite grant, not stored here)
+    │   ├── id_ed25519       # User's SSH private key — only for users created WITHOUT --invite
     │   ├── id_ed25519.pub   # User's SSH public key (mirrored into authorized_keys)
     │   ├── .applied         # Marker: user is registered on the relay (written by create/apply)
     │   ├── .single-session  # Optional marker: enforce one concurrent session for this user
-    │   └── .mappings-dirty  # Optional marker: mappings changed since the bundle was last exported
+    │   └── .mappings-dirty  # Optional marker: mappings changed since creation/last edit (nothing currently clears it)
     └── bob/
         └── ...
 ```
@@ -127,9 +127,17 @@ files sealed in the `TWBOX1` container format, **with no passphrase**:
 | Bundle | Produced by | Contents |
 |---|---|---|
 | `tw_<name>.twctx` | `tw config export` (and automatically at the end of `tw relay create`) | The full profile of the exported context |
-| `<name>-tw-context.twctx` | `tw config export-user <name>` (or the dashboard download) | A `role: client` context for one user: `config.yaml` (with `mode: client` and a `mode_auth` signature injected), `id_ed25519`, `id_ed25519.pub`, `client.crt`, `client.key` |
 
-The client-side `config.yaml` inside a user bundle is pre-filled with:
+Client identities are no longer packaged as a separate per-user bundle type —
+`tw server user create --invite` / `tw join` deliver them directly over an
+encrypted, SAS-confirmed channel instead of a file (see
+[Tenants](../relay/tenants.md#enrolling-a-server) and
+[Users](../server/users.md#inviting-a-client)). The resulting client context,
+once stored, is still a perfectly ordinary context and can be exported with
+`tw config export` like any other — that export is what produces a
+`tw_<name>.twctx` for it, e.g. to move it to another machine of your own.
+
+Either way, a client context's `config.yaml` is pre-filled with:
 
 - `mode: client` (plus the server-signed `mode_auth` block)
 - `xray.uuid` — the user's unique UUID
@@ -138,13 +146,13 @@ The client-side `config.yaml` inside a user bundle is pre-filled with:
 - `client.server_ssh_port` — matching the server's SSH port
 - `client.tunnels` — the port mappings defined for the user
 
-Certificate paths are **not** stored in the bundle config — they are derived
-from the config dir at runtime, so a bundle works unchanged across platforms
-and `TW_CONFIG_DIR` values.
+Certificate paths are **not** stored in the config — they are derived from
+the config dir at runtime, so a context works unchanged across platforms and
+`TW_CONFIG_DIR` values.
 
-!!! tip "Deploying a user bundle"
+!!! tip "Receiving a client identity"
     ```bash
-    tw config import alice-tw-context.twctx --activate
+    tw join relay.example.com <code>
     tw client connect
     ```
 

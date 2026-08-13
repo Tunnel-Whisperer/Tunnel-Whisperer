@@ -34,9 +34,10 @@ tw server start
 
 | Command | Description |
 |---|---|
-| [`tw relay`](#tw-relay-relay-role) | Manage the relay server (relay role): provision, destroy, enroll servers, SSH in |
-| [`tw server`](#tw-server-server-role) | Server-mode commands: run the server, join a relay, manage users and app templates |
+| [`tw relay`](#tw-relay-relay-role) | Manage the relay server (relay role): provision, destroy, invite servers, SSH in |
+| [`tw server`](#tw-server-server-role) | Server-mode commands: run the server, manage users and app templates |
 | [`tw client`](#tw-client-client-role) | Client-mode commands: connect, listen address |
+| [`tw join`](#tw-join) | Join a relay with a spoken invite code — works with no mode configured; the issuer decides the role |
 | [`tw config`](#tw-config-contexts) | Manage relay contexts (switch between relays/identities), import/export bundles |
 | [`tw status`](#tw-status) | Overall status: active context, mode, and its live status (ungated — works on any machine) |
 | [`tw dashboard`](#tw-dashboard) | Start the web dashboard (with server/client auto-start) |
@@ -54,7 +55,7 @@ Everything the relay owner does to the relay. All subcommands require
 | `tw relay create` | Provision a relay server — interactive wizard (cloud providers via Terraform, or a manual bring-your-own-VM flow). Writes the relay's portable context bundle (domain sanitized: `tw_relay-example-com.twctx`) on success. |
 | `tw relay add-server [<context-name>]` | Enroll **this machine** as a server tenant in one command and store the result as a new, ready-to-use context (default name `server-<relay's first DNS label>`). The single-operator shortcut: no join/response files, no context switching, and the context is born mode-signed. |
 | `tw relay destroy` | Destroy the provisioned relay (Terraform for cloud relays; prompts for AWS credentials when needed). |
-| `tw relay enroll-server <join-request.json>` | Enroll a joining server onto the relay: registers it, allocates its port, rewrites the relay's Caddyfile/Xray config/`authorized_keys`, and writes a `tw_join_response_<server-id>.json` file to send back. |
+| `tw relay invite [--ttl 15m]` | Mint a one-time code that enrolls a remote server — no files. Prints the code, waits for the enrollee's `tw join`, shows a short authentication string (SAS) to confirm against their read-back, then registers it, allocates its port, and rewrites the relay's Caddyfile/Xray config/`authorized_keys` live. |
 | `tw relay get-servers` | List servers registered on the relay (`SERVER-ID`, `PATH`, `PORT`, `ENROLLED`, `TUNNEL` up/down — live-checked against the relay). |
 | `tw relay un-enroll-server <server-id>` | Un-enroll a server from the relay and kill its live connections. Prints the server's details, then asks for confirmation. |
 | `tw relay ssh` | Open an interactive SSH shell on the relay server (through the tunnel). |
@@ -93,6 +94,12 @@ If the relay context uses the default daemon ports, the new server context is
 given free ones instead, so both contexts' daemons can run side by side on the
 same machine; the chosen ports are printed.
 
+### `tw relay invite` flags
+
+| Flag | Description |
+|---|---|
+| `--ttl <duration>` | Invite lifetime (default `15m`). The invite is single-use regardless of TTL — it burns on the first redemption attempt, successful or not. |
+
 ### `tw relay un-enroll-server` flags
 
 | Flag | Description |
@@ -106,35 +113,16 @@ All subcommands require `mode: server`.
 | Command | Description |
 |---|---|
 | `tw server start` | Start the Tunnel Whisperer server: embedded SSH server, Xray, reverse tunnel, plus the dashboard (if `server.dashboard_port` > 0) and the gRPC API. |
-| `tw server join-relay <relay-host>` | Generate a join request (`tw_join_<server-id>.json`) to send to the relay admin. |
-| `tw server join-relay --apply <response.json>` | Apply the admin's join response: records the relay host, path, and allocated port. |
 | `tw server status` | Server-mode variant of [`tw status`](#tw-status). |
 | `tw server test` | Test connectivity to the relay server. |
 | `tw server user …` | Manage client users (below). |
 | `tw server app …` | Manage application templates (below). |
 
-### `tw server join-relay` flags
-
-| Flag | Description |
-|---|---|
-| `--apply <file>` | Apply an admin join-response file instead of generating a request. |
-| `--new-context <name>` | First create and switch to a fresh context of this name (preserving the current one), then join in it. |
-
-The join handshake is file-based:
-
-```bash
-# On the server:
-tw server join-relay relay.example.com     # writes tw_join_<server-id>.json
-# Send the file to the relay admin, who runs:
-tw relay enroll-server tw_join_<server-id>.json
-# The admin sends back tw_join_response_<server-id>.json; on the server:
-tw server join-relay --apply tw_join_response_<server-id>.json
-tw server start
-```
-
-When the server *is* the relay admin's own machine, skip the file handshake
-entirely: [`tw relay add-server`](#tw-relay-relay-role) does the whole
-exchange in-process.
+To join a relay in the first place, use the top-level [`tw join`](#tw-join)
+against a code from the admin's `tw relay invite` — there is no `tw server
+join-relay` command. When the server *is* the relay admin's own machine, skip
+the invite exchange entirely: [`tw relay add-server`](#tw-relay-relay-role)
+does the whole thing in-process.
 
 ### `tw server user`
 
@@ -155,14 +143,19 @@ exchange in-process.
 | `-m`, `--map <clientPort:serverPort>` | Port mapping (repeatable), e.g. `-m 8080:80`. |
 | `--from <user>` | Copy port mappings from an existing user (mutually exclusive with `--map`). |
 | `--single-session` | Enforce one concurrent SSH connection per user; subsequent login attempts while one is active are rejected. Takes effect on the next auth attempt. |
+| `--invite` | Enroll the client over a one-time invite code instead of local key generation. Requires the name argument. |
 
 ```bash
 tw server user create alice -m 8080:80 -m 5432:5432
 tw server user create bob --from alice
+tw server user create carol -m 5432:5432 --invite
 ```
 
-To hand the user their credentials, export them as a client context bundle
-with [`tw config export-user`](#tw-config-contexts).
+To hand the user their credentials, use `--invite`: it mints a one-time code,
+waits for the user to run `tw join <relay-host> <code>` on their own machine,
+and confirms a spoken authentication string before granting access. The
+client's SSH key and certificate are generated locally and never transit —
+there is no bundle file to send. See [Users](../server/users.md).
 
 ### `tw server app`
 
@@ -187,6 +180,33 @@ All subcommands require `mode: client`.
 | `tw client status` | Client-mode variant of [`tw status`](#tw-status). |
 | `tw client test` | Test connectivity to the relay server. |
 
+## `tw join`
+
+```
+tw join <relay-host> <code> [--name <ctx>]
+```
+
+Joins a relay using a one-time invite code from its operator (`tw relay
+invite` for a server tenant, `tw server user create --invite` for a client
+user). It's role-neutral and works even with **no mode configured** — the
+issuer's invite decides whether this machine becomes a server or a client.
+
+The exchange is a [SPAKE2](https://en.wikipedia.org/wiki/Password-authenticated_key_agreement)
+PAKE keyed by the code: once the key exchange completes, both sides display a
+short authentication string (SAS, format `XXX-XXX`). Read the displayed
+string aloud to the issuer — they approve only on an exact match, which
+defeats both code theft and MITM. On approval, the result is stored as a new
+context; on a fresh machine (no active profile yet) it's activated
+immediately, otherwise switch to it with `tw config use-context <name>`.
+
+| Flag | Description |
+|---|---|
+| `--name <name>` | Context name (default: derived from the relay host for a server, or the granted username for a client). |
+
+For the client role, port conflicts on this machine are checked during the
+join itself — if a granted local port is busy, you're prompted for a
+replacement before the context is stored.
+
 ## `tw config` (contexts)
 
 Contexts are kubectl-style stored profiles — each one a complete relay/server/
@@ -203,7 +223,6 @@ profile to disk and unseals the target. These commands work in any mode.
 | `tw config delete-context <name\|id>` | Delete a stored context. Deleting the only, active context is a **full reset** (removes all tw configuration from the machine; confirmed interactively, refused while the service is running). |
 | `tw config import <bundle.twctx>` | Import a bundle as a new context. Prompts before replacing an existing context of the same name. |
 | `tw config export [name\|id]` | Export a context as a portable bundle (`tw_<name>.twctx`). No argument exports the active context. |
-| `tw config export-user <name>` | **Server only.** Package one of this server's users as a `role: client` context bundle (`<name>-tw-context.twctx`). The client imports it with `tw config import <file> --activate`. |
 | `tw config view` | Print the active config file (path header + raw YAML). `--as-json` prints it as indented JSON instead (no path header). |
 
 ### `tw config import` flags
@@ -327,8 +346,8 @@ tw completion > "${fpath[1]}/_tw"
 
 Completion is **dynamic** for arguments that name local state — context names
 and IDs (`tw config use-context/delete-context/export/rename-context`), user
-names (`tw server user edit/delete/unregister/apply`, `tw config
-export-user`), enrolled server IDs (`tw relay un-enroll-server`), and app
-template names (`tw server app edit/delete`). Candidates come with
-descriptions (role, relay, port count, applied state) and are read purely
-from local files — completion never dials the relay or the daemon.
+names (`tw server user edit/delete/unregister/apply`), enrolled server IDs
+(`tw relay un-enroll-server`), and app template names (`tw server app
+edit/delete`). Candidates come with descriptions (role, relay, port count,
+applied state) and are read purely from local files — completion never dials
+the relay or the daemon.

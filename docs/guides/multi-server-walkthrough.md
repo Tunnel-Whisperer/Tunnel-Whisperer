@@ -60,30 +60,31 @@ tw relay test        # DNS → HTTPS/mTLS → SSH-over-tunnel, all three must pa
 
 This machine is now in **relay** mode — it's the relay's owner and the only one that can enroll servers or shell into the relay (`tw relay ssh`).
 
-## Step 2 — Enroll server1 (join → enroll → apply)
+## Step 2 — Enroll server1 (spoken invite)
 
 ![Step 2 — enroll server1](../assets/multi-server-step2-server1.gif)
-
-**On server1:**
-
-```bash
-tw server join-relay relay.example.com
-```
-
-This writes `tw_join_<server-id>.json` in the current directory. Send that file to the admin (any trusted channel).
 
 **On the admin laptop:**
 
 ```bash
-tw relay enroll-server tw_join_<server-id>.json
+tw relay invite
 ```
 
-This registers the tenant on the relay (you'll see `Caddyfile reloaded`) and writes `tw_join_response_<server-id>.json`. Send it back to server1.
+This mints a one-time code and waits. Read it to server1's operator over any trusted channel — it's a PAKE password, not a bearer credential, so overhearing it alone isn't enough (see [Tenants — security](../relay/tenants.md#security)).
 
 **On server1:**
 
 ```bash
-tw server join-relay --apply tw_join_response_<server-id>.json
+tw join relay.example.com <code>
+```
+
+Both terminals now show a short authentication string (SAS). Read yours aloud to the admin.
+
+**On the admin laptop:** confirm the read-back matches and approve. Enrollment then runs the usual live steps (you'll see `Caddyfile reloaded`), and the grant — relay host, path, port, SSH user, mode signature — comes back over the same encrypted channel.
+
+**On server1** (once `tw join` reports the context created — it's activated automatically on this freshly-installed machine):
+
+```bash
 tw server start          # foreground; use `sudo tw service install && sudo tw service start` to run on boot
 tw server test           # expect "tunnel and shell working"
 ```
@@ -98,38 +99,43 @@ Repeat Step 2 exactly, on server2. Enrollment is live — server1 keeps running,
 tw relay get-servers     # lists server1 and server2
 ```
 
-## Step 4 — Create the Client Users (on the servers)
+## Step 4 — Invite the Client Users (on the servers)
 
 ![Step 4 — create the client users](../assets/multi-server-step4-users.gif)
 
-Each client gets a user on the server it should reach, with a port map `clientLocalPort:serverPort`. For SSH, the server port is **22**.
+Each client gets a user on the server it should reach, with a port map `clientLocalPort:serverPort`. For SSH, the server port is **22**. `--invite` mints a one-time code and blocks, waiting for the client to redeem it.
 
 **On server1** (for client1):
 
 ```bash
-tw server user create client1 -m 2201:22
-tw server user apply client1                 # registers the user on the relay
-tw config export-user client1                # writes client1-tw-context.twctx
+tw server user create client1 -m 2201:22 --invite
 ```
+
+Read the code to client1's operator; approve on the matching SAS read-back.
 
 **On server2** (for client2):
 
 ```bash
-tw server user create client2 -m 2202:22
-tw server user apply client2
-tw config export-user client2
+tw server user create client2 -m 2202:22 --invite
 ```
 
-Send each `.twctx` bundle to its client over a trusted channel — the bundles are unprotected (no passphrase), so treat them like a private key.
+Same dance, with client2.
+
+No files change hands: each client's SSH key and a CSR are generated locally on their own machine and never transit — the server only ever signs the CSR and sends back the signed certificate plus their coordinates.
 
 ## Step 5 — Connect the Clients
 
 ![Step 5 — connect the clients](../assets/multi-server-step5-client.gif)
 
-**On client1:**
+**On client1**, while server1's invite is waiting:
 
 ```bash
-tw config import client1-tw-context.twctx --activate
+tw join relay.example.com <code1>
+```
+
+Read the displayed SAS aloud to server1's operator for approval. Once approved:
+
+```bash
 tw client connect        # keep running; or install as a service like the servers
 ```
 
@@ -139,7 +145,7 @@ Then SSH to server1 through the tunnel:
 ssh -p 2201 <your-unix-user>@127.0.0.1
 ```
 
-**On client2:** same, with its own bundle and `ssh -p 2202 <user>@127.0.0.1`.
+**On client2:** same, redeeming server2's code and `ssh -p 2202 <user>@127.0.0.1`.
 
 !!! note "Tunnel vs. SSH auth"
     `tw` gets you a tunnel to the server's port 22; authentication to `sshd` itself is still whatever that server's OS accounts use (your normal SSH key or password there).
@@ -159,15 +165,16 @@ tw client status
 
 ## Optional: Each Client Reaching *Both* Servers
 
-A user bundle belongs to one server, but clients handle multiple via kubectl-style contexts:
+A user (and its context) belongs to one server, but clients handle multiple via kubectl-style contexts:
 
-1. On server2, also create `client1` (`tw server user create client1 -m 2211:22`, apply, export) — and mirror for client2 on server1.
-2. On the client, import the second bundle too: `tw config import ... --activate`.
+1. On server2, also invite `client1` (`tw server user create client1 -m 2211:22 --invite`) — and mirror for client2 on server1.
+2. On the client, redeem the second invite too: `tw join relay.example.com <code> --name <ctx>` (`tw join` never touches the currently active context).
 3. Switch with `tw config use-context <name|id>` (`tw config get-contexts` lists them). Switching reconnects — one server connection is active at a time.
 
 ## Gotchas
 
 - Modes are enforced and signed: a client box can't run `tw server ...` commands and vice versa. If you set up a machine in the wrong mode, wipe its tw config dir and start that machine's steps over.
 - The relay VM's SSH is tunnel-only after install — the admin reaches it via `tw relay ssh`. If you provisioned with `--ssh-open`, the admin key also works directly over port 22 (close it later from the dashboard's relay page).
-- If you edit a user's port mappings later (`tw server user edit`), re-export and have the client re-import — the old bundle stops matching.
+- If you edit a user's port mappings later (`tw server user edit`), the client's context does not pick it up automatically — there's no push, and `--invite` refuses to re-invite an existing name, so delete the user and invite them again to hand out the new mappings.
 - To kick a server off the relay: admin runs `tw relay un-enroll-server <server-id> --yes`; to revoke a client: server runs `tw server user unregister <name>` / `delete <name>` (takes effect on their next connection attempt).
+- Invite codes are single-use and short-lived (15 minutes by default) — if one expires before it's redeemed, just mint a fresh one.

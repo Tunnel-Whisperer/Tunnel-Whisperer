@@ -11,19 +11,16 @@ In the three-role model, a server is a **tenant** of a relay. The relay is owned
 
 Setting up a server is three steps, in order:
 
-1. **[Join a relay](join-relay.md)** — generate a join request, have the relay admin enroll it, apply the response:
+1. **[Join a relay](join-relay.md)** — get a one-time invite code from the relay admin (`tw relay invite`), redeem it:
 
     ```bash
-    tw server join-relay relay.example.com
-    # → send tw_join_<server-id>.json to the admin
-    tw server join-relay --apply tw_join_response_<server-id>.json
+    tw join relay.example.com <code>
     ```
 
 2. **[Create users](users.md)** — one per client, each restricted to specific ports:
 
     ```bash
-    tw server user create alice -m 5432:5432
-    tw config export-user alice        # → alice-tw-context.twctx, send to the client
+    tw server user create alice -m 5432:5432 --invite
     ```
 
 3. **[Start the server](running.md)** — run the daemon (or install it as a service):
@@ -39,7 +36,7 @@ Setting up a server is three steps, in order:
 
 ## In this section
 
-- [Joining a Relay](join-relay.md) — the join → enroll → apply handshake
-- [User Management](users.md) — create, apply, edit, revoke users; export client bundles
+- [Joining a Relay](join-relay.md) — the invite → SAS approval handshake
+- [User Management](users.md) — create, invite, apply, edit, revoke users
 - [Application Templates](apps.md) — reusable port-mapping bundles
 - [Running the Server](running.md) — `start`, `test`, `status`, running as a service

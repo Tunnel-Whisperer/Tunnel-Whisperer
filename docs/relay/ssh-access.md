@@ -78,9 +78,15 @@ shape:
 
 ```text
 from="127.0.0.1" ssh-ed25519 AAAA... admin-key        # pin absent on --ssh-open relays
-from="127.0.0.1",restrict,port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:20000" ssh-ed25519 AAAA... tenant-1
-from="127.0.0.1",restrict,port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:20001" ssh-ed25519 AAAA... tenant-2
+from="127.0.0.1",restrict,port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:20000",permitlisten="127.0.0.1:40000" ssh-ed25519 AAAA... tenant-1
+from="127.0.0.1",restrict,port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:20001",permitlisten="127.0.0.1:40001" ssh-ed25519 AAAA... tenant-2
 ```
+
+The second `permitlisten` (tunnel port + 20000) is the tenant's **enroll
+port** — the loopback listener their own `tw server user create --invite`
+publishes to serve the client-enrollment PAKE exchange over. It's just
+another reverse forward, confined the same way as the tunnel port: a tenant
+can publish exactly these two ports and nothing else.
 
 **The admin line** (always first) has no `restrict`: the admin gets a shell,
 sudo, and unrestricted forwarding (needed, among other things, to reach the
@@ -95,7 +101,7 @@ relays, restored when SSH is closed.
 | `from="127.0.0.1"` | Key only authenticates through the tunnel — never over public port 22, even on `--ssh-open` relays. |
 | `restrict` | Denies everything: shell, exec, agent/X11 forwarding, *and* all port forwarding. |
 | `port-forwarding` | Re-enables just port forwarding (the one thing a tenant needs). |
-| `permitlisten="127.0.0.1:<port>"` | The tenant's reverse (`-R`) forward may bind only its own allocated port. |
+| `permitlisten="127.0.0.1:<port>"` (appears twice) | The tenant's reverse (`-R`) forwards may bind only its two allocated ports: the tunnel port and the tunnel port + 20000 (the enroll port used by `tw server user create --invite`). |
 | `permitopen="127.0.0.1:1"` | Local (`-L`) forwarding is pinned to a dead sentinel port — effectively disabled, so tenants can't dial the relay's loopback services (e.g. the Xray management API). |
 
 Because the file is fully re-rendered each time, hand-edits to tw-managed

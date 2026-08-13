@@ -151,7 +151,7 @@ The dashboard polls `ConfigChanged()` every 3 seconds via the `/api/status` endp
 
 The `mode` field in `config.yaml` can be `"relay"`, `"server"`, `"client"`, or empty (bootstrap). The legacy value `"admin"` is canonicalized to `"relay"` on read. When set:
 
-- **CLI**: `requireMode(allowed ...string)` in `root.go` checks the configured mode before executing a command. Relay-only commands (e.g., `tw relay create`, `tw relay enroll-server`) return an error in server or client mode, and so on for each role; the variadic form lets a command be allowed in more than one mode.
+- **CLI**: `requireMode(allowed ...string)` in `root.go` checks the configured mode before executing a command. Relay-only commands (e.g., `tw relay create`, `tw relay invite`) return an error in server or client mode, and so on for each role; the variadic form lets a command be allowed in more than one mode. `tw join` is the exception — it's role-neutral and skips `requireMode` entirely, since the issuer's invite (not the enrollee's current mode) decides the resulting role.
 - **Dashboard**: The `pageData.Mode` field is passed to all templates. Navigation links and page content adapt -- pages belonging to other roles are hidden.
 
 ```go
@@ -171,7 +171,7 @@ func modeError(current string, allowed []string) error {
 }
 ```
 
-**Mode signature (tamper-evidence).** The mode is additionally protected by a detached ed25519 signature (`mode_auth: {sig, issuer}` in config, `internal/ops/modeauth`) over `(mode, profile identity)`, where the identity is the profile's own `id_ed25519.pub`. The relay signs its own mode with its own key; a server's mode is signed by the relay admin in the join-response; a client's mode is signed by its server in the exported user bundle. `requireMode` verifies the signature on every gated command: a present-but-invalid signature (a hand-edited `mode` field) is refused with a re-enroll/re-import hint; a missing signature is legacy-tolerated with a warning (the relay self-heals by re-signing). This is deliberately *not* a security boundary — the real role boundary is the relay's `authorized_keys` restrictions and the mTLS/PKI trust chain.
+**Mode signature (tamper-evidence).** The mode is additionally protected by a detached ed25519 signature (`mode_auth: {sig, issuer}` in config, `internal/ops/modeauth`) over `(mode, profile identity)`, where the identity is the profile's own `id_ed25519.pub`. The relay signs its own mode with its own key; a server's mode is signed by the relay admin inside the invite grant (`tw relay invite` / `tw join`); a client's mode is signed by its server inside the invite grant (`tw server user create --invite` / `tw join`). `requireMode` verifies the signature on every gated command: a present-but-invalid signature (a hand-edited `mode` field) is refused with a re-enroll/re-import hint; a missing signature is legacy-tolerated with a warning (the relay self-heals by re-signing). This is deliberately *not* a security boundary — the real role boundary is the relay's `authorized_keys` restrictions and the mTLS/PKI trust chain.
 
 ---
 
@@ -363,26 +363,30 @@ Both templates pass `--version {{ .XrayVersion }}` to the official Xray install 
 The relay admits connections via mutual TLS, backed by a per-server certificate
 authority. The lifecycle is handled transparently:
 
-- **Generation** — on the first `tw server start` (or `tw server join-relay` /
-  `tw relay create`), `internal/ops/keys.go` (`ensureCerts`) creates the CA
-  (`ca.crt`/`ca.key`) and issues the server's client certificate
-  (`client.crt`/`client.key`, CN = server-id) via `internal/pki`. Generation is
-  **idempotent and self-healing**: an existing CA is never regenerated, but a
-  missing client cert is re-issued from the existing CA. It is skipped in client
-  mode.
+- **Generation** — on the first `tw server start` (or `tw join` enrolling this
+  machine as a server, or `tw relay create`), `internal/ops/keys.go`
+  (`ensureCerts`) creates the CA (`ca.crt`/`ca.key`) and issues the server's
+  client certificate (`client.crt`/`client.key`, CN = server-id) via
+  `internal/pki`. Generation is **idempotent and self-healing**: an existing
+  CA is never regenerated, but a missing client cert is re-issued from the
+  existing CA. It is skipped in client mode.
 - **Distribution to the relay** — for the admin's own entry, the CA *public*
   certificate is base64-embedded into cloud-init / the install script and written
   to `/etc/caddy/ca/<server-id>.crt` at provisioning; for joined servers, the
-  admin writes their CA cert (carried in the join-request) to the same location
-  during enrollment and reloads Caddy. The rendered Caddyfile
-  (`client_auth require_and_verify` with one trust-pool entry per tenant) is
-  rewritten the same way. CA signing keys never leave their servers — the relay
-  only ever holds public certificates.
-- **Distribution to clients** — `client.crt`/`client.key` are included in every
-  exported user context bundle (`tw config export-user`). The same per-server
+  admin writes their CA cert (carried in the invite offer over the SPAKE2
+  channel) to the same location during enrollment and reloads Caddy. The
+  rendered Caddyfile (`client_auth verify_if_given` with one trust-pool entry
+  per tenant, plus a certless `/enroll` route per tenant) is rewritten the
+  same way. CA signing keys never leave their servers — the relay only ever
+  holds public certificates.
+- **Distribution to clients** — for an invited client (`tw server user create
+  --invite`), the client generates its own key and a CSR locally; the server
+  signs the CSR with its CA and sends back only `client.crt` over the
+  encrypted invite channel — `client.key` never transits at all. `internal/pki`
+  (`GenerateKeyAndCSR`, `SignClientCSR`) backs this. The same per-server
   certificate is shared by all of that server's users; `applyClientCertPaths`
-  derives the on-disk paths at runtime so a bundle works regardless of platform
-  or `TW_CONFIG_DIR`.
+  derives the on-disk paths at runtime so a stored context works regardless of
+  platform or `TW_CONFIG_DIR`.
 - **Rotation** — re-provisioning the relay (or un-enrolling and re-enrolling a
   server) regenerates that tenant's trust-pool entry. There is no per-user
   certificate and no CRL on the relay; per-user revocation is an SSH

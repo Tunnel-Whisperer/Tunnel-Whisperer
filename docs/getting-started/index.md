@@ -14,22 +14,20 @@ Tunnel Whisperer connects services across separated private networks via resilie
 ```text
                               # role: relay (admin machine)
 1. Provision   tw relay create
-2. Enroll      tw relay enroll-server tw_join_<id>.json
+2. Invite      tw relay invite            (mints a code, waits for the server)
 
                               # role: server
-3. Join        tw server join-relay relay.example.com
-               tw server join-relay --apply tw_join_response_<id>.json
-4. Users       tw server user create alice -m 8080:80
-               tw server user apply alice
-               tw config export-user alice
+3. Join        tw join relay.example.com <code>
+4. Invite      tw server user create alice -m 8080:80 --invite
+               (mints a code, waits for the client)
 5. Run         tw server start                 (or tw dashboard / tw service install)
 
                               # role: client
-6. Connect     tw config import alice-tw-context.twctx --activate
+6. Connect     tw join relay.example.com <code>
                tw client connect
 ```
 
-The **relay admin** provisions the relay and enrolls servers. Each **server** operator joins the relay, creates users, and runs `tw server start`. Each **client** receives a context bundle (`.twctx`), imports it, and runs `tw client connect` to establish local port forwarding.
+The **relay admin** provisions the relay and invites servers. Each **server** operator redeems an invite to join the relay, invites its own users, and runs `tw server start`. Each **client** redeems a user invite — which generates their identity locally and never transmits a private key — and runs `tw client connect` to establish local port forwarding. Every invite is a spoken one-time code confirmed by a short authentication string read back between the two humans involved; see [Tenants — security](../relay/tenants.md#security).
 
 !!! warning "The first role command sets the machine's mode"
     A machine's mode (`relay`, `server`, or `client`) is set by its first role action and is signed for tamper evidence — commands of other roles refuse to run. See [Global — the role model](../global/index.md).

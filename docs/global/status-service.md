@@ -109,6 +109,6 @@ tw completion > "${fpath[1]}/_tw"
 Completion is dynamic, not just static subcommands. From local state only (never the relay), it offers:
 
 - **context names and short IDs** for `tw config use-context / delete-context / export / rename-context` — annotated with role, user, and relay;
-- **usernames** for `tw server user edit / delete / apply / unregister` and `tw config export-user` — annotated with tunnel count and applied state;
+- **usernames** for `tw server user edit / delete / apply / unregister` — annotated with tunnel count and applied state;
 - **server IDs** for `tw relay un-enroll-server` — annotated with port and enrollment date;
 - **application names** for `tw server app edit / delete`.

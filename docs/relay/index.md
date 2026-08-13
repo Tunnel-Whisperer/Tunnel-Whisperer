@@ -37,7 +37,7 @@ machine, and the install script can be re-run from scratch.
 | `tw relay status` | Unified status view: active context, mode, relay provisioning state. |
 | `tw relay test` | 3-step diagnostic: DNS → HTTPS/mTLS → Xray + SSH through the tunnel. |
 | `tw relay ssh` | Interactive root-capable shell on the relay, through the encrypted tunnel. See [SSH access](ssh-access.md). |
-| `tw relay enroll-server <join-request.json>` | Admit a server tenant onto the relay, live and without an Xray restart. See [Tenants](tenants.md). |
+| `tw relay invite [--ttl 15m]` | Mint a one-time code that admits a server tenant onto the relay, live and without an Xray restart — no files. See [Tenants](tenants.md). |
 | `tw relay get-servers` | List enrolled servers with **live** tunnel state queried from the relay. |
 | `tw relay un-enroll-server <server-id> [--yes]` | Completely remove a tenant: block re-auth, sever live connections, rewrite configs, forget the registry entry. |
 
@@ -50,7 +50,7 @@ run them.
 flowchart TD
     A["tw relay create<br/><i>cloud wizard or manual install script</i>"] --> B["Relay live<br/>Caddy + Xray on :80/:443<br/>admin bundle emitted (.twctx)"]
     B --> C["Operate<br/>tw relay status / test / ssh<br/>dashboard Relay page"]
-    C --> D["tw relay enroll-server<br/><i>admit a server tenant (live, no restart)</i>"]
+    C --> D["tw relay invite<br/><i>admit a server tenant (live, no restart)</i>"]
     D --> C
     C --> E["tw relay un-enroll-server<br/><i>remove a tenant completely</i>"]
     E --> C
@@ -62,9 +62,9 @@ flowchart TD
    admin bundle.
 2. **Operate** — `tw relay test` verifies the full path; `tw relay ssh` and
    the dashboard give day-2 access.
-3. **Enroll / un-enroll** — servers join via a join-request/join-response file
-   exchange; the admin admits or removes them at any time without disturbing
-   other tenants.
+3. **Enroll / un-enroll** — servers join via a spoken one-time invite code
+   (`tw relay invite` on the admin, `tw join` on the joining machine); the
+   admin admits or removes them at any time without disturbing other tenants.
 4. **Destroy** — `tw relay destroy` removes the infrastructure (saving TLS
    certificates for reuse on cloud relays) and clears the relay from config.
 

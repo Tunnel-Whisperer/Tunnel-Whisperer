@@ -6,7 +6,7 @@ Tunnel Whisperer enforces access control at three scopes. **Relay admission** is
 
 ## Relay Admission — Mutual TLS (per server)
 
-The relay's Caddy front door is configured with `client_auth require_and_verify`. Every connection must present an **X.509 client certificate** signed by an enrolled server's own certificate authority, or the TLS handshake is rejected before any tunnel is established.
+The relay's Caddy front door is configured with `client_auth verify_if_given`: a *presented* certificate must be signed by an enrolled server's own certificate authority or the TLS handshake is rejected, but a bare handshake with no certificate is allowed — it only ever reaches the enrollment endpoint or a uniform 404. Every **tunnel** route additionally requires a verified certificate whose CN matches that tenant, so no connection reaches a server's upstream without one.
 
 - The certificate is **per server, not per user** — every user of a server shares the same `client.crt`/`client.key`, delivered in the user's context bundle.
 - Admission is decided at the handshake, shielding the relay's downstream machinery from anonymous traffic.
@@ -114,13 +114,13 @@ from="127.0.0.1" ssh-ed25519 AAAA...
 **Tenant (enrolled server) keys** — one line per enrolled server:
 
 ```
-from="127.0.0.1",restrict,port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:20000" ssh-ed25519 AAAA...
+from="127.0.0.1",restrict,port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:20000",permitlisten="127.0.0.1:40000" ssh-ed25519 AAAA...
 ```
 
 - `from="127.0.0.1"` — tunnel-only, always (regardless of `--ssh-open`).
 - `restrict` — no shell, no exec, no agent/X11 forwarding.
 - `port-forwarding` — re-enables forwarding (which `restrict` alone denies); forwarding is all a tenant may do.
-- `permitlisten="127.0.0.1:<port>"` — the reverse (`-R`) forward is limited to the tenant's **own** allocated port.
+- `permitlisten="127.0.0.1:<port>"` (appears twice) — the reverse (`-R`) forwards are limited to the tenant's **own** two allocated ports: its tunnel port, and the tunnel port + 20000 (the enroll port `tw server user create --invite` publishes its client-enrollment listener on).
 - `permitopen="127.0.0.1:1"` — local (`-L`) forwarding is pinned to a dead sentinel port, so a tenant cannot reach the relay's loopback services (e.g. the Xray gRPC API on `127.0.0.1:10085`) or other tenants' ports.
 
 ---

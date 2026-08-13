@@ -71,11 +71,19 @@ client:                            # only needed for `tw client connect`
 ├── servers/                       # enrolled-server registry (relay role)
 └── users/                         # per-user client configs (server role)
     └── alice/
-        ├── config.yaml            # client config (exported via tw config export-user)
-        ├── id_ed25519             # client private key
+        ├── config.yaml            # client config
+        ├── id_ed25519             # client private key — only for users created WITHOUT --invite
         ├── id_ed25519.pub         # client public key
         └── .applied               # marker: user registered on current relay
 ```
+
+!!! note "`--invite` keeps only the public key on the server"
+    `tw server user create --invite` never generates the client's private key
+    on the server at all — the enrollee generates its own SSH key pair and a
+    certificate signing request locally, and only `id_ed25519.pub` and the
+    signed certificate metadata land in `users/<name>/`. A plain
+    `tw server user create` (no `--invite`) still generates and stores both
+    halves server-side, as before.
 
 ## File Layout (Client)
 
@@ -143,7 +151,7 @@ The version is used in:
 | `make run` | Build + execute `./bin/tw` | Build and run |
 | `make clean` | `rm -rf bin/` | Remove build artifacts |
 | `make proto` | `protoc --go_out=... --go-grpc_out=...` | Regenerate gRPC stubs from `.proto` (rarely needed — wire format is JSON) |
-| `make e2e` | Build + `docker compose up` + `go test -tags e2e` | Full-product e2e suite (12 scenarios); `E2E_KEEP=1` leaves the topology up |
+| `make e2e` | Build + `docker compose up` + `go test -tags e2e` | Full-product e2e suite (16 scenarios); `E2E_KEEP=1` leaves the topology up |
 | `make e2e-up` / `e2e-down` | | Start / tear down the e2e Docker Compose topology |
 
 ---
