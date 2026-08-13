@@ -180,11 +180,3 @@ func (h *handler) DeleteUser(ctx context.Context, req *DeleteUserRequest) (*Empt
 	}
 	return &Empty{}, nil
 }
-
-func (h *handler) GetUserConfig(ctx context.Context, req *GetUserConfigRequest) (*UserConfigResponse, error) {
-	data, err := h.ops.GetUserConfigBundle(req.Name)
-	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "%v", err)
-	}
-	return &UserConfigResponse{Data: data}, nil
-}

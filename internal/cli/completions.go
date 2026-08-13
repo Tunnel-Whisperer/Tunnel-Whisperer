@@ -160,7 +160,6 @@ func init() {
 	deleteUserCmd.ValidArgsFunction = completeUsers
 	editUserCmd.ValidArgsFunction = completeUsers
 	userSingleSessionCmd.ValidArgsFunction = completeUsers
-	exportUserCmd.ValidArgsFunction = completeUsers
 	unregisterUserCmd.ValidArgsFunction = completeUsers
 	applyUsersCmd.ValidArgsFunction = completeUsersMulti
 

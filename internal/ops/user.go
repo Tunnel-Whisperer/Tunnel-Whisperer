@@ -1,7 +1,6 @@
 package ops
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -16,8 +15,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tunnelwhisperer/tw/internal/config"
-	"github.com/tunnelwhisperer/tw/internal/cryptobox"
-	"github.com/tunnelwhisperer/tw/internal/ops/modeauth"
 	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
 	twxray "github.com/tunnelwhisperer/tw/internal/xray"
 	proxymanCmd "github.com/xtls/xray-core/app/proxyman/command"
@@ -792,127 +789,6 @@ func addMultipleUUIDsToRelay(cfg *config.Config, uuids []string) error {
 		}
 		return nil
 	})
-}
-
-// GetUserConfigBundle returns the user packaged as a role=client context: a
-// bundle (cryptobox TWBOX1 framing, no passphrase) the client imports with
-// `tw config import <file> --activate`.
-func (o *Ops) GetUserConfigBundle(name string) (bundle []byte, err error) {
-	userDir := filepath.Join(config.UsersDir(), name)
-	if _, err := os.Stat(userDir); os.IsNotExist(err) {
-		return nil, fmt.Errorf("user %q not found", name)
-	}
-
-	// The exported user is a role=client context: a profile zip (the same shape
-	// unsealProfile/ImportContext consume) sealed under a generated passphrase.
-	// The client imports it as a context and switches to it.
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
-
-	// config.yaml: the user's client config with mode:client injected so the
-	// imported context indexes as role=client and the client daemon runs as a
-	// client. The user's own config.yaml carries no mode.
-	userCfg, err := os.ReadFile(filepath.Join(userDir, "config.yaml"))
-	if err != nil {
-		return nil, fmt.Errorf("reading user config: %w", err)
-	}
-	clientCfg, err := injectMode(userCfg, "client")
-	if err != nil {
-		return nil, fmt.Errorf("setting client mode: %w", err)
-	}
-	userPub, err := os.ReadFile(filepath.Join(userDir, "id_ed25519.pub"))
-	if err != nil {
-		return nil, fmt.Errorf("reading user public key: %w", err)
-	}
-	clientCfg, err = injectClientModeAuth(clientCfg, userPub)
-	if err != nil {
-		return nil, fmt.Errorf("signing client mode: %w", err)
-	}
-	if w, err := zw.Create("config.yaml"); err != nil {
-		return nil, err
-	} else if _, err := w.Write(clientCfg); err != nil {
-		return nil, err
-	}
-
-	// The user's SSH identity and the per-server client cert/key (presented to
-	// the relay's mTLS gate). Cert paths are computed from the config dir at
-	// runtime, so these land flat in the client's config dir on unseal.
-	entries := []struct{ name, path string }{
-		{"id_ed25519", filepath.Join(userDir, "id_ed25519")},
-		{"id_ed25519.pub", filepath.Join(userDir, "id_ed25519.pub")},
-		{"client.crt", config.ClientCertPath()},
-		{"client.key", config.ClientKeyPath()},
-	}
-	for _, e := range entries {
-		data, err := os.ReadFile(e.path)
-		if err != nil {
-			return nil, fmt.Errorf("reading %s for bundle: %w", e.name, err)
-		}
-		w, err := zw.Create(e.name)
-		if err != nil {
-			return nil, fmt.Errorf("adding %s to bundle: %w", e.name, err)
-		}
-		if _, err := w.Write(data); err != nil {
-			return nil, fmt.Errorf("writing %s to bundle: %w", e.name, err)
-		}
-	}
-
-	if err := zw.Close(); err != nil {
-		return nil, err
-	}
-
-	// User-context bundles carry NO passphrase: the client imports them without
-	// a prompt. They're sealed with an empty passphrase (openable with "") only
-	// so the on-disk format matches other contexts. The bundle is as sensitive as
-	// the keys inside it — transfer it over a trusted channel.
-	sealed, err := cryptobox.Encrypt(buf.Bytes(), "")
-	if err != nil {
-		return nil, fmt.Errorf("sealing user context: %w", err)
-	}
-
-	// Clear the mappings-dirty flag on download.
-	_ = os.Remove(filepath.Join(userDir, ".mappings-dirty"))
-
-	return sealed, nil
-}
-
-// injectMode parses a config.yaml, sets its top-level mode, and re-marshals it,
-// preserving every other key. Used to stamp an exported user config as a client
-// context.
-func injectMode(cfgYAML []byte, mode string) ([]byte, error) {
-	var m map[string]interface{}
-	if err := yaml.Unmarshal(cfgYAML, &m); err != nil {
-		return nil, err
-	}
-	if m == nil {
-		m = map[string]interface{}{}
-	}
-	m["mode"] = mode
-	return yaml.Marshal(m)
-}
-
-// injectClientModeAuth signs (client, <user pubkey>) with the server's own key
-// and writes a mode_auth block into the user's client config.yaml, making the
-// exported client's mode tamper-evident. Best-effort: on any signing error the
-// bundle is emitted without a signature (legacy-tolerated on import).
-func injectClientModeAuth(cfgYAML, userPubAuthorized []byte) ([]byte, error) {
-	priv, err := profilePrivPEM()
-	if err != nil {
-		return cfgYAML, nil
-	}
-	sig, issuer, err := modeauth.Sign(priv, "client", strings.TrimSpace(string(userPubAuthorized)))
-	if err != nil {
-		return cfgYAML, nil
-	}
-	var m map[string]interface{}
-	if err := yaml.Unmarshal(cfgYAML, &m); err != nil {
-		return nil, err
-	}
-	if m == nil {
-		m = map[string]interface{}{}
-	}
-	m["mode_auth"] = map[string]string{"sig": sig, "issuer": issuer}
-	return yaml.Marshal(m)
 }
 
 // appendAuthorizedKey adds a public key to the server's authorized_keys

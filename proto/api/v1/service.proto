@@ -35,7 +35,6 @@ service TunnelWhisperer {
   rpc ListUsers         (Empty)                     returns (ListUsersResponse);
   rpc CreateUser        (CreateUserRequest)          returns (Empty);
   rpc DeleteUser        (DeleteUserRequest)          returns (Empty);
-  rpc GetUserConfig     (GetUserConfigRequest)       returns (UserConfigResponse);
 }
 
 message Empty {}
@@ -114,10 +113,3 @@ message DeleteUserRequest {
   string name = 1;
 }
 
-message GetUserConfigRequest {
-  string name = 1;
-}
-
-message UserConfigResponse {
-  bytes data = 1;
-}

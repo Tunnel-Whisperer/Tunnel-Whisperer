@@ -5,18 +5,10 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"log/slog"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"regexp"
 
-	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
-
-	"github.com/tunnelwhisperer/tw/internal/config"
-	"github.com/tunnelwhisperer/tw/internal/ops/modeauth"
 )
 
 // joinServerIDRe is the server-id shape the relay renderers also enforce
@@ -96,89 +88,3 @@ func DecodeJoinResponse(b []byte) (*JoinResponse, error) {
 	return &r, nil
 }
 
-// GenerateJoinRequest sets this machine up as a server joining relayHost: it
-// generates the server's identity (ssh key + CA + client cert with CN=server-id),
-// persists mode=server, relay host, derived path, and returns the public
-// join-request artifact (CA cert PEM + SSH public key).
-func (o *Ops) GenerateJoinRequest(relayHost string) (*JoinRequest, error) {
-	// Seed UUID and mode under the lock, then release before calling methods
-	// that also acquire o.mu to avoid deadlock.
-	o.mu.Lock()
-	if o.cfg.Mode == "" {
-		o.cfg.Mode = "server"
-	}
-	if o.cfg.Xray.UUID == "" {
-		o.cfg.Xray.UUID = uuid.New().String()
-	}
-	uid := o.cfg.Xray.UUID
-	cfg := o.cfg
-	o.mu.Unlock()
-
-	// Persist mode + UUID immediately so ensureCerts picks up the right UUID.
-	if err := config.Save(cfg); err != nil {
-		return nil, fmt.Errorf("persisting initial config: %w", err)
-	}
-
-	host, _ := os.Hostname()
-	serverID := deriveServerID(host, uid)
-	path := "/tw/" + serverID
-
-	// Persist relay host + path (SetXraySettings skips UUID, which is already saved above).
-	if err := o.SetXraySettings(config.XrayConfig{RelayHost: relayHost, Path: path}); err != nil {
-		return nil, fmt.Errorf("persisting relay config: %w", err)
-	}
-	// EnsureKeys calls ensureCerts internally; ensureCerts derives CN from deriveServerID(host, uuid).
-	if err := o.EnsureKeys(); err != nil {
-		return nil, fmt.Errorf("generating identity: %w", err)
-	}
-
-	caPEM, err := os.ReadFile(config.CACertPath())
-	if err != nil {
-		return nil, fmt.Errorf("reading CA cert: %w", err)
-	}
-	pub, err := os.ReadFile(filepath.Join(config.Dir(), "id_ed25519.pub"))
-	if err != nil {
-		return nil, fmt.Errorf("reading ssh pubkey: %w", err)
-	}
-	return &JoinRequest{
-		Version:   1,
-		ServerID:  serverID,
-		Hostname:  host,
-		UUID:      uid,
-		RelayHost: relayHost,
-		CACertPEM: string(caPEM),
-		SSHPubkey: strings.TrimSpace(string(pub)),
-	}, nil
-}
-
-// ApplyJoinResponse configures this server with the admin-assigned coordinates.
-func (o *Ops) ApplyJoinResponse(r *JoinResponse) error {
-	if err := o.SetXraySettings(config.XrayConfig{RelayHost: r.RelayHost, Path: r.Path}); err != nil {
-		return fmt.Errorf("persisting relay coords: %w", err)
-	}
-	if err := o.SetServerSettings(config.ServerConfig{RemotePort: r.RemotePort, RelaySSHUser: r.SSHUser}); err != nil {
-		return fmt.Errorf("persisting remote port: %w", err)
-	}
-	if r.ModeSig != "" && r.ModeIssuer != "" {
-		id, err := profileIdentity()
-		if err == nil {
-			err = modeauth.Verify("server", id, r.ModeSig, r.ModeIssuer)
-		}
-		if err != nil {
-			// A signature that doesn't verify against THIS server's own
-			// identity would brick the server (every command would then fail
-			// "mode signature invalid"). Degrade to legacy-unsigned instead
-			// of persisting it — the rest of ApplyJoinResponse already ran.
-			slog.Warn("received mode signature does not verify; storing profile unsigned", "error", err)
-		} else {
-			o.mu.Lock()
-			o.cfg.ModeAuth = &config.ModeAuth{Sig: r.ModeSig, Issuer: r.ModeIssuer}
-			cfg := o.cfg
-			o.mu.Unlock()
-			if err := config.Save(cfg); err != nil {
-				return fmt.Errorf("persisting mode signature: %w", err)
-			}
-		}
-	}
-	return nil
-}

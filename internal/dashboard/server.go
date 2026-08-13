@@ -135,13 +135,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/config/contexts", s.apiListContexts)
 	s.mux.HandleFunc("/api/config/use-context", s.apiUseContext)
 	s.mux.HandleFunc("/api/servers", s.apiServers)
-	s.mux.HandleFunc("/api/servers/enroll", s.apiEnrollServer)
 	s.mux.HandleFunc("/api/servers/unenroll", s.apiUnenrollServer)
 	s.mux.HandleFunc("/api/users", s.apiUsers)
 	s.mux.HandleFunc("/api/users/apply", s.apiApplyUsers)
 	s.mux.HandleFunc("/api/users/unregister", s.apiUnregisterUsers)
 	s.mux.HandleFunc("/api/users/online", s.apiOnlineUsers)
-	s.mux.HandleFunc("/api/users/", s.apiUserAction) // delete, download
+	s.mux.HandleFunc("/api/users/", s.apiUserAction) // delete, mappings, single-session
 
 	// SSE.
 	s.mux.HandleFunc("/api/events/", s.apiEvents)

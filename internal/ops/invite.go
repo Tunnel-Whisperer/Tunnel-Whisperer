@@ -246,8 +246,8 @@ func (o *Ops) grantClient(cfg config.Config, req CreateUserRequest, off *enroll.
 		SSHUser: req.Name, ServerSSHPort: cfg.Server.RemotePort,
 		Tunnels: tunnels, ClientCertPEM: string(certPEM),
 	}
-	// Sign the client's mode against ITS pubkey (same as injectClientModeAuth
-	// did for bundles). Best-effort: an unsigned grant still works.
+	// Sign the client's mode against ITS pubkey. Best-effort: an unsigned
+	// grant still works.
 	if priv, perr := profilePrivPEM(); perr == nil {
 		if sig, issuer, serr := modeauth.Sign(priv, "client", strings.TrimSpace(off.SSHPubkey)); serr == nil {
 			g.ModeSig, g.ModeIssuer = sig, issuer

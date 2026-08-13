@@ -1,12 +1,47 @@
 package ops
 
 import (
+	"archive/zip"
+	"bytes"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
+	"github.com/tunnelwhisperer/tw/internal/cryptobox"
 )
+
+// sealTestClientBundle zips cfgYAML as config.yaml plus a placeholder SSH
+// identity and cryptobox-seals it with no passphrase — the same shape
+// unsealProfile/ImportContext consume. Standing in for the deleted
+// GetUserConfigBundle, which used to build this shape from an on-server user
+// dir; the zero-file enrollment flow no longer keeps one.
+func sealTestClientBundle(t *testing.T, cfgYAML string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	entries := []struct{ name, data string }{
+		{"config.yaml", cfgYAML},
+		{"id_ed25519", "K"},
+		{"id_ed25519.pub", "ssh-ed25519 AAAA"},
+	}
+	for _, e := range entries {
+		w, err := zw.Create(e.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(e.data)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := cryptobox.Encrypt(buf.Bytes(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sealed
+}
 
 // Re-importing the active context must refresh the live profile, not keep the
 // stale one. Regression for: edit a user's mapping on the server, re-export,
@@ -16,16 +51,7 @@ func TestReapplyContextRefreshesLiveProfile(t *testing.T) {
 	o := newOpsForTest(t)
 
 	// Build a sealed client context whose config carries the NEW relay_port.
-	writeFile(t, config.ClientCertPath(), "CERT")
-	writeFile(t, config.ClientKeyPath(), "KEY")
-	ud := filepath.Join(config.UsersDir(), "alice")
-	writeFile(t, filepath.Join(ud, "config.yaml"), "xray:\n  relay_host: relay.example.com\n  relay_port: 8443\n")
-	writeFile(t, filepath.Join(ud, "id_ed25519"), "K")
-	writeFile(t, filepath.Join(ud, "id_ed25519.pub"), "ssh-ed25519 AAAA")
-	bundle, err := o.GetUserConfigBundle("alice")
-	if err != nil {
-		t.Fatal(err)
-	}
+	bundle := sealTestClientBundle(t, "mode: client\nxray:\n  relay_host: relay.example.com\n  relay_port: 8443\n")
 
 	// Store it as the active context, with stale live content still on disk.
 	if err := os.MkdirAll(config.ContextsDir(), 0o755); err != nil {

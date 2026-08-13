@@ -5,7 +5,6 @@ commands:
   "relay create":            [TestE2E/RelayInstall]
   "relay test":              [TestE2E/RelayInstall]
   "relay status":            [TestE2E/RelayInstall, TestE2E/Teardown]
-  "relay enroll-server":            [TestE2E/ServerJoin, TestE2E/SecondTenant]
   "relay add-server":        [TestE2E/SelfEnroll]
   "relay un-enroll-server":        [TestE2E/SecondTenant, TestE2E/SelfEnroll]
   "relay get-servers":           [TestE2E/SecondTenant]
@@ -13,7 +12,6 @@ commands:
   "relay ssh":               {exempt: "interactive relay terminal; no scriptable assertion yet"}
   "relay invite":            {exempt: "pending: zero-file-enrollment e2e scenario lands in task 12 of the SDD plan (ServerJoin/InviteBurn rewrite)"}
   "join":                    {exempt: "pending: zero-file-enrollment e2e scenario lands in task 12 of the SDD plan (ServerJoin/InviteBurn rewrite)"}
-  "server join-relay":       [TestE2E/ServerJoin, TestE2E/SecondTenant]
   "server start":            [TestE2E/ServerJoin]
   "server test":             [TestE2E/ServerJoin]
   "server status":           [TestE2E/ServerJoin]
@@ -35,7 +33,6 @@ commands:
   "client set-port":         [TestE2E/PortOverride]
   "config import":           [TestE2E/UserLifecycle]
   "config export":           [TestE2E/Contexts]
-  "config export-user":      [TestE2E/UserLifecycle]
   "config get-contexts":     [TestE2E/Contexts]
   "config current-context":  [TestE2E/Contexts]
   "config use-context":      [TestE2E/Contexts]

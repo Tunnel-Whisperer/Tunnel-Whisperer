@@ -191,7 +191,6 @@ async function createUser() {
         $('#create-error-msg').textContent = err.message;
         $('#create-error').classList.remove('hidden');
       } else {
-        $('#download-link').href = `/api/users/${name}/download`;
         $('#create-done').classList.remove('hidden');
       }
     });

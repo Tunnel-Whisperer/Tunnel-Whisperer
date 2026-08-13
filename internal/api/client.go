@@ -69,14 +69,3 @@ func (c *Client) DeleteUser(ctx context.Context, name string) error {
 func (c *Client) DestroyRelay(ctx context.Context, creds map[string]string) error {
 	return c.invoke(ctx, "DestroyRelay", &DestroyRelayRequest{Creds: creds}, &Empty{})
 }
-
-// GetUserConfig calls the GetUserConfig RPC and returns the context bundle
-// (which carries no passphrase).
-func (c *Client) GetUserConfig(ctx context.Context, name string) ([]byte, error) {
-	resp := &UserConfigResponse{}
-	err := c.invoke(ctx, "GetUserConfig", &GetUserConfigRequest{Name: name}, resp)
-	if err != nil {
-		return nil, err
-	}
-	return resp.Data, nil
-}

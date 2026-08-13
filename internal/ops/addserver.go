@@ -80,8 +80,8 @@ func defaultLocalServerContextName(relayHost string) string {
 }
 
 // buildLocalServerConfig assembles the new server context's config from the
-// generated identity and the enrollment response — the same fields
-// GenerateJoinRequest and ApplyJoinResponse persist on a remote server.
+// generated identity and the enrollment response — the same fields a remote
+// server persists via the `tw join` enrollee flow.
 // live is the relay profile's config, used to de-conflict daemon ports.
 func buildLocalServerConfig(ident *localServerIdentity, resp *JoinResponse, live *config.Config) (*config.Config, error) {
 	scfg := config.Default()
@@ -94,8 +94,7 @@ func buildLocalServerConfig(ident *localServerIdentity, resp *JoinResponse, live
 
 	// The signature must verify against the bundle's own identity before it is
 	// stored — a signature that doesn't would brick the context (every command
-	// would fail "mode signature invalid"). Degrade to legacy-unsigned instead,
-	// same policy as ApplyJoinResponse.
+	// would fail "mode signature invalid"). Degrade to legacy-unsigned instead.
 	if resp.ModeSig != "" && resp.ModeIssuer != "" {
 		if err := modeauth.Verify("server", strings.TrimSpace(string(ident.sshPub)), resp.ModeSig, resp.ModeIssuer); err != nil {
 			slog.Warn("mode signature from local enroll does not verify; storing profile unsigned", "error", err)

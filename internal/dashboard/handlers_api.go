@@ -492,10 +492,6 @@ func (s *Server) apiUserAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(parts) == 2 && parts[1] == "download" {
-		s.apiUserDownload(w, r, name)
-		return
-	}
 	if len(parts) == 2 && parts[1] == "mappings" {
 		s.apiUserMappings(w, r, name)
 		return
@@ -632,19 +628,6 @@ func (s *Server) apiUserSingleSession(w http.ResponseWriter, r *http.Request, na
 	}
 
 	jsonOK(w, map[string]string{"status": "ok"})
-}
-
-func (s *Server) apiUserDownload(w http.ResponseWriter, r *http.Request, name string) {
-	data, err := s.ops.GetUserConfigBundle(name)
-	if err != nil {
-		jsonError(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	// The bundle is a client context that imports with no passphrase.
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+name+"-tw-context.twctx\"")
-	w.Write(data)
 }
 
 // ── Proxy ────────────────────────────────────────────────────────────────────
@@ -1022,47 +1005,6 @@ func (s *Server) apiServers(w http.ResponseWriter, r *http.Request) {
 		details = []ops.ServerDetail{}
 	}
 	jsonOK(w, details)
-}
-
-// apiEnrollServer mirrors `tw relay enroll-server`: multipart upload of the
-// join request, join-response JSON returned as a download.
-func (s *Server) apiEnrollServer(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !s.requireDashboardMode(w, "relay") {
-		return
-	}
-	f, _, err := r.FormFile("request")
-	if err != nil {
-		jsonError(w, "missing join-request upload: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, 1<<20))
-	if err != nil {
-		jsonError(w, "reading upload: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	req, err := ops.DecodeJoinRequest(data)
-	if err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	resp, err := s.ops.EnrollServer(req, nil)
-	if err != nil {
-		jsonError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	out, err := resp.Encode()
-	if err != nil {
-		jsonError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", "tw_join_response_"+resp.ServerID+".json"))
-	_, _ = w.Write(out)
 }
 
 // apiUnenrollServer mirrors `tw relay un-enroll-server --yes` (the
