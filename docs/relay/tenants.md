@@ -196,15 +196,33 @@ join` exchange.
 ## Upgrading an existing relay
 
 Relays provisioned before invite-based enrollment shipped keep working for
-already-enrolled tenants without any action. New **client** invites
-(`tw server user create --invite`) route the enrollee's traffic to a second
-`permitlisten` port on the tenant's `authorized_keys` line (its tunnel port
-plus 20000) — a port that older tenant lines don't carry, because they were
-rendered before that line existed. Any full render adds it: run one
-enroll/un-enroll cycle (or `tw relay un-enroll-server <id>` followed by a
-fresh invite) for each existing tenant before issuing client invites on it.
-Server enrollment via `tw relay invite` needs no such migration — it's the
-render that's re-run either way.
+already-enrolled tenants without any action — but **no invite of either kind
+works yet**, including `tw relay invite` for a new server. A pre-upgrade
+render never wrote the admin's own `/enroll/<tok>` route into the Caddyfile,
+and `tw relay invite` has no other way to become reachable: the exchange is
+served over that exact route, so there's no invite that can bootstrap it into
+existence. (Same root cause as the tenant side: the enroll port is a second
+`permitlisten` on each tenant's `authorized_keys` line — tunnel port plus
+20000 — that a pre-upgrade render never wrote either.)
+
+One **full render** fixes both at once, and it has to be triggered by
+something that doesn't itself depend on the missing `/enroll` route:
+
+- If no tenant is enrolled yet, run `tw relay add-server` — it enrolls a
+  tenant entirely in-process over the admin's own management SSH connection,
+  never through the public `/enroll` endpoint, so it isn't blocked by the
+  thing it's fixing. Delete the resulting context (`tw config delete-context
+  <name>`) or `tw relay un-enroll-server <its-id>` afterwards if you didn't
+  actually want a self-enrolled server.
+- If a tenant already exists, `tw relay un-enroll-server <server-id>` on any
+  one of them works just as well — un-enrollment also renders the relay's
+  full state (admin slot included) directly over SSH, not through `/enroll`.
+
+Either one re-renders the Caddyfile and every tenant's `authorized_keys` from
+the registry, adding the admin's `/enroll` route and every tenant's enroll
+`permitlisten` in the same pass. After that, both `tw relay invite` and
+`tw server user create --invite` work normally. Relays provisioned by this
+version of `tw` already have both from the start and need nothing.
 
 ## Dashboard equivalents
 
