@@ -28,9 +28,10 @@ func testSelfEnroll(t *testing.T) {
 
 	// add-server runs EnrollServer in-process, whose step 3 re-renders the
 	// relay Caddyfile — wiping the e2e local_certs shim, exactly like
-	// `tw relay enroll-server` (see testServerJoin). Same dance: run
-	// detached, wait for step 3's completion line, reapply the shim before
-	// step 4's ~15s SSH-dial retry budget runs out.
+	// `tw relay invite` (see testServerJoin, or harness.go's
+	// runInviteExchange for the invite-flow version of this same dance).
+	// Same idea here: run detached, wait for step 3's completion line,
+	// reapply the shim before step 4's ~15s SSH-dial retry budget runs out.
 	execIn(t, "admin", "rm -f /shared/selfenroll.log")
 	execDetached(t, "admin", "tw relay add-server selfsrv > /shared/selfenroll.log 2>&1")
 	waitFor(t, "add-server step 3 (Apply relay config) complete", 30*time.Second, func() (bool, string) {

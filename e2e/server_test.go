@@ -11,104 +11,64 @@ import (
 	"time"
 )
 
-// testServerJoin drives the real server-join wizard: the server generates a
-// join request (this also sets mode=server), the admin enrolls it over the
-// VLESS tunnel to the relay, and the server applies the enrollment response.
-// It then starts the echo target and the server daemon and proves the tunnel
-// is up via `tw server test`.
+// testServerJoin drives the real invite-based server enrollment: the admin
+// mints a one-time invite code (`tw relay invite`), the server redeems it
+// (`tw join`) — reading back a shared authentication string (SAS) that both
+// sides must agree on before the admin approves — and the result lands as a
+// mode-signed context, born already active on the freshly-wiped server
+// container. It then starts the echo target and the server daemon and
+// proves the tunnel is up via `tw server test`.
 func testServerJoin(t *testing.T) {
 	scenario(t, "a server joins the admin's relay non-disruptively and publishes its reverse tunnel",
-		"tw server join-relay generates a join request (and sets mode=server)",
-		"tw relay enroll-server registers the tenant over the tunnel and re-renders + reloads the relay Caddyfile ('Caddyfile reloaded')",
-		"tw server join-relay --apply applies the admin's enrollment response",
+		"tw relay invite mints a one-time code and waits for the enrollee",
+		"tw join <relay-host> <code> shows the SAS, gets approved on an exact read-back match, and creates a mode-signed server context",
+		"the invite's EnrollServer step re-renders + reloads the relay Caddyfile ('Caddyfile reloaded') AFTER SAS approval",
+		"the fresh server container has no live profile, so tw join activates the new context immediately (no separate use-context)",
 		"tw server start + echo target come up and tw server test reports 'tunnel and shell working'",
-		"the local_certs shim reapply lands inside enroll's ~15s SSH-dial retry budget with >5s of margin")
+		"the local_certs shim reapply lands inside EnrollServer's ~15s SSH-dial retry budget with margin to spare")
 
 	// The server container's /etc/tw-test may carry state from an earlier full
-	// suite run (this suite must be re-runnable); wipe it so `tw server join-relay`
-	// always starts from a clean identity, same rationale as RelayInstall's
-	// admin seed wipe. A prior run's detached `tw server start`/`echo-server`
-	// processes also outlive the container across test invocations (nothing
-	// ever stops them) and keep holding the relay-side reverse-forward port —
-	// since the admin registry restarts allocation from the same first port
-	// after every fresh RelayInstall wipe, a leftover process from an earlier
-	// run collides with this run's server for that exact port ("tcpip-forward
-	// request denied by peer"). Kill any survivors first (skip our own PID —
-	// this script's own /proc/self/cmdline literally contains the search
-	// text, so it would otherwise match itself).
+	// suite run (this suite must be re-runnable); wipe it so `tw join`
+	// always starts from a clean identity (and so liveProfileEmpty() is true,
+	// meaning tw join auto-activates the new context), same rationale as
+	// RelayInstall's admin seed wipe. A prior run's detached `tw server
+	// start`/`echo-server` processes also outlive the container across test
+	// invocations (nothing ever stops them) and keep holding the relay-side
+	// reverse-forward port — since the admin registry restarts allocation
+	// from the same first port after every fresh RelayInstall wipe, a
+	// leftover process from an earlier run collides with this run's server
+	// for that exact port ("tcpip-forward request denied by peer"). Kill any
+	// survivors first (skip our own PID — this script's own
+	// /proc/self/cmdline literally contains the search text, so it would
+	// otherwise match itself).
 	t.Log("killing any leftover tw server/echo-server processes and wiping server config dir for a clean identity before join")
 	killMatching(t, "server", "tw server start")
 	killMatching(t, "server", "echo-server")
 	execIn(t, "server", "rm -rf /etc/tw-test")
 
-	// 1. Server generates identity + join request (this also sets mode=server).
-	execIn(t, "server", "cd /shared && rm -f tw_join_*.json && tw server join-relay "+domain)
+	// The whole exchange: admin mints the code, server redeems it. See
+	// harness.go's runInviteExchange for the FIFO/SAS/Caddyfile-reload
+	// mechanics — including why the shim reapply happens AFTER SAS approval
+	// now (EnrollServer runs only once the human confirms the read-back),
+	// unlike the old file-based flow where the reload could happen before
+	// any interactive step.
+	issuerLog, joinLog := runInviteExchange(t, "admin", "tw relay invite", "server", "tw join "+domain+" {code}")
 
-	// 2. Admin enrolls it (SSH to relay over the VLESS tunnel) and writes the
-	// response. `tw relay enroll-server` step 3 ("Apply relay config") fully
-	// re-renders and reloads the relay's Caddyfile from scratch (it rebuilds
-	// the whole per-tenant handle-block set), which wipes the local_certs
-	// shim RelayInstall applied. Caddy then falls back to real ACME for the
-	// fake "relay.tw.test" domain, which fails (not a public suffix) and
-	// leaves the site briefly without a servable certificate — the same
-	// class of issue relay_install_test.go's idempotency pass guards
-	// against, just triggered by a different relay-side command, and this
-	// time from *inside* a single CLI invocation with no seam for the
-	// harness to intervene between step 3's reload and step 4's fresh dial.
-	//
-	// Racing a fix into that seam (sub-20ms in practice) would be flaky. Ops
-	// already retries step 4's SSH dial 15x over ~15s (internal/ops/user.go)
-	// — real tolerance for exactly this kind of transient relay unavailability
-	// (e.g. a cert reissue in flight). So: run enroll detached, wait for its
-	// own step-3-complete log line (proving the reload already happened and
-	// the pubkey/config substeps that reuse the pre-reload SSH connection are
-	// done — reapplying the shim any earlier risks tearing down that
-	// still-in-use connection out from under step 3), reapply the shim, then
-	// let one of step 4's remaining retries land on a healthy relay.
-	execDetached(t, "admin",
-		"cd /shared && rm -f tw_join_response_*.json && tw relay enroll-server /shared/tw_join_*.json > /shared/enroll.log 2>&1")
-	waitFor(t, "admin enroll step 3 (Apply relay config) complete", 30*time.Second, func() (bool, string) {
-		out, _ := execInOK("admin", "cat /shared/enroll.log 2>/dev/null")
-		return strings.Contains(out, "Caddyfile reloaded"), out
-	})
-	// This reapply races the SSH-dial retry loop that enroll's step 4
-	// (Live enroll tenant, RelaySSH) is already inside: internal/ops/user.go's
-	// `for i := 0; i < 15; i++ { dial; sleep 1s }` — a fixed ~15s total
-	// budget, no backoff. The harness's own confirmation waitFor below is
-	// deliberately looser (60s) so it never itself times out a slow-but-live
-	// relay, which means it would NOT notice if the shim reapply were slow
-	// enough that step 4 exhausted its 15s and failed first. So: time the
-	// reapply-to-confirmed-live window here and flag it loudly if it starts
-	// eating into that 15s budget, rather than relying on the 60s waitFor
-	// (which has no opinion on the product's much tighter constant).
-	shimReapplyStart := time.Now()
-	localCertsShim(t)
-	waitFor(t, "caddy local root CA after enroll reload", 60*time.Second, func() (bool, string) {
-		out, err := execInOK("relay",
-			"cat /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt")
-		if err != nil || !strings.Contains(out, "BEGIN CERTIFICATE") {
-			return false, "root.crt not present yet"
-		}
-		return true, ""
-	})
-	shimReapplyElapsed := time.Since(shimReapplyStart)
-	t.Logf("shim reapply confirmed live after %s (racing enroll's 15x1s SSH-dial retry budget in internal/ops/user.go)", shimReapplyElapsed)
-	if shimReapplyElapsed > 10*time.Second {
-		t.Errorf("shim reapply took %s — less than 5s of margin left against enroll step 4's ~15s SSH-dial retry budget (internal/ops/user.go); this is a near-miss, not (yet) an observed failure, but the margin this test depends on is shrinking and should be investigated before it flakes", shimReapplyElapsed)
+	if strings.Contains(issuerLog, "mode is unsigned") || strings.Contains(joinLog, "mode is unsigned") {
+		fatalf(t, "invite/join printed the unsigned-mode warning:\nissuer:\n%s\njoin:\n%s", issuerLog, joinLog)
 	}
-	waitFor(t, "admin enroll response file", 30*time.Second, func() (bool, string) {
-		out, _ := execInOK("admin", "ls /shared/tw_join_response_*.json 2>/dev/null")
-		if strings.Contains(out, "tw_join_response_") {
-			return true, ""
-		}
-		logOut, _ := execInOK("admin", "cat /shared/enroll.log 2>/dev/null")
-		return false, logOut
-	})
+	if !regexp.MustCompile(`Context "relay-tw-test" \(server\) created\.`).MatchString(joinLog) {
+		fatalf(t, "join log missing the expected context-created line:\n%s", joinLog)
+	}
+	// The server's /etc/tw-test was wiped above, so liveProfileEmpty() was
+	// true and tw join activated the context itself — confirm the "Next: tw
+	// server start" hint (not "Next: tw config use-context ..."), proving no
+	// manual switch is needed.
+	if !strings.Contains(joinLog, "Next: tw server start") {
+		fatalf(t, "join did not report auto-activation (expected 'Next: tw server start'):\n%s", joinLog)
+	}
 
-	// 3. Server applies the response.
-	execIn(t, "server", "cd /shared && tw server join-relay --apply /shared/tw_join_response_*.json")
-
-	// 4. Echo target + server daemon.
+	// Echo target + server daemon.
 	execDetached(t, "server", "echo-server -port "+echoPort)
 	execDetached(t, "server", "tw server start > /var/log/tw-server.log 2>&1")
 
@@ -144,63 +104,48 @@ func testServerJoin(t *testing.T) {
 // (server A's client cannot reach server B) is still deferred.
 func testSecondTenant(t *testing.T) {
 	scenario(t, "a second server enrolls on the same relay (third tenant) non-disruptively",
-		"tw server join-relay on server2 generates its join request",
-		"tw relay enroll-server live-adds the tenant (Caddyfile reloaded, no xray restart); tw relay get-servers lists both tenants",
-		"tw server join-relay --apply applies the response on server2",
-		"server2's tw server test reports 'tunnel and shell working'",
+		"tw relay invite on the admin mints a code for the new tenant; server2 redeems it with tw join",
+		"the invite's EnrollServer live-adds the tenant (Caddyfile reloaded, no xray restart); tw relay get-servers lists both tenants",
+		"server2's context is born active (fresh container, no live profile) and tw server test reports 'tunnel and shell working'",
 		"server-1's tw server test and the admin's tw relay test still pass (non-disruptive)",
 		"tw relay un-enroll-server --yes removes the LIVE server2: registry row gone, relay listener gone, its tunnel test fails",
 		"server-1 and the admin remain unaffected after the un-enroll (non-disruptive removal)",
 		"tab completion: tw __complete relay un-enroll-server offers the enrolled server-id")
 
-	// Clean identity on server2 (same rationale as ServerJoin's wipe).
+	// Clean identity on server2 (same rationale as ServerJoin's wipe — this
+	// also makes liveProfileEmpty() true so tw join auto-activates below).
 	killMatching(t, "server2", "tw server start")
 	execIn(t, "server2", "rm -rf /etc/tw-test")
 
-	// The ServerID (and so the join/response filenames) is prefixed with the
-	// container's hostname — a random Docker ID here, NOT the compose service
-	// name — so capture it to address server2's files without glob-colliding
-	// with server-1's leftovers in /shared.
+	// The ServerID is prefixed with the container's hostname — a random
+	// Docker ID here, NOT the compose service name — capture it to build
+	// get-servers row regexes below.
 	host := strings.TrimSpace(execIn(t, "server2", "hostname"))
-	joinGlob := "/shared/tw_join_" + host + "-*.json"
-	respGlob := "/shared/tw_join_response_" + host + "-*.json"
 
-	// 1. server2 generates identity + join request.
-	execIn(t, "server2", "cd /shared && rm -f "+joinGlob+" "+respGlob+" && tw server join-relay "+domain)
-	execIn(t, "server2", "ls "+joinGlob) // fail loudly here if the naming assumption breaks
+	issuerLog, joinLog := runInviteExchange(t, "admin", "tw relay invite", "server2", "tw join "+domain+" {code}")
+	if strings.Contains(issuerLog, "mode is unsigned") || strings.Contains(joinLog, "mode is unsigned") {
+		fatalf(t, "invite/join printed the unsigned-mode warning:\nissuer:\n%s\njoin:\n%s", issuerLog, joinLog)
+	}
+	if !regexp.MustCompile(`Context "relay-tw-test" \(server\) created\.`).MatchString(joinLog) {
+		fatalf(t, "join log missing the expected context-created line:\n%s", joinLog)
+	}
 
-	// 2. Admin enrolls it — same detached + shim-reapply dance as ServerJoin:
-	// enroll's step 3 re-renders the relay Caddyfile, wiping the local_certs
-	// shim, so it must be reapplied before enroll's step-4 SSH-dial retries
-	// exhaust their ~15s budget.
-	execDetached(t, "admin",
-		"cd /shared && tw relay enroll-server "+joinGlob+" > /shared/enroll2.log 2>&1")
-	waitFor(t, "admin enroll (server2) step 3 complete", 30*time.Second, func() (bool, string) {
-		out, _ := execInOK("admin", "cat /shared/enroll2.log 2>/dev/null")
-		return strings.Contains(out, "Caddyfile reloaded"), out
-	})
-	localCertsShim(t)
-	waitFor(t, "admin enroll (server2) response file", 30*time.Second, func() (bool, string) {
-		out, _ := execInOK("admin", "ls "+respGlob+" 2>/dev/null")
-		if strings.Contains(out, "tw_join_response_"+host+"-") {
-			return true, ""
-		}
-		logOut, _ := execInOK("admin", "cat /shared/enroll2.log 2>/dev/null")
-		return false, logOut
-	})
-
-	// get-servers queries the relay live: both tenants listed with their /tw/
-	// paths; server-1's reverse tunnel is up (its daemon runs since
-	// ServerJoin), server2's is down (nothing started yet — the enrollment
-	// response isn't even applied at this point).
+	// get-servers queries the relay live: both tenants are registered with
+	// their /tw/ paths. server-1's reverse tunnel is up (its daemon runs
+	// since ServerJoin); server2's tunnel state isn't asserted here — like
+	// the old file-based flow, `tw server test` below is self-sufficient
+	// (internal/cli/test_relay.go: falls back to a standalone dial when no
+	// `tw server start` daemon is running to talk to over gRPC), so this
+	// registry row is only used to capture server2's ID/port for the
+	// un-enroll steps below, not to prove liveness.
 	serverHost := strings.TrimSpace(execIn(t, "server", "hostname"))
 	regOut := execIn(t, "admin", "tw relay get-servers")
 	if !regexp.MustCompile(`(?m)^` + serverHost + `\S*\s+/tw/` + serverHost + `\S*\s+\d+\s+\S+\s+up\s*$`).MatchString(regOut) {
 		fatalf(t, "get-servers does not show server-1 (%s-*) with its path and TUNNEL up:\n%s", serverHost, regOut)
 	}
-	row := regexp.MustCompile(`(?m)^(` + host + `\S*)\s+/tw/` + host + `\S*\s+(\d+)\s+\S+\s+down\s*$`).FindStringSubmatch(regOut)
+	row := regexp.MustCompile(`(?m)^(` + host + `\S*)\s+/tw/` + host + `\S*\s+(\d+)\s+\S+\s+\S+\s*$`).FindStringSubmatch(regOut)
 	if row == nil {
-		fatalf(t, "get-servers does not show server2 (%s-*) with its path and TUNNEL down:\n%s", host, regOut)
+		fatalf(t, "get-servers does not show server2 (%s-*) with its path:\n%s", host, regOut)
 	}
 	server2ID, server2Port := row[1], row[2]
 
@@ -210,17 +155,14 @@ func testSecondTenant(t *testing.T) {
 		fatalf(t, "un-enroll-server completion does not offer %s:\n%s", server2ID, compOut)
 	}
 
-	// 3. server2 applies the response.
-	execIn(t, "server2", "cd /shared && tw server join-relay --apply "+respGlob)
-
-	// 4. The new tenant's own tunnel works — this is the exact path reported
-	// broken in the field for a third tenant (VLESS dials, SSH never lands).
+	// server2's own tunnel works — this is the exact path reported broken in
+	// the field for a third tenant (VLESS dials, SSH never lands).
 	waitFor(t, "server2 tunnel up", 120*time.Second, func() (bool, string) {
 		out, err := execInOK("server2", "tw server test")
 		return err == nil && strings.Contains(out, "tunnel and shell working"), out
 	})
 
-	// 5. Non-disruptive: the existing tenants still work.
+	// Non-disruptive: the existing tenants still work.
 	out := execIn(t, "server", "tw server test")
 	if !strings.Contains(out, "tunnel and shell working") {
 		fatalf(t, "server-1 tunnel broken after server2 enroll:\n%s", out)
@@ -278,18 +220,15 @@ func testSecondTenant(t *testing.T) {
 	}
 }
 
-// mtlsNoCertAlert and mtlsForeignCAAlert are the stable substrings of the
-// OpenSSL/curl error text actually observed (live, --http1.1) for each
-// rejection case — see /home/n/code/Tunnel-Whisperer/.claude/superpowers/sdd/task-6-report.md
-// and the "Fix round 1" section appended there. They're deliberately the
+// mtlsForeignAlert is the stable substring of the OpenSSL/curl error text
+// actually observed (live, --http1.1) for a foreign-CA client cert rejection
+// — see /home/n/code/Tunnel-Whisperer/.claude/superpowers/sdd/task-6-report.md
+// and the "Fix round 1" section appended there. It's deliberately the
 // *specific* alert wording, not generic words like "certificate" or
 // "handshake", which also show up in an unrelated server-trust failure
 // (e.g. "unable to get local issuer certificate") and would let this test
 // pass for the wrong reason.
-const (
-	mtlsNoCertAlert  = "certificate required"
-	mtlsForeignAlert = "unknown ca"
-)
+const mtlsForeignAlert = "unknown ca"
 
 // assertMTLSRejection fails the test unless out contains the expected
 // client_auth-gate alert substring and does NOT contain any of the telltale
@@ -309,38 +248,65 @@ func assertMTLSRejection(t *testing.T, label, out, wantAlert string) {
 	}
 }
 
-// testMTLSGate proves the relay's Caddy client_auth gate rejects connections
-// that don't present an admitted client certificate, both with no cert at all
-// and with a foreign self-signed cert.
+// testMTLSGate proves the relay's Caddy client_auth gate's current shape
+// (mode verify_if_given, landed in 6f25359 to admit certless /enroll/
+// traffic for the invite flow): a PRESENTED cert is still verified against
+// the trust pool, but presenting none no longer aborts the TLS handshake —
+// the request completes and is then refused by the per-route CN matcher
+// instead, landing on the Caddyfile's catch-all 404.
 func testMTLSGate(t *testing.T) {
-	scenario(t, "the relay's Caddy client_auth gate admits only CA-issued client certs",
-		"an HTTPS request with NO client cert is rejected with the 'certificate required' TLS alert",
-		"an HTTPS request with a FOREIGN self-signed cert is rejected with the 'unknown ca' TLS alert",
-		"neither rejection is a server-trust failure (the client does trust the relay's own server cert) — proving the gate, not a misconfig, is what refuses them")
+	scenario(t, "the relay's Caddy client_auth gate (verify_if_given) validates presented certs; routing (not the handshake) gates unmapped paths",
+		"an HTTPS request with NO client cert now completes the TLS handshake and gets HTTP 404 from the catch-all — not a TLS alert",
+		"an HTTPS request with a FOREIGN self-signed cert is still rejected at the TLS layer with the 'unknown ca' alert (verify_if_given still verifies any PRESENTED cert)",
+		"an HTTPS request with a VALID cert (server-1's own, admitted during ServerJoin) on a path that isn't its own /tw/<id>* prefix also gets 404 — cert validity alone never grants access to an unmapped path",
+		"the foreign-CA rejection is not a server-trust failure (the client does trust the relay's own server cert) — proving the gate, not a misconfig, is what refuses it")
 
-	// No client cert: TLS handshake must be rejected by the client_auth gate.
+	// No client cert: the TLS handshake now SUCCEEDS under verify_if_given
+	// (changed from require_and_verify — see internal/relay/caddy/Caddyfile.tmpl
+	// and render_test.go). The request then falls through every per-tenant
+	// @{{.ID}} matcher (the CN expression can't match an empty subject) and
+	// every @enroll_{{.ID}} matcher (path doesn't match /enroll/<token>/*),
+	// landing on the catch-all `handle { respond 404 }`.
+	statusOut, err := execInOK("client", "curl -sS --max-time 10 -o /dev/null -w '%{http_code}' https://"+domain+"/")
+	if err != nil {
+		fatalf(t, "HTTPS without a client cert failed at the transport/TLS level (expected the handshake to succeed under verify_if_given):\n%s", statusOut)
+	}
+	if strings.TrimSpace(statusOut) != "404" {
+		fatalf(t, "HTTPS without a client cert: expected HTTP 404 from the catch-all, got %q", statusOut)
+	}
+
+	// Foreign CA: a self-signed cert that IS presented must still be
+	// rejected at the TLS layer — verify_if_given only waives the
+	// requirement to present a cert, it still verifies any cert that is.
 	//
 	// --http1.1: over the default h2 ALPN, curl defers sending the request
 	// until after the (successful, TLS1.3) handshake, so the server's
-	// certificate-required alert arrives mid-stream and curl only reports a
-	// generic "getpeername() failed / Transport endpoint is not connected" /
+	// alert arrives mid-stream and curl only reports a generic
+	// "getpeername() failed / Transport endpoint is not connected" /
 	// "Broken pipe" — no "certificate" or "handshake" substring, even though
 	// the rejection is real (confirmed directly with openssl s_client:
-	// "tlsv13 alert certificate required"). Forcing HTTP/1.1 makes curl
-	// surface the OpenSSL alert text directly instead.
-	out, err := execInOK("client", "curl -sS --max-time 10 --http1.1 https://"+domain+"/ 2>&1")
-	if err == nil {
-		fatalf(t, "HTTPS without a client cert unexpectedly succeeded:\n%s", out)
-	}
-	assertMTLSRejection(t, "no client cert", out, mtlsNoCertAlert)
-
-	// Foreign CA: a self-signed cert must be rejected too.
+	// "tlsv13 alert unknown ca"). Forcing HTTP/1.1 makes curl surface the
+	// OpenSSL alert text directly instead.
 	execIn(t, "client", `cd /tmp && openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 `+
 		`-keyout fake.key -out fake.crt -days 1 -nodes -subj /CN=intruder 2>/dev/null`)
-	out, err = execInOK("client",
+	out, err := execInOK("client",
 		"curl -sS --max-time 10 --http1.1 --cert /tmp/fake.crt --key /tmp/fake.key https://"+domain+"/ 2>&1")
 	if err == nil {
 		fatalf(t, "HTTPS with a foreign-CA cert unexpectedly succeeded:\n%s", out)
 	}
 	assertMTLSRejection(t, "foreign-CA cert", out, mtlsForeignAlert)
+
+	// Valid cert (server-1's own, admitted during ServerJoin, run right
+	// before this scenario), wrong path: TLS succeeds (its self-generated CA
+	// was uploaded during EnrollServer and is in the relay's trust pool) but
+	// the request doesn't match its own /tw/<server-id>* route, so it still
+	// 404s from the catch-all.
+	statusOut, err = execInOK("server", "curl -sS --max-time 10 -o /dev/null -w '%{http_code}' "+
+		"--cert /etc/tw-test/client.crt --key /etc/tw-test/client.key https://"+domain+"/nonexistent-path")
+	if err != nil {
+		fatalf(t, "HTTPS with a valid client cert on an unmapped path failed at the transport/TLS level:\n%s", statusOut)
+	}
+	if strings.TrimSpace(statusOut) != "404" {
+		fatalf(t, "HTTPS with a valid client cert on an unmapped path: expected HTTP 404, got %q", statusOut)
+	}
 }

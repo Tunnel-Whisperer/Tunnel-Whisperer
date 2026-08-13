@@ -36,11 +36,20 @@ func testRelayResilience(t *testing.T) {
 	}
 
 	// Baseline: bob works end-to-end before the disruption, so a recovery
-	// failure below can only be blamed on the restart.
-	execIn(t, "server", "tw server user create bob -m "+bobPort+":"+echoPort)
+	// failure below can only be blamed on the restart. Invite him (mints a
+	// code carrying his port mapping) and have the client redeem it — the
+	// zero-file replacement for create+apply+export+import. The client
+	// already has a live profile (alice's, from UserLifecycle — Revocation
+	// only killed her connection and deleted her server-side, it never
+	// deleted the client's context or switched away from it), so tw join
+	// won't auto-activate bob's new context; switch to it explicitly, the
+	// same role --activate played on config import.
+	issuerLog, joinLog := runInviteExchange(t, "server", "tw server user create bob -m "+bobPort+":"+echoPort+" --invite", "client", "tw join "+domain+" {code}")
+	if strings.Contains(issuerLog, "mode is unsigned") || strings.Contains(joinLog, "mode is unsigned") {
+		fatalf(t, "invite/join printed the unsigned-mode warning:\nissuer:\n%s\njoin:\n%s", issuerLog, joinLog)
+	}
 	execIn(t, "server", "tw server user apply bob")
-	execIn(t, "server", "cd /shared && rm -f bob-tw-context.twctx && tw config export-user bob")
-	execIn(t, "client", "tw config import /shared/bob-tw-context.twctx --activate")
+	execIn(t, "client", "tw config use-context bob")
 	execDetached(t, "client", "tw client connect > /var/log/tw-client-bob.log 2>&1")
 	waitFor(t, "bob tunnel listening", 120*time.Second, func() (bool, string) {
 		if _, err := execInOK("client", "nc -z 127.0.0.1 "+bobPort); err != nil {

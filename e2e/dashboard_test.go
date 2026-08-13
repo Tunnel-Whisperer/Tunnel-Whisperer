@@ -44,7 +44,10 @@ func testDashboard(t *testing.T) {
 		fatalf(t, "admin dashboard home is not the relay view:\n%.400s", out)
 	}
 	out = execIn(t, "admin", "curl -sf http://127.0.0.1:8080/servers")
-	if !strings.Contains(out, "Enroll a Server") {
+	// The "Enroll a Server" upload-form card was removed along with the
+	// file-based enrollment flow (zero-file-enrollment task 10); "Enrolled
+	// Servers" is the stable heading of the tenant table view that remains.
+	if !strings.Contains(out, "Enrolled Servers") {
 		fatalf(t, "admin /servers page did not render the tenant view:\n%.400s", out)
 	}
 	if !strings.Contains(out, "servers-search") {

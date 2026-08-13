@@ -26,18 +26,6 @@ func installShim(t *testing.T) string {
 			"bash /shared/tw-install-"+domain+".sh")
 }
 
-// localCertsShim prepends a `{ local_certs }` global block to the relay
-// Caddyfile so Caddy issues certs from its internal CA instead of reaching for
-// ACME (unreachable in the offline test network), then restarts Caddy. The
-// install script rewrites the Caddyfile from scratch, so this must be re-applied
-// after every install run. Idempotent: a no-op once the block is present.
-func localCertsShim(t *testing.T) {
-	t.Helper()
-	execIn(t, "relay", `grep -q local_certs /etc/caddy/Caddyfile || `+
-		`(printf '{\n\tlocal_certs\n}\n' | cat - /etc/caddy/Caddyfile > /tmp/Caddyfile.new `+
-		`&& mv /tmp/Caddyfile.new /etc/caddy/Caddyfile && systemctl restart caddy)`)
-}
-
 func testRelayInstall(t *testing.T) {
 	scenario(t, "an admin provisions a relay from scratch using the REAL tw-generated install script",
 		"the flag-based one-liner `tw relay create --provider manual --domain --ip` completes without prompts and emits the install script + admin bundle",

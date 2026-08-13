@@ -3,18 +3,19 @@
 package e2e
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 )
 
-// testUserLifecycle creates a user on the server, exports it as a client
-// context bundle, imports it on the client, connects, and proves byte-for-byte
+// testUserLifecycle creates a user on the server via an invite, has the
+// client redeem it with `tw join`, connects, and proves byte-for-byte
 // traffic through the relay + tunnel.
 func testUserLifecycle(t *testing.T) {
-	scenario(t, "a user is created on the server, shipped to a client as a context bundle, and moves real bytes through the tunnel",
-		"tw server user create/apply/list registers alice with her port mapping",
-		"tw config export-user packages her as a .twctx bundle; the client imports + activates it",
+	scenario(t, "a user is invited on the server, the client redeems the invite via tw join, and moves real bytes through the tunnel",
+		"tw server user create alice --invite mints a one-time code carrying her port mapping",
+		"tw join <relay-host> <code> on the client shows the SAS, gets approved, and creates a mode-signed client context named after the user",
 		"tw client connect opens the local tunnel port",
 		"a byte-for-byte echo round-trip (hello-tw-e2e) succeeds through relay + tunnel",
 		"tw client test: all three steps pass (DNS, HTTPS/mTLS, and an SSH auth handshake to the server's embedded SSH through the tunnel)",
@@ -24,7 +25,9 @@ func testUserLifecycle(t *testing.T) {
 	// `tw client connect` and an old /etc/tw-test on the client, and a
 	// leftover `alice` on the server (e.g. if a later scenario in that run
 	// failed before Revocation cleaned her up). Wipe/kill defensively before
-	// creating anything new.
+	// creating anything new. Wiping the client's /etc/tw-test also makes
+	// liveProfileEmpty() true, so tw join below auto-activates alice's
+	// context without a separate --activate/use-context step.
 	t.Log("pre-cleanup: killing any stale 'tw client connect' on the client")
 	killMatching(t, "client", "tw client connect")
 	t.Log("pre-cleanup: wiping client's /etc/tw-test for a clean import")
@@ -35,9 +38,25 @@ func testUserLifecycle(t *testing.T) {
 		t.Logf("pre-cleanup: deleted a leftover alice from a previous run:\n%s", out)
 	}
 
-	// Create + register + list (server daemon is running; CLI goes via gRPC where wired).
-	execIn(t, "server", "tw server user create alice -m "+userPort+":"+echoPort)
+	// Invite alice: the server mints a code carrying her port mapping, the
+	// client redeems it with tw join. Unlike the old create+apply two-step,
+	// InviteUser's grantClient (internal/ops/invite.go) already registers
+	// her UUID on the relay and writes the .applied marker as part of the
+	// same grant — no separate `apply` is required for her to be live. Run
+	// `apply` anyway (harmless, idempotent — see task-11-report.md) so
+	// e2e/coverage.yaml's mapping for "server user apply" stays true.
+	issuerLog, joinLog := runInviteExchange(t, "server", "tw server user create alice -m "+userPort+":"+echoPort+" --invite", "client", "tw join "+domain+" {code}")
+	if strings.Contains(issuerLog, "mode is unsigned") || strings.Contains(joinLog, "mode is unsigned") {
+		fatalf(t, "invite/join printed the unsigned-mode warning:\nissuer:\n%s\njoin:\n%s", issuerLog, joinLog)
+	}
+	if !regexp.MustCompile(`Context "alice" \(client\) created\.`).MatchString(joinLog) {
+		fatalf(t, "join log missing the expected context-created line:\n%s", joinLog)
+	}
+	if !strings.Contains(joinLog, "Next: tw client start") {
+		fatalf(t, "join did not report auto-activation (expected 'Next: tw client start'):\n%s", joinLog)
+	}
 	execIn(t, "server", "tw server user apply alice")
+
 	out := execIn(t, "server", "tw server user list")
 	if !strings.Contains(out, "alice") {
 		fatalf(t, "alice missing from user list:\n%s", out)
@@ -49,11 +68,9 @@ func testUserLifecycle(t *testing.T) {
 		fatalf(t, "user delete completion does not offer alice:\n%s", compOut)
 	}
 
-	// Export as a client context bundle; import + activate on the client.
-	execIn(t, "server", "cd /shared && rm -f alice-tw-context.twctx && tw config export-user alice")
-	execIn(t, "client", "tw config import /shared/alice-tw-context.twctx --activate")
-	// Without --name, a client bundle's context is named after its user — the
-	// self-explanatory default (not the relay domain).
+	// The client-role context is named after the invited user (not the
+	// relay domain) — this was already how a client bundle's default name
+	// worked, unchanged by the invite rewrite.
 	curCtx := execIn(t, "client", "tw config current-context")
 	if !strings.Contains(curCtx, "alice") {
 		fatalf(t, "imported context not named after the user: current-context = %q, want alice", curCtx)
@@ -66,8 +83,11 @@ func testUserLifecycle(t *testing.T) {
 
 	// The client-role gate refuses a server-only command outright — proving
 	// requireMode's cross-role check, not just the mode-signature check
-	// exercised in ServerJoin's tamper test.
-	if gateOut, gateErr := execInOK("client", "tw server join-relay relay.example"); gateErr == nil {
+	// exercised in ServerJoin's tamper test. `tw server join-relay` (used
+	// here previously) no longer exists (file-based enrollment removed);
+	// `tw server test` is an equally simple, side-effect-free server-mode
+	// command that hits the same requireMode("server") gate.
+	if gateOut, gateErr := execInOK("client", "tw server test"); gateErr == nil {
 		fatalf(t, "client profile was allowed to run a server-mode command:\n%s", gateOut)
 	} else if !strings.Contains(gateOut, "requires server mode") {
 		fatalf(t, "expected a server-mode gate error (root.go modeError), got:\n%s", gateOut)
