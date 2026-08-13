@@ -32,7 +32,7 @@ var serviceInstallCmd = &cobra.Command{
 			Args:        svcArgs,
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("installing service (requires elevated privileges — sudo on Linux/macOS, Administrator on Windows): %w", err)
 		}
 
 		fmt.Println("Service installed successfully.")
@@ -46,7 +46,7 @@ var serviceUninstallCmd = &cobra.Command{
 	Short: "Uninstall the system service",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := service.Uninstall(); err != nil {
-			return err
+			return fmt.Errorf("uninstalling service (requires elevated privileges — sudo on Linux/macOS, Administrator on Windows): %w", err)
 		}
 		fmt.Println("Service uninstalled successfully.")
 		return nil

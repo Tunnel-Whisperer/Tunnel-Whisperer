@@ -192,6 +192,12 @@ func sealLocalServerBundle(ident *localServerIdentity, scfg *config.Config) ([]b
 // born signed), and sealed straight into the context store. The live relay
 // profile is never modified.
 func (o *Ops) AddLocalServer(name string, progress ProgressFunc) (*LocalServerResult, error) {
+	// Fail before EnrollServer: it enrolls the tenant on the relay, so a
+	// local write failure discovered afterwards would strand that enrollment
+	// with no context to show for it.
+	if err := config.CheckWritable(); err != nil {
+		return nil, err
+	}
 	cfg := o.Config()
 	if cfg.Xray.RelayHost == "" {
 		return nil, fmt.Errorf("no relay configured — run 'tw relay create' first")

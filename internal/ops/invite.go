@@ -116,6 +116,11 @@ func deliverGrantPhase2(cfg *config.Config, inv *enroll.Invite, h *enroll.Handle
 // collect the grant even if the relay's TLS was briefly unservable across a
 // reload.
 func (o *Ops) InviteServer(ttl time.Duration, ui InviteUI, progress ProgressFunc) (*JoinResponse, error) {
+	// Fail before minting: once the code is shown and redeemed it burns, so a
+	// local write failure discovered later would waste it for nothing.
+	if err := config.CheckWritable(); err != nil {
+		return nil, err
+	}
 	cfg := o.Config()
 	if cfg.Xray.RelayHost == "" {
 		return nil, fmt.Errorf("no relay configured — run 'tw relay create' first")
@@ -190,6 +195,12 @@ func (o *Ops) InviteServer(ttl time.Duration, ui InviteUI, progress ProgressFunc
 // the same Handler on fresh connection(s) so the enrollee still collects the
 // grant.
 func (o *Ops) InviteUser(req CreateUserRequest, ttl time.Duration, ui InviteUI, progress ProgressFunc) error {
+	// Fail before minting: once the code is shown and redeemed it burns, and
+	// grantClient has already created the user server-side by then, so a
+	// local write failure discovered later would waste both for nothing.
+	if err := config.CheckWritable(); err != nil {
+		return err
+	}
 	cfg := o.Config()
 	if err := validateCreateUser(*cfg, req); err != nil {
 		return err

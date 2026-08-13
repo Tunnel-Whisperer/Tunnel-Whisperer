@@ -123,9 +123,19 @@ func sealProfile() ([]byte, error) {
 	return enc, nil
 }
 
-// unsealProfile decrypts and unzips a profile into config.Dir(), overwriting the
-// profile files. It refuses any zip entry that escapes config.Dir() (zip-slip)
-// or targets the contexts store.
+// unsealProfile decrypts and unzips a profile into config.Dir(), overwriting
+// the profile files. It refuses any zip entry that escapes config.Dir()
+// (zip-slip) or targets the contexts store.
+//
+// Every entry is staged in a scratch directory under config.Dir() first and
+// only moved into place once ALL of them staged and validated successfully
+// (see the pass-by-pass comments below) — a failure partway through (disk
+// full, a structural conflict with what's already on disk, whatever) leaves
+// the live profile untouched rather than a mix of old and new files. This
+// is deliberately not a single atomic directory swap: config.Dir() is a
+// fixed path several other things (notably the contexts store) depend on
+// staying put, so it can't be swapped wholesale — see the per-pass comments
+// for what guarantee that trade-off still gets you.
 func unsealProfile(data []byte) error {
 	plain, err := cryptobox.Decrypt(data, "")
 	if err != nil {
@@ -137,13 +147,13 @@ func unsealProfile(data []byte) error {
 	}
 	dir := filepath.Clean(config.Dir())
 
-	// Pass 1: validate every entry and collect its destination, content, and
-	// mode. Write NOTHING to the live config dir here — any rejected entry
+	// Pass 1: validate every entry and collect its config.Dir()-relative
+	// path, content, and mode. Write NOTHING here — any rejected entry
 	// (zip-slip, excluded context-store entry, read error) aborts the whole
 	// unseal with zero side effects, so a malformed bundle can never leave a
 	// half-overwritten config.
 	type pending struct {
-		dest    string
+		rel     string // config.Dir()-relative, OS-native separators
 		content []byte
 		mode    os.FileMode
 	}
@@ -170,22 +180,72 @@ func unsealProfile(data []byte) error {
 		if strings.HasSuffix(clean, ".key") || filepath.Base(clean) == "id_ed25519" {
 			mode = 0o600
 		}
-		writes = append(writes, pending{dest: dest, content: content, mode: mode})
+		writes = append(writes, pending{rel: clean, content: content, mode: mode})
 	}
 
-	// Pass 2: all entries validated — now write them to the live config dir.
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
+	if len(writes) == 0 {
+		return nil
+	}
+
+	// Pass 2: stage every entry in a scratch directory UNDER config.Dir()
+	// (same filesystem as the live profile, so pass 4's move is a rename,
+	// not a copy). A failure here — disk full, permissions changing
+	// mid-run, whatever — touches ONLY the staging dir; the live profile is
+	// completely untouched. Always cleaned up: on success the files have
+	// already been moved OUT of it by pass 4, on failure nothing was ever
+	// staged into the live dir to begin with.
+	staging, err := os.MkdirTemp(dir, ".profile-staging-")
+	if err != nil {
+		return fmt.Errorf("creating staging dir: %w", err)
+	}
+	defer os.RemoveAll(staging)
+
 	for _, w := range writes {
-		if err := os.MkdirAll(filepath.Dir(w.dest), 0o755); err != nil {
-			return err
+		stagePath := filepath.Join(staging, w.rel)
+		if err := os.MkdirAll(filepath.Dir(stagePath), 0o755); err != nil {
+			return fmt.Errorf("staging %s: %w", w.rel, err)
 		}
-		if err := os.WriteFile(w.dest, w.content, w.mode); err != nil {
-			return fmt.Errorf("writing %s: %w", w.dest, err)
+		if err := os.WriteFile(stagePath, w.content, w.mode); err != nil {
+			return fmt.Errorf("staging %s: %w", w.rel, err)
 		}
-		if err := os.Chmod(w.dest, w.mode); err != nil {
-			return fmt.Errorf("setting mode on %s: %w", w.dest, err)
+	}
+
+	// Pass 3: every entry staged successfully. Before touching the live
+	// profile at all, verify every destination is actually replaceable —
+	// this catches a STRUCTURAL conflict (e.g. the live dir already has a
+	// directory where the bundle wants a plain file) up front too, not just
+	// the content-write failures pass 2 guards against, so "on failure the
+	// live dir is untouched" covers this case as well.
+	for _, w := range writes {
+		dest := filepath.Join(dir, w.rel)
+		if fi, statErr := os.Lstat(dest); statErr == nil && fi.IsDir() {
+			return fmt.Errorf("cannot install %s: an existing directory is in the way", dest)
+		}
+		if fi, statErr := os.Lstat(filepath.Dir(dest)); statErr == nil && !fi.IsDir() {
+			return fmt.Errorf("cannot install %s: %s exists and is not a directory", dest, filepath.Dir(dest))
+		}
+	}
+
+	// Pass 4: validated + staged — move each into place. Per-file rename,
+	// not a single atomic directory swap, for the config.Dir()-is-fixed
+	// reason in the function doc above. Each rename is a metadata-only
+	// filesystem operation (no data copy), so this is a much narrower
+	// failure window than pass 2's content writes — which is why pass 3
+	// tries to rule out the foreseeable failure modes before this loop ever
+	// starts. On Windows, renaming over an open file fails; that's the same
+	// daemon-must-be-stopped assumption `tw config delete-context` already
+	// documents elsewhere in this package (a running daemon holds profile
+	// files open).
+	for _, w := range writes {
+		dest := filepath.Join(dir, w.rel)
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			return fmt.Errorf("preparing %s: %w", dest, err)
+		}
+		if err := os.Rename(filepath.Join(staging, w.rel), dest); err != nil {
+			return fmt.Errorf("installing %s: %w", dest, err)
 		}
 	}
 	return nil

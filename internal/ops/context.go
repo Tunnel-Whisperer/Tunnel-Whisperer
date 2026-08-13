@@ -192,6 +192,9 @@ var ErrContextExists = errors.New("context already exists")
 // stored bundle and its metadata are overwritten in place (the existing
 // context is updated, not duplicated).
 func (o *Ops) ImportContext(bundle []byte, name string, replace bool) (string, error) {
+	if err := config.CheckWritable(); err != nil {
+		return "", err
+	}
 	idx, err := config.EnsureContextIndex()
 	if err != nil {
 		return "", err

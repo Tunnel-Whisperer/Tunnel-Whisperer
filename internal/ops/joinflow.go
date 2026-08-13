@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -43,6 +45,12 @@ type JoinResult struct {
 // result lands as a new stored context; if this machine has no configured
 // profile yet, the context is activated too.
 func (o *Ops) Join(ctx context.Context, relayHost, code, name string, ui JoinUI, progress ProgressFunc) (*JoinResult, error) {
+	// Fail before ANY network call: RunEnrollee's first request (/start)
+	// burns the issuer's one-time invite, so a local write failure discovered
+	// after that point would strand the grant with nothing to show for it.
+	if err := config.CheckWritable(); err != nil {
+		return nil, err
+	}
 	tok, err := enroll.ParseCode(code)
 	if err != nil {
 		return nil, err
@@ -110,7 +118,7 @@ func (o *Ops) applyServerGrant(ident *localServerIdentity, grant []byte, name st
 		return nil, err
 	}
 	if _, err := o.ImportContext(bundle, name, false); err != nil {
-		return nil, err
+		return nil, rescueGrant(bundle, name, err)
 	}
 	res := &JoinResult{ContextName: name, Role: "server"}
 	if liveProfileEmpty() {
@@ -222,7 +230,7 @@ func (o *Ops) applyClientGrant(c *clientMaterial, grant []byte, name string, ui 
 		return nil, fmt.Errorf("sealing client context: %w", err)
 	}
 	if _, err := o.ImportContext(sealed, name, false); err != nil {
-		return nil, err
+		return nil, rescueGrant(sealed, name, err)
 	}
 	res := &JoinResult{ContextName: name, Role: "client"}
 	if liveProfileEmpty() {
@@ -232,4 +240,39 @@ func (o *Ops) applyClientGrant(c *clientMaterial, grant []byte, name string, ui 
 		res.Switched = true
 	}
 	return res, nil
+}
+
+// rescueGrant is called when a delivered grant — its issuer-side invite
+// already burned, its issuer-side enrollment (tenant/user) already created —
+// fails to persist into the local context store (typically an unwritable
+// config dir slipping past CheckWritable, e.g. permissions changed mid-run).
+// Losing the bundle at this point means losing the grant forever, since the
+// issuer has no way to hand it over a second time. So instead of just
+// returning the error, this writes the sealed bundle bytes to the first
+// writable fallback location (cwd, then the OS temp dir) as
+// tw_rescue_<name>.twctx and points the caller at `tw config import`.
+func rescueGrant(bundle []byte, name string, cause error) error {
+	fname := "tw_rescue_" + config.SanitizeName(name) + ".twctx"
+	var dirs []string
+	if wd, err := os.Getwd(); err == nil {
+		dirs = append(dirs, wd)
+	}
+	dirs = append(dirs, os.TempDir())
+
+	var writeErrs []string
+	for _, dir := range dirs {
+		path := filepath.Join(dir, fname)
+		if err := os.WriteFile(path, bundle, 0o600); err != nil {
+			writeErrs = append(writeErrs, fmt.Sprintf("%s: %v", path, err))
+			continue
+		}
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			abs = path
+		}
+		return fmt.Errorf("the grant was issued but could not be stored as a local context (%v); it was NOT lost — the sealed bundle was saved to %s — recover with: tw config import %s",
+			cause, abs, abs)
+	}
+	return fmt.Errorf("the grant was issued but could not be stored as a local context (%v), AND the rescue write also failed (%s) — the grant is lost; ask the issuer to re-enroll/re-invite",
+		cause, strings.Join(writeErrs, "; "))
 }

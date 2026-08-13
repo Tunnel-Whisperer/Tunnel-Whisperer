@@ -110,6 +110,9 @@ func newContextSealingCurrent(o *ops.Ops, name string) error {
 }
 
 func runConfigNewContext(cmd *cobra.Command, args []string) error {
+	if err := requireWritableConfig(); err != nil {
+		return err
+	}
 	o, err := ops.New()
 	if err != nil {
 		return err
@@ -160,6 +163,9 @@ func runConfigCurrentContext(cmd *cobra.Command, args []string) error {
 }
 
 func runConfigUseContext(cmd *cobra.Command, args []string) error {
+	if err := requireWritableConfig(); err != nil {
+		return err
+	}
 	o, err := ops.New()
 	if err != nil {
 		return err
@@ -250,6 +256,9 @@ func jsonSafe(v any) any {
 }
 
 func runConfigRenameContext(cmd *cobra.Command, args []string) error {
+	if err := requireWritableConfig(); err != nil {
+		return err
+	}
 	o, err := ops.New()
 	if err != nil {
 		return err
@@ -262,6 +271,9 @@ func runConfigRenameContext(cmd *cobra.Command, args []string) error {
 }
 
 func runConfigDeleteContext(cmd *cobra.Command, args []string) error {
+	if err := requireWritableConfig(); err != nil {
+		return err
+	}
 	o, err := ops.New()
 	if err != nil {
 		return err
@@ -299,6 +311,9 @@ func runConfigDeleteContext(cmd *cobra.Command, args []string) error {
 }
 
 func runConfigImport(cmd *cobra.Command, args []string) error {
+	if err := requireWritableConfig(); err != nil {
+		return err
+	}
 	data, err := os.ReadFile(args[0])
 	if err != nil {
 		return fmt.Errorf("reading bundle: %w", err)

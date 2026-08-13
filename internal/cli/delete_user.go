@@ -28,6 +28,9 @@ func runDeleteUser(cmd *cobra.Command, args []string) error {
 	if err := requireMode("server"); err != nil {
 		return err
 	}
+	if err := requireWritableConfig(); err != nil {
+		return err
+	}
 	name := args[0]
 
 	scanner := bufio.NewScanner(os.Stdin)

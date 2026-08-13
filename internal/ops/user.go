@@ -225,12 +225,19 @@ func validateCreateUser(cfg config.Config, req CreateUserRequest) error {
 
 // CreateUser runs the user creation flow: generates credentials, updates the
 // relay, saves config, and updates authorized_keys.
-func (o *Ops) CreateUser(ctx context.Context, req CreateUserRequest, progress ProgressFunc) error {
+func (o *Ops) CreateUser(ctx context.Context, req CreateUserRequest, progress ProgressFunc) (err error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
 	if progress == nil {
 		progress = func(ProgressEvent) {}
+	}
+
+	// Fail before step 2 (relay update): it mutates the relay's Xray config
+	// before any local write happens below, so a local write failure
+	// discovered afterwards would strand that relay-side change.
+	if err := config.CheckWritable(); err != nil {
+		return err
 	}
 
 	cfg := o.cfg
@@ -251,13 +258,33 @@ func (o *Ops) CreateUser(ctx context.Context, req CreateUserRequest, progress Pr
 	}
 	progress(ProgressEvent{Step: 1, Total: 4, Label: "Generating credentials", Status: "completed", Message: "UUID: " + clientUUID})
 
+	// Everything below can mutate the relay or write local state — undo
+	// (LIFO) on any later failure, mirroring grantClient's pattern, so a
+	// failure in step 3/4 doesn't strand a UUID the relay now thinks is
+	// valid with no matching local user.
+	var undo []func()
+	defer func() {
+		if err != nil {
+			for i := len(undo) - 1; i >= 0; i-- {
+				undo[i]()
+			}
+		}
+	}()
+
 	// Step 2: Update relay.
 	progress(ProgressEvent{Step: 2, Total: 4, Label: "Updating relay", Status: "running"})
 	if err := addUUIDToRelay(cfg, clientUUID); err != nil {
+		// Non-fatal by design (existing behavior: a relay hiccup here just
+		// warns and continues), so nothing was actually added — no undo.
 		slog.Warn("relay update failed", "error", err)
 		progress(ProgressEvent{Step: 2, Total: 4, Label: "Updating relay", Status: "completed", Message: "Warning: " + err.Error()})
 	} else {
 		progress(ProgressEvent{Step: 2, Total: 4, Label: "Updating relay", Status: "completed", Message: "UUID added to relay"})
+		undo = append(undo, func() {
+			if uerr := removeUUIDFromRelay(cfg, clientUUID); uerr != nil {
+				slog.Warn("rolling back relay UUID after a local failure also failed", "uuid", clientUUID, "error", uerr)
+			}
+		})
 	}
 
 	// Step 3: Save user files.
@@ -267,6 +294,13 @@ func (o *Ops) CreateUser(ctx context.Context, req CreateUserRequest, progress Pr
 		progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("creating user directory: %w", err)
 	}
+	// One undo covers every write under userDir below (keys, config.yaml,
+	// .single-session, .applied) — removing the directory removes them all.
+	undo = append(undo, func() {
+		if uerr := os.RemoveAll(userDir); uerr != nil {
+			slog.Warn("rolling back user directory after a later failure also failed", "dir", userDir, "error", uerr)
+		}
+	})
 
 	if err := os.WriteFile(filepath.Join(userDir, "id_ed25519"), privPEM, 0600); err != nil {
 		progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "failed", Error: err.Error()})
@@ -328,6 +362,9 @@ func (o *Ops) CreateUser(ctx context.Context, req CreateUserRequest, progress Pr
 		progress(ProgressEvent{Step: 4, Total: 4, Label: "Updating authorized_keys", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("updating authorized_keys: %w", err)
 	}
+	// No undo appended here: this is the last step that can fail (the
+	// .applied marker write right below is already best-effort/ignored), so
+	// there's nothing after it left to roll back FROM.
 	progress(ProgressEvent{Step: 4, Total: 4, Label: "Updating authorized_keys", Status: "completed"})
 
 	// Mark user as applied to the current relay.

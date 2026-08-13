@@ -29,6 +29,9 @@ match. The invite is single-use and expires automatically.`,
 		if err := requireMode("relay"); err != nil {
 			return err
 		}
+		if err := requireWritableConfig(); err != nil {
+			return err
+		}
 		o, err := ops.New()
 		if err != nil {
 			return err

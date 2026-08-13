@@ -74,6 +74,15 @@ func Execute() error {
 	return rootCmd.Execute()
 }
 
+// requireWritableConfig fails fast if the config directory is not writable.
+// Call it before any command that mints or burns something remote or
+// single-use (an invite code, a relay-side enrollment) — otherwise a local
+// write failure after that point strands the side effect with nothing to
+// show for it locally.
+func requireWritableConfig() error {
+	return config.CheckWritable()
+}
+
 // requireMode returns an error if the current config mode is set and is not one
 // of the allowed modes. An unset mode is always permitted (setup not done yet).
 // Variadic so a command can be allowed in more than one mode.

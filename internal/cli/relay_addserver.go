@@ -35,6 +35,9 @@ func runRelayAddServer(cmd *cobra.Command, args []string) error {
 	if err := requireMode("relay"); err != nil {
 		return err
 	}
+	if err := requireWritableConfig(); err != nil {
+		return err
+	}
 	name := ""
 	if len(args) == 1 {
 		name = args[0]

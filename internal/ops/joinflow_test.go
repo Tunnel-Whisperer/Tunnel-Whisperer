@@ -3,7 +3,10 @@ package ops
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -129,5 +132,118 @@ func TestApplyClientGrantBusyPortResolved(t *testing.T) {
 	}
 	if resolved != 1 {
 		t.Fatalf("ResolvePort called %d times, want 1", resolved)
+	}
+}
+
+// TestJoinFailsBeforeAnyNetworkCall reproduces the reported incident: an
+// unwritable config dir must be caught before RunEnrollee's first request
+// (/start), because /start burns the issuer's one-time invite. A regular
+// file as the config dir's PARENT makes MkdirAll fail deterministically,
+// without needing to drop privileges.
+func TestJoinFailsBeforeAnyNetworkCall(t *testing.T) {
+	// Load the profile from a normal, writable dir first (ops.New/config.Load
+	// must succeed to even get an *Ops to call Join on) — then swap
+	// TW_CONFIG_DIR to a path whose PARENT is a regular file, so
+	// config.CheckWritable (which re-reads TW_CONFIG_DIR on every call, like
+	// the rest of the config package) fails deterministically once Join
+	// actually runs. This stands in for the real incident: the directory is
+	// (or becomes) unwritable, discovered only when tw tries to persist.
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	o := newTestOps(t)
+
+	tmp := t.TempDir()
+	blocker := filepath.Join(tmp, "blocker")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TW_CONFIG_DIR", filepath.Join(blocker, "config"))
+
+	// The code's shape doesn't matter: the preflight check must fire before
+	// ParseCode even runs, let alone before any HTTP call.
+	_, err := o.Join(context.Background(), "relay.invalid.example", "irrelevant-code", "", JoinUI{}, nil)
+	if err == nil {
+		t.Fatal("want an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not writable") || !strings.Contains(err.Error(), "TW_CONFIG_DIR") {
+		t.Fatalf("want the CheckWritable preflight error, got: %v", err)
+	}
+}
+
+// TestApplyServerGrantRescuesOnImportFailure exercises the "never lose a
+// delivered grant" path: the invite already burned and the tenant is already
+// enrolled on the relay by the time applyServerGrant runs, so if the local
+// context store can't be written to, the sealed bundle must be rescued to a
+// fallback file instead of silently discarded.
+func TestApplyServerGrantRescuesOnImportFailure(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TW_CONFIG_DIR", dir)
+	// Pre-create "contexts" as a regular FILE so ImportContext's
+	// os.MkdirAll(config.ContextsDir(), ...) fails.
+	if err := os.WriteFile(config.ContextsDir(), []byte("blocker"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	work := t.TempDir()
+	t.Chdir(work)
+
+	o := newTestOps(t)
+	ident, err := newLocalServerIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := &JoinResponse{Version: 1, ServerID: ident.serverID,
+		RelayHost: "relay.example.com", Path: "/tw/" + ident.serverID,
+		RemotePort: 20000, SSHUser: "tw"}
+	grant, _ := resp.Encode()
+
+	_, err = o.applyServerGrant(ident, grant, "rescueme")
+	if err == nil {
+		t.Fatal("want an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "tw config import") {
+		t.Fatalf("error does not name the recovery command: %v", err)
+	}
+	wantFile := filepath.Join(work, "tw_rescue_rescueme.twctx")
+	if !strings.Contains(err.Error(), wantFile) {
+		t.Fatalf("error does not name the rescue file %q: %v", wantFile, err)
+	}
+	if _, statErr := os.Stat(wantFile); statErr != nil {
+		t.Fatalf("rescue file was not written: %v", statErr)
+	}
+}
+
+// TestRescueGrantBothFallbacksFail covers rescueGrant's last-resort branch:
+// cwd AND os.TempDir() both fail to accept the write, so the grant really is
+// unrecoverable and the error must say so plainly (not silently drop it).
+//
+// Skipped as root: cwd is blocked here via a permission bit (chmod 0500),
+// which root ignores — there's no root-proof way to make a writable
+// directory refuse a write, unlike the structural (EISDIR/ENOTDIR) tricks
+// used elsewhere in this suite. TMPDIR is blocked structurally (parent-is-a-
+// file) so that half is root-proof; only the cwd half needs the skip.
+func TestRescueGrantBothFallbacksFail(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: a chmod-based write-denial can't be simulated")
+	}
+
+	workDir := t.TempDir()
+	if err := os.Chmod(workDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(workDir, 0o700) }) // let t.TempDir() clean up after
+	t.Chdir(workDir)
+
+	tmpParent := t.TempDir()
+	blocker := filepath.Join(tmpParent, "blocker")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", filepath.Join(blocker, "tmp"))
+
+	err := rescueGrant([]byte("sealed-bundle-bytes"), "victim", fmt.Errorf("import failed"))
+	if err == nil {
+		t.Fatal("want an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "grant is lost") {
+		t.Fatalf("want the both-fallbacks-failed message, got: %v", err)
 	}
 }
