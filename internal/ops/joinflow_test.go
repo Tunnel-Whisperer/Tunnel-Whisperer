@@ -2,8 +2,14 @@ package ops
 
 import (
 	"context"
+	"encoding/json"
+	"net"
 	"strings"
 	"testing"
+
+	"github.com/tunnelwhisperer/tw/internal/config"
+	"github.com/tunnelwhisperer/tw/internal/enroll"
+	"github.com/tunnelwhisperer/tw/internal/pki"
 )
 
 // newTestOps builds an Ops against an empty profile under the caller's
@@ -58,5 +64,70 @@ func TestJoinServerGrantBuildsContext(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("context not stored")
+	}
+}
+
+func TestApplyClientGrant(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	o := newTestOps(t)
+	var c clientMaterial
+	if _, err := c.makeOffer("alice"); err != nil {
+		t.Fatalf("makeOffer: %v", err)
+	}
+	g := enroll.ClientGrant{
+		RelayHost: "relay.example.com", RelayPort: 443, Path: "/tw/srv-1",
+		SSHUser: "alice", ServerSSHPort: 20000,
+		Tunnels: []enroll.GrantTunnel{{LocalPort: 18080, RemoteHost: "127.0.0.1", RemotePort: 80}},
+	}
+	// Use a REAL cert: sign the material's CSR with a throwaway CA so the
+	// stored context carries a parseable client.crt.
+	caCert, caKey, _ := pki.GenerateCA("srv-1")
+	certPEM, err := pki.SignClientCSR(caCert, caKey, c.csrPEM, "srv-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.ClientCertPEM = string(certPEM)
+	grant, _ := json.Marshal(g)
+	res, err := o.applyClientGrant(&c, grant, "alice", JoinUI{
+		ResolvePort: func(t config.Tunnel) int { return t.LocalPort + 1 },
+	})
+	if err != nil {
+		t.Fatalf("applyClientGrant: %v", err)
+	}
+	if res.Role != "client" || res.ContextName != "alice" {
+		t.Fatalf("result: %+v", res)
+	}
+}
+
+func TestApplyClientGrantBusyPortResolved(t *testing.T) {
+	// Bind a local port, grant a tunnel on it, and assert ResolvePort's
+	// replacement lands in the stored config.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	busy := ln.Addr().(*net.TCPAddr).Port
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	o := newTestOps(t)
+	var c clientMaterial
+	if _, err := c.makeOffer("bob"); err != nil {
+		t.Fatal(err)
+	}
+	caCert, caKey, _ := pki.GenerateCA("srv-1")
+	certPEM, _ := pki.SignClientCSR(caCert, caKey, c.csrPEM, "srv-1")
+	g := enroll.ClientGrant{RelayHost: "r", RelayPort: 443, Path: "/p", SSHUser: "bob",
+		ServerSSHPort: 20000, ClientCertPEM: string(certPEM),
+		Tunnels: []enroll.GrantTunnel{{LocalPort: busy, RemoteHost: "127.0.0.1", RemotePort: 80}}}
+	grant, _ := json.Marshal(g)
+	resolved := 0
+	_, err = o.applyClientGrant(&c, grant, "bob", JoinUI{
+		ResolvePort: func(config.Tunnel) int { resolved++; return busy + 10 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != 1 {
+		t.Fatalf("ResolvePort called %d times, want 1", resolved)
 	}
 }
