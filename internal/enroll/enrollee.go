@@ -23,7 +23,19 @@ type EnrolleeCallbacks struct {
 // then polls result until granted, denied, or ctx ends. Transport errors while
 // polling are treated as transient — the issuer reloads the relay's Caddy
 // mid-flow — and retried until the deadline.
+//
+// Callers (e.g. `tw join`) commonly pass a bare context.Background() with no
+// ceiling of their own, so an abandoned exchange — the issuer never approves,
+// or vanishes entirely — would otherwise poll /result forever: pollResult
+// treats transport errors and non-2xx/404 responses as transient by design,
+// precisely so a healthy exchange survives the issuer's own mid-flow Caddy
+// reload. To bound that, RunEnrollee derives its own generous deadline here,
+// comfortably above any invite TTL in practice, so a healthy exchange never
+// hits it but an abandoned one exits with a clear error instead of hanging.
 func RunEnrollee(ctx context.Context, httpc *http.Client, baseURL, code, tok string, cb EnrolleeCallbacks) (RoleOffer, []byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	defer cancel()
+
 	var role RoleOffer
 	sess := NewSession(Enrollee, code, tok)
 
@@ -79,7 +91,7 @@ func RunEnrollee(ctx context.Context, httpc *http.Client, baseURL, code, tok str
 		}
 		select {
 		case <-ctx.Done():
-			return role, nil, fmt.Errorf("enrollment not approved in time: %w", ctx.Err())
+			return role, nil, fmt.Errorf("issuer went away or enrollment not approved in time: %w", ctx.Err())
 		case <-time.After(2 * time.Second):
 		}
 	}

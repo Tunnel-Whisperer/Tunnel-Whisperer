@@ -137,7 +137,7 @@ func createUserInline(o *ops.Ops, name string) error {
 	req := ops.CreateUserRequest{Name: name, Mappings: mappings, SingleSession: createUserSingle}
 
 	if createUserInvite {
-		return o.InviteUser(req, 15*time.Minute, ops.InviteUI{
+		if err := o.InviteUser(req, 15*time.Minute, ops.InviteUI{
 			ShowCode: func(code string, expires time.Time) {
 				fmt.Printf("Invite code: %s\n", code)
 				fmt.Printf("Expires:     %s\n", expires.Format(time.Kitchen))
@@ -149,13 +149,17 @@ func createUserInline(o *ops.Ops, name string) error {
 				line, _ := sharedLine()
 				return line == "y" || line == "Y" || line == "yes"
 			},
-		}, cliProgress)
+		}, cliProgress); err != nil {
+			return err
+		}
+		fmt.Printf("User %q enrolled (client context delivered).\n", req.Name)
+		return nil
 	}
 
 	if err := o.CreateUser(context.Background(), req, cliProgress); err != nil {
 		return err
 	}
-	fmt.Printf("  User %q created with %d port mapping(s).\n", name, len(mappings))
+	fmt.Printf("  User %q created with %d port mapping(s); not yet enrolled on any client — use --invite to enroll one over the network.\n", name, len(mappings))
 	return nil
 }
 
@@ -243,8 +247,11 @@ func createUserInteractive(o *ops.Ops) error {
 	fmt.Println()
 	fmt.Println("=== User created ===")
 	fmt.Println()
-	fmt.Println("  Send the user's config directory to the client.")
-	fmt.Println("  The client places these files in their config directory and runs `tw client connect`.")
+	fmt.Printf("  %q was created locally — it is not yet enrolled on any client machine.\n", userName)
+	fmt.Println("  To enroll a real client over the network instead, use:")
+	fmt.Println("    tw server user create <name> --invite")
+	fmt.Println("  which mints a one-time code the client redeems with `tw join` — no")
+	fmt.Println("  manual file transfer needed.")
 	fmt.Println()
 
 	return nil
