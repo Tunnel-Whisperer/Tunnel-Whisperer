@@ -139,3 +139,21 @@ func TestCheckWritableFailsWhenSubdirProbeIsADirectory(t *testing.T) {
 		t.Errorf("error %q does not name the blocked subdir %q", err.Error(), serversDir)
 	}
 }
+
+// TestDirAbsolutizesRelativeOverride: a relative TW_CONFIG_DIR (e.g. from
+// `--config-dir ./clients`) must come back absolute — derived paths are handed
+// to xray-core, which resolves relative paths against ITS base, not our CWD.
+func TestDirAbsolutizesRelativeOverride(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", "clients")
+	got := Dir()
+	if !filepath.IsAbs(got) {
+		t.Fatalf("Dir() = %q, want absolute", got)
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(wd, "clients"); got != want {
+		t.Fatalf("Dir() = %q, want %q", got, want)
+	}
+}

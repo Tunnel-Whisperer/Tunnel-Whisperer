@@ -2,6 +2,7 @@ package ops
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -46,5 +47,20 @@ func TestEnsureCertsCNNotTruncatedWhenUUIDEmpty(t *testing.T) {
 	}
 	if caCN := certCN(config.CACertPath()); caCN != want {
 		t.Fatalf("CA cert CN = %q, want %q", caCN, want)
+	}
+}
+
+// A user-set relative cert path in config.yaml must be absolutized against
+// the config dir before it reaches xray-core (which resolves relative paths
+// against its own executable directory).
+func TestApplyClientCertPathsAbsolutizesRelative(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	xc := &config.XrayConfig{ClientCertPath: "certs/c.crt", ClientKeyPath: "certs/c.key"}
+	applyClientCertPaths(xc)
+	if !filepath.IsAbs(xc.ClientCertPath) || !filepath.IsAbs(xc.ClientKeyPath) {
+		t.Fatalf("paths not absolutized: %q %q", xc.ClientCertPath, xc.ClientKeyPath)
+	}
+	if want := filepath.Join(config.Dir(), "certs", "c.crt"); xc.ClientCertPath != want {
+		t.Fatalf("cert = %q, want %q", xc.ClientCertPath, want)
 	}
 }

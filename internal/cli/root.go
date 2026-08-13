@@ -37,6 +37,12 @@ HTTPS/WebSocket to traverse strict firewalls and DPI.`,
 		// config.Dir reads the env.
 		if configDir != "" {
 			d := filepath.Clean(configDir)
+			// Absolutize before it enters the environment: consumers like
+			// xray-core resolve relative paths against their own base (the
+			// executable's directory), not our working directory.
+			if abs, err := filepath.Abs(d); err == nil {
+				d = abs
+			}
 			os.Setenv("TW_CONFIG_DIR", d)
 			_ = os.MkdirAll(d, 0o755)
 		}

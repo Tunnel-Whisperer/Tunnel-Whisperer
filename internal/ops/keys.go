@@ -189,6 +189,16 @@ func certCN(path string) string {
 // platform or TW_CONFIG_DIR. Not persisted.
 func applyClientCertPaths(xc *config.XrayConfig) {
 	if xc.ClientCertPath != "" {
+		// An explicit (user-set) path must be absolute before it reaches
+		// xray-core, which resolves relative paths against its own executable
+		// directory, not our working directory. Relative values are taken as
+		// relative to the config dir — the file that declares them.
+		if !filepath.IsAbs(xc.ClientCertPath) {
+			xc.ClientCertPath = filepath.Join(config.Dir(), xc.ClientCertPath)
+		}
+		if xc.ClientKeyPath != "" && !filepath.IsAbs(xc.ClientKeyPath) {
+			xc.ClientKeyPath = filepath.Join(config.Dir(), xc.ClientKeyPath)
+		}
 		return
 	}
 	if _, err := os.Stat(config.ClientCertPath()); err == nil {

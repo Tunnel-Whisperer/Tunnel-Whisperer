@@ -188,6 +188,13 @@ func Default() *Config {
 // Override with TW_CONFIG_DIR environment variable.
 func Dir() string {
 	if d := os.Getenv("TW_CONFIG_DIR"); d != "" {
+		// Always absolute: derived paths (e.g. the client cert handed to
+		// xray-core) are consumed by subsystems that resolve relative paths
+		// against their OWN base (xray uses the executable's directory), not
+		// our working directory.
+		if abs, err := filepath.Abs(d); err == nil {
+			return abs
+		}
 		return d
 	}
 	if runtime.GOOS == "windows" {
