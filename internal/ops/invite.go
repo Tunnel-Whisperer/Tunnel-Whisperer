@@ -42,6 +42,64 @@ func serveInvite(client *gossh.Client, port int, h *enroll.Handler, run func() e
 	return run()
 }
 
+// deliverGrantPhase2 re-serves h — already carrying a sealed grant from a
+// phase-1 connection that has since closed — on fresh connection(s) so the
+// enrollee's next poll can still collect it. All exchange state lives in h
+// itself (internal/enroll.Handler), not the transport, so re-serving it on a
+// new listener is correct.
+//
+// This exists because a phase-1 connection can die between Grant() and the
+// enrollee's collection poll for reasons outside the issuer's control: a
+// second Caddy reload landing mid-exchange (InviteServer, via EnrollServer)
+// or — same mechanism, different trigger — grantClient's addUUIDToRelay
+// falling back to a relay xray restart when the hot-add gRPC call is
+// rejected (InviteUser). Neither underlying cause is fixed here; this only
+// makes grant *delivery* resilient to the connection it kills.
+//
+// Bounded window: min(60s, invite expiry), computed once at call time and
+// held fixed across every reconnect attempt within it (not reset per
+// retry) — the same grace-window budget the single-connection design used
+// to spend on one connection, now spent across however many reconnects it
+// takes. Dial/listen failures (relay briefly unservable, e.g. mid-reload)
+// are retried every 2s while the window allows; a clean AwaitCollected
+// timeout on a connection that came up fine is terminal. terminalErr builds
+// the caller-specific error message, wrapping the triggering cause.
+func deliverGrantPhase2(cfg *config.Config, inv *enroll.Invite, h *enroll.Handler, port int, terminalErr func(cause error) error) error {
+	deadline := time.Now().Add(60 * time.Second)
+	if inv.Expires.Before(deadline) {
+		deadline = inv.Expires
+	}
+	for {
+		if !time.Now().Before(deadline) {
+			return terminalErr(context.DeadlineExceeded)
+		}
+		var collected bool
+		attemptErr := withRelaySSH(cfg, func(client *gossh.Client) error {
+			return serveInvite(client, port, h, func() error {
+				cctx, ccancel := context.WithDeadline(context.Background(), deadline)
+				defer ccancel()
+				if err := h.AwaitCollected(cctx); err != nil {
+					return err
+				}
+				collected = true
+				return nil
+			})
+		})
+		if collected {
+			return nil
+		}
+		if errors.Is(attemptErr, context.DeadlineExceeded) {
+			// AwaitCollected itself timed out on a connection that was
+			// otherwise up — terminal, not a transport hiccup to retry.
+			return terminalErr(attemptErr)
+		}
+		// DIAL/LISTEN failure — the relay is likely briefly unservable
+		// (e.g. mid-reload). Sleep and retry while time allows.
+		slog.Warn("invite phase-2 grant-delivery connection failed; retrying", "error", attemptErr)
+		time.Sleep(2 * time.Second)
+	}
+}
+
 // InviteServer mints a one-time invite code, waits for a `tw join` from the
 // enrollee through the relay, verifies the SAS with the human, and runs the
 // real EnrollServer. The invite burns on the first redemption attempt and
@@ -53,10 +111,10 @@ func serveInvite(client *gossh.Client, port int, h *enroll.Handler, run func() e
 // local_certs shim reapplying — kills that single SSH-over-Xray connection
 // outright, since it has no reconnect logic. Phase 1 (mint through Grant)
 // runs on one connection and then deliberately returns, closing it. Phase 2
-// re-serves the SAME Handler (all session state lives in it, not in the
-// transport) on a fresh connection, retrying dial/listen failures, so the
-// enrollee's next poll can still collect the grant even if the relay's TLS
-// was briefly unservable across a reload.
+// (deliverGrantPhase2) re-serves the SAME Handler on a fresh connection,
+// retrying dial/listen failures, so the enrollee's next poll can still
+// collect the grant even if the relay's TLS was briefly unservable across a
+// reload.
 func (o *Ops) InviteServer(ttl time.Duration, ui InviteUI, progress ProgressFunc) (*JoinResponse, error) {
 	cfg := o.Config()
 	if cfg.Xray.RelayHost == "" {
@@ -110,55 +168,27 @@ func (o *Ops) InviteServer(ttl time.Duration, ui InviteUI, progress ProgressFunc
 		return nil, err
 	}
 
-	// Phase 2: fresh connection(s), dial-retry, so a reload landing between
-	// phase 1's return and the enrollee's next poll doesn't strand the
-	// grant. Bounded window is min(60s, invite expiry) measured from
-	// phase-2 start — the same grace-window semantics phase 1 used to hold
-	// inline, now spanning possibly-several reconnect attempts instead of
-	// one long-lived connection.
-	phase2Deadline := time.Now().Add(60 * time.Second)
-	if inv.Expires.Before(phase2Deadline) {
-		phase2Deadline = inv.Expires
-	}
-	terminalErr := func(cause error) error {
+	if err := deliverGrantPhase2(cfg, inv, h, port, func(cause error) error {
 		return fmt.Errorf("enrollee never collected the grant (tenant %s IS enrolled; un-enroll it if this was abandoned): %w", resp.ServerID, cause)
+	}); err != nil {
+		return nil, err
 	}
-	for {
-		if !time.Now().Before(phase2Deadline) {
-			return nil, terminalErr(context.DeadlineExceeded)
-		}
-		var collected bool
-		attemptErr := withRelaySSH(cfg, func(client *gossh.Client) error {
-			return serveInvite(client, port, h, func() error {
-				cctx, ccancel := context.WithDeadline(context.Background(), phase2Deadline)
-				defer ccancel()
-				if err := h.AwaitCollected(cctx); err != nil {
-					return err
-				}
-				collected = true
-				return nil
-			})
-		})
-		if collected {
-			return resp, nil
-		}
-		if errors.Is(attemptErr, context.DeadlineExceeded) {
-			// AwaitCollected itself timed out on a connection that was
-			// otherwise up — terminal, not a transport hiccup to retry.
-			return nil, terminalErr(attemptErr)
-		}
-		// DIAL/LISTEN failure — the relay's TLS is likely briefly
-		// unservable across a reload. Sleep and retry while time allows.
-		slog.Warn("invite phase-2 grant-delivery connection failed; retrying",
-			"server_id", resp.ServerID, "error", attemptErr)
-		time.Sleep(2 * time.Second)
-	}
+	return resp, nil
 }
 
 // InviteUser mints a one-time code that enrolls a remote CLIENT for the named
 // user: the enrollee generates its SSH key and a cert CSR locally (no private
 // key ever transits), we sign the CSR, register the UUID and pubkey, and send
 // the client's coordinates down the encrypted channel. Server-mode issuer.
+//
+// Two-phase for the same reason InviteServer is: grantClient's
+// addUUIDToRelay hot-adds the UUID via Xray's gRPC API and, on failure,
+// falls back to restarting the relay's Xray — which severs every live VLESS
+// session there, including phase 1's own serveInvite connection, exactly
+// like a second Caddy reload does for InviteServer. Phase 1 (mint through
+// Grant) runs on one connection and returns; deliverGrantPhase2 re-serves
+// the same Handler on fresh connection(s) so the enrollee still collects the
+// grant.
 func (o *Ops) InviteUser(req CreateUserRequest, ttl time.Duration, ui InviteUI, progress ProgressFunc) error {
 	cfg := o.Config()
 	if err := validateCreateUser(*cfg, req); err != nil {
@@ -170,9 +200,12 @@ func (o *Ops) InviteUser(req CreateUserRequest, ttl time.Duration, ui InviteUI, 
 	}
 	h := enroll.NewHandler(inv, enroll.RoleOffer{Role: "client", Username: req.Name})
 	ui.ShowCode(inv.Code, inv.Expires)
+	port := enrollPort(cfg.Server.RemotePort)
 
-	return withRelaySSH(cfg, func(client *gossh.Client) error {
-		return serveInvite(client, enrollPort(cfg.Server.RemotePort), h, func() error {
+	// Phase 1: mint through grant, on the connection that served /start and
+	// /offer. Deny()/error semantics on failure paths are unchanged.
+	err = withRelaySSH(cfg, func(client *gossh.Client) error {
+		return serveInvite(client, port, h, func() error {
 			ctx, cancel := context.WithDeadline(context.Background(), inv.Expires)
 			defer cancel()
 			payload, err := h.AwaitOffer(ctx)
@@ -201,16 +234,15 @@ func (o *Ops) InviteUser(req CreateUserRequest, ttl time.Duration, ui InviteUI, 
 				h.Deny()
 				return err
 			}
-			if err := h.Grant(grant); err != nil {
-				return err
-			}
-			cctx, ccancel := context.WithTimeout(ctx, 60*time.Second)
-			defer ccancel()
-			if err := h.AwaitCollected(cctx); err != nil {
-				return fmt.Errorf("enrollee never collected the grant (user %q IS created; delete it if abandoned): %w", req.Name, err)
-			}
-			return nil
+			return h.Grant(grant)
 		})
+	})
+	if err != nil {
+		return err
+	}
+
+	return deliverGrantPhase2(cfg, inv, h, port, func(cause error) error {
+		return fmt.Errorf("enrollee never collected the grant (user %q IS created; delete it if abandoned): %w", req.Name, cause)
 	})
 }
 
