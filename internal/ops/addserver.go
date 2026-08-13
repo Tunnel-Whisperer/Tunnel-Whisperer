@@ -106,19 +106,29 @@ func buildLocalServerConfig(ident *localServerIdentity, resp *JoinResponse, live
 	// Both contexts live on this machine: if the relay profile holds the same
 	// daemon ports the new context would get, the two daemons could never run
 	// side by side (and the collision only surfaces as a buried bind error).
-	if scfg.Server.DashboardPort == live.Server.DashboardPort {
-		p, err := nextFreeLoopbackPort(live.Server.DashboardPort + 1)
-		if err != nil {
-			return nil, fmt.Errorf("picking dashboard port: %w", err)
+	// Gated on live actually being a CONFIGURED profile (Mode set): an empty
+	// live (config.Load()'s zero-value fallback for a missing config.yaml —
+	// the state `tw join` runs in on a freshly-provisioned, dedicated
+	// machine) is not a real running daemon to de-conflict against, and
+	// scfg is also built from config.Default() — so both sides of the port
+	// comparison would just be the same hard-coded default regardless of
+	// whether anything is actually bound to it, unconditionally shifting
+	// the new context off the documented default port for no reason.
+	if live.Mode != "" {
+		if scfg.Server.DashboardPort == live.Server.DashboardPort {
+			p, err := nextFreeLoopbackPort(live.Server.DashboardPort + 1)
+			if err != nil {
+				return nil, fmt.Errorf("picking dashboard port: %w", err)
+			}
+			scfg.Server.DashboardPort = p
 		}
-		scfg.Server.DashboardPort = p
-	}
-	if scfg.Server.APIPort == live.Server.APIPort {
-		p, err := nextFreeLoopbackPort(live.Server.APIPort + 1)
-		if err != nil {
-			return nil, fmt.Errorf("picking API port: %w", err)
+		if scfg.Server.APIPort == live.Server.APIPort {
+			p, err := nextFreeLoopbackPort(live.Server.APIPort + 1)
+			if err != nil {
+				return nil, fmt.Errorf("picking API port: %w", err)
+			}
+			scfg.Server.APIPort = p
 		}
-		scfg.Server.APIPort = p
 	}
 	return scfg, nil
 }

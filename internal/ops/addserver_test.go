@@ -53,8 +53,10 @@ func TestBuildLocalServerConfig(t *testing.T) {
 		ModeSig: sig, ModeIssuer: issuer,
 	}
 
-	// Live relay profile holds the defaults → the new context must not.
+	// Live relay profile is CONFIGURED (Mode set) and holds the defaults →
+	// the new context must not collide with it.
 	live := config.Default()
+	live.Mode = "relay"
 	scfg, err := buildLocalServerConfig(ident, resp, live)
 	if err != nil {
 		t.Fatalf("buildLocalServerConfig: %v", err)
@@ -92,8 +94,9 @@ func TestBuildLocalServerConfig(t *testing.T) {
 		t.Error("non-verifying signature was stored; would brick the context")
 	}
 
-	// A relay profile with custom daemon ports → the defaults are kept.
+	// A CONFIGURED relay profile with custom daemon ports → the defaults are kept.
 	custom := config.Default()
+	custom.Mode = "relay"
 	custom.Server.DashboardPort = 9999
 	custom.Server.APIPort = 51000
 	scfg3, err := buildLocalServerConfig(ident, resp, custom)
@@ -104,6 +107,23 @@ func TestBuildLocalServerConfig(t *testing.T) {
 	if scfg3.Server.DashboardPort != def.DashboardPort || scfg3.Server.APIPort != def.APIPort {
 		t.Errorf("ports changed although the relay profile holds custom ones: dashboard %d api %d",
 			scfg3.Server.DashboardPort, scfg3.Server.APIPort)
+	}
+
+	// An EMPTY live profile (Mode "") is not a real, running profile — just
+	// config.Load()'s zero-value fallback for a missing config.yaml (the
+	// state `tw join` runs in on a freshly-provisioned, dedicated machine).
+	// Both sides of the port comparison are then the same hard-coded
+	// defaults regardless of whether any daemon is actually bound to them,
+	// so the de-confliction must not fire: ports stay the documented
+	// defaults (8080/50051), not silently bumped to 8081/50052.
+	empty := config.Default() // Mode == ""
+	scfg4, err := buildLocalServerConfig(ident, resp, empty)
+	if err != nil {
+		t.Fatalf("buildLocalServerConfig (empty live profile): %v", err)
+	}
+	if scfg4.Server.DashboardPort != def.DashboardPort || scfg4.Server.APIPort != def.APIPort {
+		t.Errorf("ports bumped against an unconfigured (Mode \"\") live profile: dashboard %d api %d, want %d/%d",
+			scfg4.Server.DashboardPort, scfg4.Server.APIPort, def.DashboardPort, def.APIPort)
 	}
 }
 
