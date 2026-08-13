@@ -3,7 +3,9 @@ package ops
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -44,6 +46,17 @@ func serveInvite(client *gossh.Client, port int, h *enroll.Handler, run func() e
 // enrollee through the relay, verifies the SAS with the human, and runs the
 // real EnrollServer. The invite burns on the first redemption attempt and
 // expires after ttl. Returns the JoinResponse that was granted.
+//
+// Two-phase by design: EnrollServer's own Caddy reload survives on the
+// phase-1 connection (measured), but a SECOND reload landing mid-exchange —
+// e.g. a concurrent admin op, or (on the e2e relay) the fake-domain
+// local_certs shim reapplying — kills that single SSH-over-Xray connection
+// outright, since it has no reconnect logic. Phase 1 (mint through Grant)
+// runs on one connection and then deliberately returns, closing it. Phase 2
+// re-serves the SAME Handler (all session state lives in it, not in the
+// transport) on a fresh connection, retrying dial/listen failures, so the
+// enrollee's next poll can still collect the grant even if the relay's TLS
+// was briefly unservable across a reload.
 func (o *Ops) InviteServer(ttl time.Duration, ui InviteUI, progress ProgressFunc) (*JoinResponse, error) {
 	cfg := o.Config()
 	if cfg.Xray.RelayHost == "" {
@@ -55,10 +68,13 @@ func (o *Ops) InviteServer(ttl time.Duration, ui InviteUI, progress ProgressFunc
 	}
 	h := enroll.NewHandler(inv, enroll.RoleOffer{Role: "server"})
 	ui.ShowCode(inv.Code, inv.Expires)
+	port := enrollPort(cfg.Server.RemotePort)
 
+	// Phase 1: mint through grant, on the connection that served /start and
+	// /offer. Deny()/error semantics on failure paths are unchanged.
 	var resp *JoinResponse
 	err = withRelaySSH(cfg, func(client *gossh.Client) error {
-		return serveInvite(client, enrollPort(cfg.Server.RemotePort), h, func() error {
+		return serveInvite(client, port, h, func() error {
 			ctx, cancel := context.WithDeadline(context.Background(), inv.Expires)
 			defer cancel()
 			payload, err := h.AwaitOffer(ctx)
@@ -86,13 +102,6 @@ func (o *Ops) InviteServer(ttl time.Duration, ui InviteUI, progress ProgressFunc
 			if err := h.Grant(grant); err != nil {
 				return err
 			}
-			// Hold the channel open until the enrollee collects the grant —
-			// but never past a short grace window.
-			cctx, ccancel := context.WithTimeout(ctx, 60*time.Second)
-			defer ccancel()
-			if err := h.AwaitCollected(cctx); err != nil {
-				return fmt.Errorf("enrollee never collected the grant (tenant %s IS enrolled; un-enroll it if this was abandoned): %w", req.ServerID, err)
-			}
 			resp = r
 			return nil
 		})
@@ -100,7 +109,50 @@ func (o *Ops) InviteServer(ttl time.Duration, ui InviteUI, progress ProgressFunc
 	if err != nil {
 		return nil, err
 	}
-	return resp, nil
+
+	// Phase 2: fresh connection(s), dial-retry, so a reload landing between
+	// phase 1's return and the enrollee's next poll doesn't strand the
+	// grant. Bounded window is min(60s, invite expiry) measured from
+	// phase-2 start — the same grace-window semantics phase 1 used to hold
+	// inline, now spanning possibly-several reconnect attempts instead of
+	// one long-lived connection.
+	phase2Deadline := time.Now().Add(60 * time.Second)
+	if inv.Expires.Before(phase2Deadline) {
+		phase2Deadline = inv.Expires
+	}
+	terminalErr := func(cause error) error {
+		return fmt.Errorf("enrollee never collected the grant (tenant %s IS enrolled; un-enroll it if this was abandoned): %w", resp.ServerID, cause)
+	}
+	for {
+		if !time.Now().Before(phase2Deadline) {
+			return nil, terminalErr(context.DeadlineExceeded)
+		}
+		var collected bool
+		attemptErr := withRelaySSH(cfg, func(client *gossh.Client) error {
+			return serveInvite(client, port, h, func() error {
+				cctx, ccancel := context.WithDeadline(context.Background(), phase2Deadline)
+				defer ccancel()
+				if err := h.AwaitCollected(cctx); err != nil {
+					return err
+				}
+				collected = true
+				return nil
+			})
+		})
+		if collected {
+			return resp, nil
+		}
+		if errors.Is(attemptErr, context.DeadlineExceeded) {
+			// AwaitCollected itself timed out on a connection that was
+			// otherwise up — terminal, not a transport hiccup to retry.
+			return nil, terminalErr(attemptErr)
+		}
+		// DIAL/LISTEN failure — the relay's TLS is likely briefly
+		// unservable across a reload. Sleep and retry while time allows.
+		slog.Warn("invite phase-2 grant-delivery connection failed; retrying",
+			"server_id", resp.ServerID, "error", attemptErr)
+		time.Sleep(2 * time.Second)
+	}
 }
 
 // InviteUser mints a one-time code that enrolls a remote CLIENT for the named
