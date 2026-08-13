@@ -35,6 +35,7 @@ func TestE2E(t *testing.T) {
 	}{
 		{"Smoke", testSmoke},
 		{"RelayInstall", testRelayInstall},
+		{"CertlessProbe", testCertlessProbe},
 		{"ServerJoin", testServerJoin},
 		{"MTLSGate", testMTLSGate},
 		{"UserLifecycle", testUserLifecycle},
@@ -43,6 +44,7 @@ func TestE2E(t *testing.T) {
 		{"Revocation", testRevocation},
 		{"Contexts", testContexts},
 		{"SecondTenant", testSecondTenant},
+		{"InviteBurn", testInviteBurn},
 		{"SelfEnroll", testSelfEnroll},
 		{"Dashboard", testDashboard},
 		{"RelayResilience", testRelayResilience},
