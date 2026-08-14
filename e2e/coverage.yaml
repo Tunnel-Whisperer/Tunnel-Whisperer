@@ -11,14 +11,14 @@ commands:
   "relay destroy":           [TestE2E/Teardown]
   "relay ssh":               {exempt: "interactive relay terminal; no scriptable assertion yet"}
   "relay invite":            [TestE2E/ServerJoin, TestE2E/InviteBurn]
-  "join":                    [TestE2E/ServerJoin, TestE2E/UserLifecycle]
+  "join":                    [TestE2E/ServerJoin, TestE2E/UserLifecycle, TestE2E/ConfigDirSafety]
   "server start":            [TestE2E/ServerJoin]
   "server test":             [TestE2E/ServerJoin]
   "server status":           [TestE2E/ServerJoin]
   "server user create":      [TestE2E/UserLifecycle]
   "server user apply":       [TestE2E/UserLifecycle]
   "server user list":        [TestE2E/UserLifecycle]
-  "server user delete":      [TestE2E/Revocation]
+  "server user delete":      [TestE2E/Revocation, TestE2E/ConfigDirSafety]
   "server user unregister":  [TestE2E/Revocation]
   "server user edit":        {exempt: "pending: interactive wizard; cover when mappings-edit gets flags"}
   "server user single-session": [TestE2E/PermitOpen]

@@ -48,6 +48,7 @@ func TestE2E(t *testing.T) {
 		{"SelfEnroll", testSelfEnroll},
 		{"Dashboard", testDashboard},
 		{"RelayResilience", testRelayResilience},
+		{"ConfigDirSafety", testConfigDirSafety},
 		{"Teardown", testTeardown},
 	}
 	names := make([]string, len(steps))

@@ -144,7 +144,9 @@ func createUserInline(o *ops.Ops, name string) error {
 			ShowCode: func(code string, expires time.Time) {
 				fmt.Printf("Invite code: %s\n", code)
 				fmt.Printf("Expires:     %s\n", expires.Format(time.Kitchen))
-				fmt.Printf("Waiting for %s to run: tw join <relay-host> <code> ...\n", req.Name)
+				fmt.Printf("\nRun this on %s's client machine:\n", req.Name)
+				fmt.Printf("\n  tw join %s %s\n\n", o.Config().Xray.RelayHost, code)
+				fmt.Println("Waiting for the enrollee ...")
 			},
 			ConfirmSAS: func(sas string) bool {
 				fmt.Printf("\nSAS: %s\n", sas)

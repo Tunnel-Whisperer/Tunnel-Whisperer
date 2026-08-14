@@ -40,7 +40,9 @@ match. The invite is single-use and expires automatically.`,
 			ShowCode: func(code string, expires time.Time) {
 				fmt.Printf("Invite code: %s\n", code)
 				fmt.Printf("Expires:     %s\n", expires.Format(time.Kitchen))
-				fmt.Println("Waiting for the enrollee to run: tw join <relay-host> <code> ...")
+				fmt.Println("\nRun this on the joining server:")
+				fmt.Printf("\n  tw join %s %s\n\n", o.Config().Xray.RelayHost, code)
+				fmt.Println("Waiting for the enrollee ...")
 			},
 			ConfirmSAS: func(sas string) bool {
 				fmt.Printf("\nSAS: %s\n", sas)
