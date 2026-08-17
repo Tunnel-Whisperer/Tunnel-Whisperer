@@ -14,7 +14,7 @@ import (
 // traffic through the relay + tunnel.
 func testUserLifecycle(t *testing.T) {
 	scenario(t, "a user is invited on the server, the client redeems the invite via tw join, and moves real bytes through the tunnel",
-		"tw server user create alice --invite mints a one-time code carrying her port mapping",
+		"tw server user invite alice mints a one-time code carrying her port mapping",
 		"tw join <relay-host> <code> on the client shows the SAS, gets approved, and creates a mode-signed client context named after the user",
 		"tw client connect opens the local tunnel port",
 		"a byte-for-byte echo round-trip (hello-tw-e2e) succeeds through relay + tunnel",
@@ -45,7 +45,7 @@ func testUserLifecycle(t *testing.T) {
 	// same grant — no separate `apply` is required for her to be live. Run
 	// `apply` anyway (harmless, idempotent — see task-11-report.md) so
 	// e2e/coverage.yaml's mapping for "server user apply" stays true.
-	issuerLog, joinLog := runInviteExchange(t, "server", "tw server user create alice -m "+userPort+":"+echoPort+" --invite", "client", "tw join "+domain+" {code}")
+	issuerLog, joinLog := runInviteExchange(t, "server", "tw server user invite alice -m "+userPort+":"+echoPort, "client", "tw join "+domain+" {code}")
 	if strings.Contains(issuerLog, "mode is unsigned") || strings.Contains(joinLog, "mode is unsigned") {
 		fatalf(t, "invite/join printed the unsigned-mode warning:\nissuer:\n%s\njoin:\n%s", issuerLog, joinLog)
 	}

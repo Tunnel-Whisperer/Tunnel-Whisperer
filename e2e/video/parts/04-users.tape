@@ -30,7 +30,7 @@ Enter
 Sleep 1s
 Show
 Sleep 1s
-Type "tw server user create client1 -m 2201:22"
+Type "tw server user invite client1 -m 2201:22"
 Enter
 Wait+Screen@30s /created with 1 port mapping/
 Sleep 2s

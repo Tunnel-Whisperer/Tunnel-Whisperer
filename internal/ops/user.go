@@ -13,9 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/tunnelwhisperer/tw/internal/config"
-	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
 	twxray "github.com/tunnelwhisperer/tw/internal/xray"
 	proxymanCmd "github.com/xtls/xray-core/app/proxyman/command"
 	statsCmd "github.com/xtls/xray-core/app/stats/command"
@@ -38,7 +36,6 @@ type UserInfo struct {
 	Online        bool            `json:"online"`
 	SingleSession bool            `json:"single_session"`
 	Sessions      int             `json:"sessions"`
-	MappingsDirty bool            `json:"mappings_dirty"`
 	DirPath       string          `json:"-"`
 }
 
@@ -167,14 +164,13 @@ func (o *Ops) ListUsers() ([]UserInfo, error) {
 			}
 		}
 
-		if _, err := os.Stat(filepath.Join(ui.DirPath, "id_ed25519")); err == nil {
+		// Invited users leave only public material on the server; the private
+		// half is born on (and never leaves) the client machine.
+		if _, err := os.Stat(filepath.Join(ui.DirPath, "id_ed25519.pub")); err == nil {
 			ui.HasKey = true
 		}
 		if _, err := os.Stat(filepath.Join(ui.DirPath, ".applied")); err == nil {
 			ui.Active = true
-		}
-		if _, err := os.Stat(filepath.Join(ui.DirPath, ".mappings-dirty")); err == nil {
-			ui.MappingsDirty = true
 		}
 		if _, err := os.Stat(filepath.Join(ui.DirPath, ".single-session")); err == nil {
 			ui.SingleSession = true
@@ -194,9 +190,8 @@ func (o *Ops) ListUsers() ([]UserInfo, error) {
 	return users, nil
 }
 
-// validateCreateUser runs the guards shared by CreateUser and InviteUser:
-// name shape, non-empty mappings, a configured relay/UUID, and that the
-// user doesn't already exist.
+// validateCreateUser runs the guards for InviteUser: name shape, non-empty
+// mappings, a configured relay/UUID, and that the user doesn't already exist.
 func validateCreateUser(cfg config.Config, req CreateUserRequest) error {
 	if req.Name == "" {
 		return fmt.Errorf("user name is required")
@@ -220,156 +215,6 @@ func validateCreateUser(cfg config.Config, req CreateUserRequest) error {
 	if _, err := os.Stat(userDir); err == nil {
 		return fmt.Errorf("user %q already exists", req.Name)
 	}
-	return nil
-}
-
-// CreateUser runs the user creation flow: generates credentials, updates the
-// relay, saves config, and updates authorized_keys.
-func (o *Ops) CreateUser(ctx context.Context, req CreateUserRequest, progress ProgressFunc) (err error) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-
-	if progress == nil {
-		progress = func(ProgressEvent) {}
-	}
-
-	// Fail before step 2 (relay update): it mutates the relay's Xray config
-	// before any local write happens below, so a local write failure
-	// discovered afterwards would strand that relay-side change.
-	if err := config.CheckWritable(); err != nil {
-		return err
-	}
-
-	cfg := o.cfg
-
-	if err := validateCreateUser(*cfg, req); err != nil {
-		return err
-	}
-
-	userDir := filepath.Join(config.UsersDir(), req.Name)
-
-	// Step 1: Generate credentials.
-	progress(ProgressEvent{Step: 1, Total: 4, Label: "Generating credentials", Status: "running"})
-	clientUUID := uuid.New().String()
-	privPEM, pubAuthorized, err := twssh.GenerateKeyPair()
-	if err != nil {
-		progress(ProgressEvent{Step: 1, Total: 4, Label: "Generating credentials", Status: "failed", Error: err.Error()})
-		return fmt.Errorf("generating SSH key pair: %w", err)
-	}
-	progress(ProgressEvent{Step: 1, Total: 4, Label: "Generating credentials", Status: "completed", Message: "UUID: " + clientUUID})
-
-	// Everything below can mutate the relay or write local state — undo
-	// (LIFO) on any later failure, mirroring grantClient's pattern, so a
-	// failure in step 3/4 doesn't strand a UUID the relay now thinks is
-	// valid with no matching local user.
-	var undo []func()
-	defer func() {
-		if err != nil {
-			for i := len(undo) - 1; i >= 0; i-- {
-				undo[i]()
-			}
-		}
-	}()
-
-	// Step 2: Update relay.
-	progress(ProgressEvent{Step: 2, Total: 4, Label: "Updating relay", Status: "running"})
-	if err := addUUIDToRelay(cfg, clientUUID); err != nil {
-		// Non-fatal by design (existing behavior: a relay hiccup here just
-		// warns and continues), so nothing was actually added — no undo.
-		slog.Warn("relay update failed", "error", err)
-		progress(ProgressEvent{Step: 2, Total: 4, Label: "Updating relay", Status: "completed", Message: "Warning: " + err.Error()})
-	} else {
-		progress(ProgressEvent{Step: 2, Total: 4, Label: "Updating relay", Status: "completed", Message: "UUID added to relay"})
-		undo = append(undo, func() {
-			if uerr := removeUUIDFromRelay(cfg, clientUUID); uerr != nil {
-				slog.Warn("rolling back relay UUID after a local failure also failed", "uuid", clientUUID, "error", uerr)
-			}
-		})
-	}
-
-	// Step 3: Save user files.
-	progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "running"})
-
-	if err := os.MkdirAll(userDir, 0700); err != nil {
-		progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "failed", Error: err.Error()})
-		return fmt.Errorf("creating user directory: %w", err)
-	}
-	// One undo covers every write under userDir below (keys, config.yaml,
-	// .single-session, .applied) — removing the directory removes them all.
-	undo = append(undo, func() {
-		if uerr := os.RemoveAll(userDir); uerr != nil {
-			slog.Warn("rolling back user directory after a later failure also failed", "dir", userDir, "error", uerr)
-		}
-	})
-
-	if err := os.WriteFile(filepath.Join(userDir, "id_ed25519"), privPEM, 0600); err != nil {
-		progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "failed", Error: err.Error()})
-		return fmt.Errorf("writing client private key: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(userDir, "id_ed25519.pub"), pubAuthorized, 0644); err != nil {
-		progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "failed", Error: err.Error()})
-		return fmt.Errorf("writing client public key: %w", err)
-	}
-
-	tunnels := make([]config.Tunnel, len(req.Mappings))
-	serverPorts := make([]int, len(req.Mappings))
-	for i, m := range req.Mappings {
-		tunnels[i] = config.Tunnel{
-			LocalPort:  m.ClientPort,
-			RemoteHost: "127.0.0.1",
-			RemotePort: m.ServerPort,
-		}
-		serverPorts[i] = m.ServerPort
-	}
-
-	clientCfg := struct {
-		Xray   config.XrayConfig   `yaml:"xray"`
-		Client config.ClientConfig `yaml:"client"`
-	}{
-		Xray: config.XrayConfig{
-			UUID:      clientUUID,
-			RelayHost: cfg.Xray.RelayHost,
-			RelayPort: cfg.Xray.RelayPort,
-			Path:      cfg.Xray.Path,
-		},
-		Client: config.ClientConfig{
-			SSHUser:       req.Name,
-			ServerSSHPort: cfg.Server.RemotePort,
-			Tunnels:       tunnels,
-		},
-	}
-
-	cfgData, err := yaml.Marshal(clientCfg)
-	if err != nil {
-		progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "failed", Error: err.Error()})
-		return fmt.Errorf("marshaling client config: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(userDir, "config.yaml"), cfgData, 0644); err != nil {
-		progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "failed", Error: err.Error()})
-		return fmt.Errorf("writing client config: %w", err)
-	}
-	if req.SingleSession {
-		if err := os.WriteFile(filepath.Join(userDir, ".single-session"), nil, 0644); err != nil {
-			progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "failed", Error: err.Error()})
-			return fmt.Errorf("writing single-session marker: %w", err)
-		}
-	}
-	progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "completed"})
-
-	// Step 4: Update authorized_keys.
-	progress(ProgressEvent{Step: 4, Total: 4, Label: "Updating authorized_keys", Status: "running"})
-	if err := appendAuthorizedKey(pubAuthorized, req.Name, serverPorts, req.SingleSession); err != nil {
-		progress(ProgressEvent{Step: 4, Total: 4, Label: "Updating authorized_keys", Status: "failed", Error: err.Error()})
-		return fmt.Errorf("updating authorized_keys: %w", err)
-	}
-	// No undo appended here: this is the last step that can fail (the
-	// .applied marker write right below is already best-effort/ignored), so
-	// there's nothing after it left to roll back FROM.
-	progress(ProgressEvent{Step: 4, Total: 4, Label: "Updating authorized_keys", Status: "completed"})
-
-	// Mark user as applied to the current relay.
-	_ = os.WriteFile(filepath.Join(userDir, ".applied"), nil, 0644)
-
 	return nil
 }
 
@@ -412,80 +257,6 @@ func (o *Ops) DeleteUser(name string) error {
 			slog.Warn("could not remove authorized_keys entry", "user", name, "error", err)
 		}
 	}
-
-	return nil
-}
-
-// UpdateUserMappings replaces a user's port mappings. It rewrites their
-// config.yaml and updates their authorized_keys entry.
-func (o *Ops) UpdateUserMappings(name string, mappings []config.PortMapping) error {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-
-	if len(mappings) == 0 {
-		return fmt.Errorf("at least one port mapping is required")
-	}
-	for _, m := range mappings {
-		if m.ClientPort < 1 || m.ClientPort > 65535 || m.ServerPort < 1 || m.ServerPort > 65535 {
-			return fmt.Errorf("port numbers must be between 1 and 65535")
-		}
-	}
-
-	userDir := filepath.Join(config.UsersDir(), name)
-	cfgPath := filepath.Join(userDir, "config.yaml")
-
-	data, err := os.ReadFile(cfgPath)
-	if err != nil {
-		return fmt.Errorf("user %q not found", name)
-	}
-
-	var clientCfg struct {
-		Xray   config.XrayConfig   `yaml:"xray"`
-		Client config.ClientConfig `yaml:"client"`
-	}
-	if err := yaml.Unmarshal(data, &clientCfg); err != nil {
-		return fmt.Errorf("parsing user config: %w", err)
-	}
-
-	// Build new tunnels.
-	tunnels := make([]config.Tunnel, len(mappings))
-	serverPorts := make([]int, len(mappings))
-	for i, m := range mappings {
-		tunnels[i] = config.Tunnel{
-			LocalPort:  m.ClientPort,
-			RemoteHost: "127.0.0.1",
-			RemotePort: m.ServerPort,
-		}
-		serverPorts[i] = m.ServerPort
-	}
-	clientCfg.Client.Tunnels = tunnels
-
-	// Rewrite config.yaml.
-	cfgData, err := yaml.Marshal(clientCfg)
-	if err != nil {
-		return fmt.Errorf("marshaling user config: %w", err)
-	}
-	if err := os.WriteFile(cfgPath, cfgData, 0644); err != nil {
-		return fmt.Errorf("writing user config: %w", err)
-	}
-
-	// Update authorized_keys: remove old entry, add new one.
-	pubPath := filepath.Join(userDir, "id_ed25519.pub")
-	pubData, err := os.ReadFile(pubPath)
-	if err != nil {
-		return nil // no key — nothing to update in authorized_keys
-	}
-	if err := removeAuthorizedKey(pubData); err != nil {
-		slog.Warn("could not remove old authorized_keys entry", "user", name, "error", err)
-	}
-	// Preserve single-session flag when rebuilding authorized_keys entry.
-	_, singleErr := os.Stat(filepath.Join(userDir, ".single-session"))
-	if err := appendAuthorizedKey(pubData, name, serverPorts, singleErr == nil); err != nil {
-		return fmt.Errorf("updating authorized_keys: %w", err)
-	}
-
-	// Mark config as needing re-download.
-	_ = os.WriteFile(filepath.Join(userDir, ".mappings-dirty"), nil, 0644)
 
 	return nil
 }

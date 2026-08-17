@@ -90,7 +90,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/relay/wizard", s.handleRelayWizard)
 	s.mux.HandleFunc("/servers", s.handleServers)
 	s.mux.HandleFunc("/users", s.handleUsers)
-	s.mux.HandleFunc("/users/new", s.handleUserNew)
 	s.mux.HandleFunc("/users/", s.handleUserDetail) // /users/{name}
 	s.mux.HandleFunc("/apps", s.handleApps)
 	s.mux.HandleFunc("/apps/new", s.handleAppNew)
@@ -140,7 +139,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/users/apply", s.apiApplyUsers)
 	s.mux.HandleFunc("/api/users/unregister", s.apiUnregisterUsers)
 	s.mux.HandleFunc("/api/users/online", s.apiOnlineUsers)
-	s.mux.HandleFunc("/api/users/", s.apiUserAction) // delete, mappings, single-session
+	s.mux.HandleFunc("/api/users/", s.apiUserAction) // delete, single-session
 
 	// SSE.
 	s.mux.HandleFunc("/api/events/", s.apiEvents)

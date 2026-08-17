@@ -130,7 +130,6 @@ func (o *Ops) InviteServer(ttl time.Duration, ui InviteUI, progress ProgressFunc
 		return nil, err
 	}
 	h := enroll.NewHandler(inv, enroll.RoleOffer{Role: "server"})
-	ui.ShowCode(inv.Code, inv.Expires)
 	port := enrollPort(cfg.Server.RemotePort)
 
 	// Phase 1: mint through grant, on the connection that served /start and
@@ -138,6 +137,11 @@ func (o *Ops) InviteServer(ttl time.Duration, ui InviteUI, progress ProgressFunc
 	var resp *JoinResponse
 	err = withRelaySSH(cfg, func(client *gossh.Client) error {
 		return serveInvite(client, port, h, func() error {
+			// Show the code only now: the enroll listener is bound, so the
+			// code is redeemable the instant the operator can read it. Shown
+			// earlier, an eager enrollee races the tunnel setup and gets a
+			// dead /enroll route (a bare 404) instead of a PAKE verdict.
+			ui.ShowCode(inv.Code, inv.Expires)
 			ctx, cancel := context.WithDeadline(context.Background(), inv.Expires)
 			defer cancel()
 			payload, err := h.AwaitOffer(ctx)
@@ -210,13 +214,16 @@ func (o *Ops) InviteUser(req CreateUserRequest, ttl time.Duration, ui InviteUI, 
 		return err
 	}
 	h := enroll.NewHandler(inv, enroll.RoleOffer{Role: "client", Username: req.Name})
-	ui.ShowCode(inv.Code, inv.Expires)
 	port := enrollPort(cfg.Server.RemotePort)
 
 	// Phase 1: mint through grant, on the connection that served /start and
 	// /offer. Deny()/error semantics on failure paths are unchanged.
 	err = withRelaySSH(cfg, func(client *gossh.Client) error {
 		return serveInvite(client, port, h, func() error {
+			// Show the code only now: the enroll listener is bound, so the
+			// code is redeemable the instant the operator can read it (see
+			// InviteServer for the race this prevents).
+			ui.ShowCode(inv.Code, inv.Expires)
 			ctx, cancel := context.WithDeadline(context.Background(), inv.Expires)
 			defer cancel()
 			payload, err := h.AwaitOffer(ctx)
@@ -257,10 +264,10 @@ func (o *Ops) InviteUser(req CreateUserRequest, ttl time.Duration, ui InviteUI, 
 	})
 }
 
-// grantClient performs the server-side creation for an invited client — the
-// zero-file sibling of CreateUser: same UUID/authorized_keys/user-dir writes,
-// but the key material is the ENROLLEE's public half and the cert is issued
-// from their CSR. Rolls itself back on failure.
+// grantClient performs the server-side creation for an invited client —
+// UUID/authorized_keys/user-dir writes where the key material is the
+// ENROLLEE's public half and the cert is issued from their CSR. Rolls itself
+// back on failure.
 func (o *Ops) grantClient(cfg config.Config, req CreateUserRequest, off *enroll.ClientOffer) (out []byte, err error) {
 	host, _ := os.Hostname()
 	serverID := deriveServerID(host, cfg.Xray.UUID)

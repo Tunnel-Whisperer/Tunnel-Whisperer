@@ -459,30 +459,13 @@ func (s *Server) apiUsers(w http.ResponseWriter, r *http.Request) {
 		}
 		jsonOK(w, users)
 
-	case http.MethodPost:
-		var req ops.CreateUserRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			jsonError(w, "invalid request body", http.StatusBadRequest)
-			return
-		}
-
-		sessionID, progress := s.sse.create()
-
-		go func() {
-			if err := s.ops.CreateUser(context.Background(), req, progress); err != nil {
-				slog.Error("user creation failed", "error", err)
-			}
-		}()
-
-		jsonOK(w, map[string]string{"session_id": sessionID})
-
 	default:
 		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
 func (s *Server) apiUserAction(w http.ResponseWriter, r *http.Request) {
-	// Routes: DELETE /api/users/{name}, GET /api/users/{name}/download
+	// Routes: DELETE /api/users/{name}, PUT …/single-session
 	path := strings.TrimPrefix(r.URL.Path, "/api/users/")
 	parts := strings.SplitN(path, "/", 2)
 	name := parts[0]
@@ -492,10 +475,6 @@ func (s *Server) apiUserAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(parts) == 2 && parts[1] == "mappings" {
-		s.apiUserMappings(w, r, name)
-		return
-	}
 	if len(parts) == 2 && parts[1] == "single-session" {
 		s.apiUserSingleSession(w, r, name)
 		return
@@ -512,27 +491,6 @@ func (s *Server) apiUserAction(w http.ResponseWriter, r *http.Request) {
 	default:
 		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-}
-
-func (s *Server) apiUserMappings(w http.ResponseWriter, r *http.Request, name string) {
-	if r.Method != http.MethodPut {
-		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req struct {
-		Mappings []config.PortMapping `json:"mappings"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	if err := s.ops.UpdateUserMappings(name, req.Mappings); err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	jsonOK(w, map[string]string{"status": "ok"})
 }
 
 func (s *Server) apiApplyUsers(w http.ResponseWriter, r *http.Request) {

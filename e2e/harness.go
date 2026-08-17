@@ -166,7 +166,7 @@ func localCertsShim(t *testing.T) {
 }
 
 // inviteCodeRe / inviteSASRe / inviteExitRe are the literal print formats of
-// the issuer/enrollee CLIs (internal/cli/relay_invite.go, create_user.go,
+// the issuer/enrollee CLIs (internal/cli/relay_invite.go, invite_user.go,
 // join.go): "Invite code: <code>", "SAS: XXX-XXX" (base32 uppercase, on both
 // sides), and the synthetic completion sentinel runInviteExchange appends.
 var (
@@ -176,7 +176,7 @@ var (
 )
 
 // runInviteExchange drives one full invite/join exchange end to end:
-// issuerCmd (e.g. "tw relay invite" or "tw server user create bob -m ... --invite")
+// issuerCmd (e.g. "tw relay invite" or "tw server user invite bob -m ...")
 // runs detached on issuerService and answers its own [y/N] SAS prompt once
 // the human read-back has been cross-checked against the enrollee's side;
 // joinCmd (containing a literal "{code}" placeholder) runs detached on
@@ -200,7 +200,7 @@ var (
 // (at the SAS prompt) consumes it.
 //
 // Completion signal: `tw relay invite` prints a final "Server ... enrolled"
-// line, but `tw server user create --invite` prints nothing on success (see
+// line, but `tw server user invite` prints nothing on success (see
 // task-11-report.md) — so instead of scraping for success/denial text, the
 // wrapper always appends a synthetic "TW_INVITE_EXIT <code>" sentinel after
 // the command exits, regardless of outcome; that is the one signal common to
@@ -209,7 +209,7 @@ var (
 // Caddyfile reload: `tw relay invite` (server-role) calls the same
 // EnrollServer used by the old add-server/enroll-server flows, which
 // re-renders and reloads the relay's Caddyfile *after* SAS approval — wiping
-// the suite's local_certs shim — while `tw server user create --invite`
+// the suite's local_certs shim — while `tw server user invite`
 // (client-role) never touches Caddy at all. Rather than push that
 // product-specific knowledge onto every caller, the final wait loop below
 // watches for the "Caddyfile reloaded" progress line and reapplies the shim

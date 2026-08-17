@@ -107,15 +107,6 @@ type ListUsersResponse struct {
 	Users []ops.UserInfo `json:"users"`
 }
 
-// CreateUserRequest names a new user and its client-port-to-server-port mappings.
-type CreateUserRequest struct {
-	Name     string `json:"name"`
-	Mappings []struct {
-		ClientPort int `json:"client_port"`
-		ServerPort int `json:"server_port"`
-	} `json:"mappings"`
-}
-
 // DeleteUserRequest names the user to remove.
 type DeleteUserRequest struct {
 	Name string `json:"name"`
@@ -146,7 +137,6 @@ type TunnelWhispererServer interface {
 	StopClient(ctx context.Context, req *Empty) (*Empty, error)
 	UploadClientConfig(ctx context.Context, req *UploadClientConfigRequest) (*Empty, error)
 	ListUsers(ctx context.Context, req *Empty) (*ListUsersResponse, error)
-	CreateUser(ctx context.Context, req *CreateUserRequest) (*Empty, error)
 	DeleteUser(ctx context.Context, req *DeleteUserRequest) (*Empty, error)
 }
 
@@ -261,13 +251,6 @@ func RegisterTunnelWhispererServer(s *grpc.Server, srv TunnelWhispererServer) {
 			}
 			return srv.(TunnelWhispererServer).ListUsers(ctx, req)
 		}),
-		unaryMethod("CreateUser", func(srv interface{}, ctx context.Context, dec func(interface{}) error) (interface{}, error) {
-			req := new(CreateUserRequest)
-			if err := dec(req); err != nil {
-				return nil, err
-			}
-			return srv.(TunnelWhispererServer).CreateUser(ctx, req)
-		}),
 		unaryMethod("DeleteUser", func(srv interface{}, ctx context.Context, dec func(interface{}) error) (interface{}, error) {
 			req := new(DeleteUserRequest)
 			if err := dec(req); err != nil {
@@ -351,9 +334,6 @@ func (UnimplementedTunnelWhispererServer) UploadClientConfig(context.Context, *U
 	return nil, status.Errorf(codes.Unimplemented, "not implemented")
 }
 func (UnimplementedTunnelWhispererServer) ListUsers(context.Context, *Empty) (*ListUsersResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "not implemented")
-}
-func (UnimplementedTunnelWhispererServer) CreateUser(context.Context, *CreateUserRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "not implemented")
 }
 func (UnimplementedTunnelWhispererServer) DeleteUser(context.Context, *DeleteUserRequest) (*Empty, error) {

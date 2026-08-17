@@ -33,7 +33,6 @@ service TunnelWhisperer {
 
   // Users
   rpc ListUsers         (Empty)                     returns (ListUsersResponse);
-  rpc CreateUser        (CreateUserRequest)          returns (Empty);
   rpc DeleteUser        (DeleteUserRequest)          returns (Empty);
 }
 
@@ -97,16 +96,6 @@ message UploadClientConfigRequest {
 
 message ListUsersResponse {
   // JSON-encoded []UserInfo
-}
-
-message CreateUserRequest {
-  string name = 1;
-  repeated PortMapping mappings = 2;
-}
-
-message PortMapping {
-  int32 client_port = 1;
-  int32 server_port = 2;
 }
 
 message DeleteUserRequest {

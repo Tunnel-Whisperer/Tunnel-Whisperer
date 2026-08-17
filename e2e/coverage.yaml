@@ -15,12 +15,11 @@ commands:
   "server start":            [TestE2E/ServerJoin]
   "server test":             [TestE2E/ServerJoin]
   "server status":           [TestE2E/ServerJoin]
-  "server user create":      [TestE2E/UserLifecycle]
+  "server user invite":      [TestE2E/UserLifecycle]
   "server user apply":       [TestE2E/UserLifecycle]
   "server user list":        [TestE2E/UserLifecycle]
   "server user delete":      [TestE2E/Revocation, TestE2E/ConfigDirSafety]
   "server user unregister":  [TestE2E/Revocation]
-  "server user edit":        {exempt: "pending: interactive wizard; cover when mappings-edit gets flags"}
   "server user single-session": [TestE2E/PermitOpen]
   "server app list":         {exempt: "pending: app catalog scenario not yet written"}
   "server app create":       {exempt: "pending: app catalog scenario not yet written"}
