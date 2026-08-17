@@ -41,6 +41,8 @@ func TestE2E(t *testing.T) {
 		{"UserLifecycle", testUserLifecycle},
 		{"PortOverride", testPortOverride},
 		{"PermitOpen", testPermitOpen},
+		{"AppCatalog", testAppCatalog},
+		{"ProxyRoute", testProxyRoute},
 		{"Revocation", testRevocation},
 		{"Contexts", testContexts},
 		{"SecondTenant", testSecondTenant},

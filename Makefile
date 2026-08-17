@@ -44,6 +44,7 @@ proto:
 e2e-up:
 	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o e2e/images/tw/tw $(CMD)
 	GOOS=linux GOARCH=amd64 go build -o e2e/images/tw/echo-server ./e2e/images/tw/echo
+	GOOS=linux GOARCH=amd64 go build -o e2e/images/tw/socks5-server ./e2e/images/tw/socks5
 	docker compose -f e2e/docker-compose.yaml up -d --build
 
 e2e-down:
