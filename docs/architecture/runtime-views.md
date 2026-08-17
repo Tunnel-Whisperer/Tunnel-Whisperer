@@ -135,22 +135,38 @@ Key properties:
 
 ---
 
-## User Creation (`tw server user create`)
+## User Enrollment (`tw server user invite`)
 
-Interactive wizard, four progress steps:
+The only way a user comes to exist: the server operator mints a one-time
+invite code and the client redeems it with `tw join`, running the same
+SPAKE2 + SAS exchange as [server enrollment](#server-enrollment-tw-relay-invite-tw-join)
+over the tenant's own `/enroll/<tok>` route.
 
 ```mermaid
 sequenceDiagram
     participant Admin as Server operator (tw)
+    participant C as Client machine (tw join)
     participant R as Relay (via management tunnel)
     participant AK as authorized_keys
 
     Admin ->> Admin: Enter username + port mappings<br/>(client local port -> server port, localhost only)
-    Admin ->> Admin: [1] Generate UUID + ed25519 SSH key pair
-    Admin ->> R: [2] Hot-add UUID to this server's own<br/>vless-in-&lt;server-id&gt; inbound on the relay
-    Admin ->> Admin: [3] Write client config + keys to users/<name>/
-    Admin ->> AK: [4] Append public key with permitopen restrictions
+    Admin -->> C: One-time invite code (spoken; a SPAKE2 password)
+    C ->> C: Generate ed25519 SSH key pair + CSR locally
+    C ->> Admin: SSH public key + CSR + proposed UUID<br/>(SPAKE2-encrypted channel)
+    Admin ->> Admin: SAS confirmation (both terminals, exact match)
+    Admin ->> Admin: Sign the CSR with the server CA
+    Admin ->> R: Hot-add UUID to this server's own<br/>vless-in-&lt;server-id&gt; inbound on the relay
+    Admin ->> AK: Append public key with permitopen restrictions
+    Admin ->> C: Signed cert + coordinates +<br/>mode_auth-signed config (encrypted channel)
 ```
+
+The *client* generates its SSH key pair and certificate signing request
+locally (`clientMaterial.makeOffer` in `internal/ops/joinflow.go`) — no
+private key ever transits — and the server's `grantClient`
+(`internal/ops/invite.go`) signs the CSR, registers the UUID, and writes
+`authorized_keys` plus only the client's *public* key server-side. The client
+stores the grant as a new context and connects with `tw client connect`.
+There is no other creation path and no bundle file.
 
 **Port mapping flow:** Ports are entered one mapping at a time in sequence. For each mapping, the wizard asks for the client's local port and the server port. The remote host is locked to `127.0.0.1` -- clients cannot forward to the server's wider network.
 
@@ -163,11 +179,10 @@ sequenceDiagram
 5. Writes the updated config via `sudo tee` (persistence across Xray restarts)
 6. Hot-adds the UUID via the Xray gRPC API (`AlterInbound` / `AddUserOperation` on `:10085`); falls back to `systemctl restart xray` if the API call fails
 
-**Generated files** in `<config_dir>/users/<name>/`:
+**Server-side files** in `<config_dir>/users/<name>/`:
 
-- `config.yaml` -- client config with Xray settings (client UUID, relay host/port, the server's `/tw/<server-id>` path) and tunnel mappings
-- `id_ed25519` -- client SSH private key
-- `id_ed25519.pub` -- client SSH public key
+- `config.yaml` -- copy of the granted client config (client UUID, relay host/port, the server's `/tw/<server-id>` path, tunnel mappings) — used by `user list`/`apply`
+- `id_ed25519.pub` -- the client's enrolled SSH public key (the private half is born on the client machine and never leaves it)
 
 The generated `authorized_keys` entry:
 
@@ -176,8 +191,6 @@ permitopen="127.0.0.1:5432",permitopen="127.0.0.1:8080" ssh-ed25519 AAAA... alic
 ```
 
 This restricts the client to forwarding only to the specified `127.0.0.1` ports on the server. An optional `single-session` option (toggled per user) limits the user to one concurrent SSH session.
-
-**Delivery:** `tw server user create <name> --invite` (`ops.InviteUser`) replaces the steps above with a zero-file variant: it mints a one-time code and blocks for the enrollee's `tw join`, running the same SPAKE2 + SAS exchange as [server enrollment](#server-enrollment-tw-relay-invite-tw-join) over the tenant's own `/enroll/<tok>` route. On approval, the *client* generates its SSH key pair and a certificate signing request locally (`clientMaterial.makeOffer` in `internal/ops/joinflow.go`) — no private key ever transits — and the server's `grantClient` (`internal/ops/invite.go`) signs the CSR, registers the UUID, writes `authorized_keys` and only the client's *public* key server-side, and sends back the signed certificate plus a `mode_auth`-signed `config.yaml` over the encrypted channel. The client stores it as a new context and connects with `tw client connect`. A plain (non-`--invite`) `tw server user create` still writes both key halves server-side as before, but there is no longer any command to package them for delivery — `--invite` is the only supported handoff.
 
 ---
 

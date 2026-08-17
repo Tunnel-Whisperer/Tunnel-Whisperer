@@ -4,7 +4,7 @@ This page covers the full client workflow: redeem the invite, connect, use your 
 
 ## 1. Redeem the Invite
 
-The server operator runs `tw server user create <name> --invite` and reads you the resulting one-time code over any channel. Redeem it with:
+The server operator runs `tw server user invite <name>` and reads you the resulting one-time code over any channel. Redeem it with:
 
 ```bash
 tw join relay.example.com <code> [--name alice]

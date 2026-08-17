@@ -113,12 +113,12 @@ When `--name` is omitted, the name is derived from the bundle:
 
 Names are sanitized to lowercase alphanumerics and dashes.
 
-## Issuing Client Identities: `--invite`
+## Issuing Client Identities: `tw server user invite`
 
 Server operators no longer hand out client identities as files. On the **server**:
 
 ```bash
-tw server user create alice -m 8080:80 --invite
+tw server user invite alice -m 8080:80
 ```
 
 This mints a one-time code carrying alice's port mappings, and blocks waiting for her to redeem it. She runs, on her own machine:

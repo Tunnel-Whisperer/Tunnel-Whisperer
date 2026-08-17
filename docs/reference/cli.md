@@ -128,34 +128,33 @@ does the whole thing in-process.
 
 | Command | Description |
 |---|---|
-| `tw server user create [name]` | Create a client user with tunnel access. With a name argument it runs non-interactively from flags; without one it prompts. Supports `--single-session` to enforce one concurrent connection per user. |
+| `tw server user invite [name]` | Enroll a client user over a one-time invite code. With a name argument the mappings come from flags; without one it prompts for name and mappings first. Supports `--single-session` to enforce one concurrent connection per user. |
 | `tw server user list` | List all configured users and their tunnel mappings. |
-| `tw server user edit <name>` | Edit a user's port mappings (interactive). |
 | `tw server user delete <name>` | Delete a user (with confirmation prompt). |
 | `tw server user apply [name...]` | Register users on the relay (all users if no names are given). |
 | `tw server user unregister <name>` | Unregister a user from the relay (revoke tunnel access without deleting the user). |
 | `tw server user single-session <name> [on\|off]` | Show or set single-session enforcement (one concurrent SSH connection per user). No argument shows the current state; `on` or `off` sets it. Rewrites the user's authorized_keys entry; takes effect on the next auth attempt. |
 
-`tw server user create` flags:
+`tw server user invite` flags:
 
 | Flag | Description |
 |---|---|
 | `-m`, `--map <clientPort:serverPort>` | Port mapping (repeatable), e.g. `-m 8080:80`. |
 | `--from <user>` | Copy port mappings from an existing user (mutually exclusive with `--map`). |
 | `--single-session` | Enforce one concurrent SSH connection per user; subsequent login attempts while one is active are rejected. Takes effect on the next auth attempt. |
-| `--invite` | Enroll the client over a one-time invite code instead of local key generation. Requires the name argument. |
+| `--ttl <duration>` | Invite lifetime before it expires unredeemed (default `15m`). |
 
 ```bash
-tw server user create alice -m 8080:80 -m 5432:5432
-tw server user create bob --from alice
-tw server user create carol -m 5432:5432 --invite
+tw server user invite alice -m 8080:80 -m 5432:5432
+tw server user invite bob --from alice
+tw server user invite carol -m 5432:5432 --ttl 1h
 ```
 
-To hand the user their credentials, use `--invite`: it mints a one-time code,
-waits for the user to run `tw join <relay-host> <code>` on their own machine,
-and confirms a spoken authentication string before granting access. The
-client's SSH key and certificate are generated locally and never transit —
-there is no bundle file to send. See [Users](../server/users.md).
+The command mints a one-time code, waits for the user to run
+`tw join <relay-host> <code>` on their own machine, and confirms a spoken
+authentication string before granting access. The client's SSH key and
+certificate are generated locally and never transit — there is no bundle
+file to send. See [Users](../server/users.md).
 
 ### `tw server app`
 
@@ -187,7 +186,7 @@ tw join <relay-host> <code> [--name <ctx>]
 ```
 
 Joins a relay using a one-time invite code from its operator (`tw relay
-invite` for a server tenant, `tw server user create --invite` for a client
+invite` for a server tenant, `tw server user invite` for a client
 user). It's role-neutral and works even with **no mode configured** — the
 issuer's invite decides whether this machine becomes a server or a client.
 
@@ -346,7 +345,7 @@ tw completion > "${fpath[1]}/_tw"
 
 Completion is **dynamic** for arguments that name local state — context names
 and IDs (`tw config use-context/delete-context/export/rename-context`), user
-names (`tw server user edit/delete/unregister/apply`), enrolled server IDs
+names (`tw server user delete/unregister/apply`), enrolled server IDs
 (`tw relay un-enroll-server`), and app template names (`tw server app
 edit/delete`). Candidates come with descriptions (role, relay, port count,
 applied state) and are read purely from local files — completion never dials

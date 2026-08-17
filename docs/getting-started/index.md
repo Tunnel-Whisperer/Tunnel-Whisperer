@@ -18,7 +18,7 @@ Tunnel Whisperer connects services across separated private networks via resilie
 
                               # role: server
 3. Join        tw join relay.example.com <code>
-4. Invite      tw server user create alice -m 8080:80 --invite
+4. Invite      tw server user invite alice -m 8080:80
                (mints a code, waits for the client)
 5. Run         tw server start                 (or tw dashboard / tw service install)
 

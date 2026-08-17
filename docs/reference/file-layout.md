@@ -41,11 +41,9 @@ A server enrolled on a relay, with two users, has this layout:
 └── users/
     ├── alice/
     │   ├── config.yaml      # Client config pre-filled for this user (mode/mode_auth are injected into the invite grant, not stored here)
-    │   ├── id_ed25519       # User's SSH private key — only for users created WITHOUT --invite
     │   ├── id_ed25519.pub   # User's SSH public key (mirrored into authorized_keys)
-    │   ├── .applied         # Marker: user is registered on the relay (written by create/apply)
+    │   ├── .applied         # Marker: user is registered on the relay (written by invite/apply)
     │   ├── .single-session  # Optional marker: enforce one concurrent session for this user
-    │   └── .mappings-dirty  # Optional marker: mappings changed since creation/last edit (nothing currently clears it)
     └── bob/
         └── ...
 ```
@@ -129,10 +127,10 @@ files sealed in the `TWBOX1` container format, **with no passphrase**:
 | `tw_<name>.twctx` | `tw config export` (and automatically at the end of `tw relay create`) | The full profile of the exported context |
 
 Client identities are no longer packaged as a separate per-user bundle type —
-`tw server user create --invite` / `tw join` deliver them directly over an
+`tw server user invite` / `tw join` deliver them directly over an
 encrypted, SAS-confirmed channel instead of a file (see
 [Tenants](../relay/tenants.md#enrolling-a-server) and
-[Users](../server/users.md#inviting-a-client)). The resulting client context,
+[Users](../server/users.md#inviting-a-user)). The resulting client context,
 once stored, is still a perfectly ordinary context and can be exported with
 `tw config export` like any other — that export is what produces a
 `tw_<name>.twctx` for it, e.g. to move it to another machine of your own.

@@ -72,18 +72,17 @@ client:                            # only needed for `tw client connect`
 └── users/                         # per-user client configs (server role)
     └── alice/
         ├── config.yaml            # client config
-        ├── id_ed25519             # client private key — only for users created WITHOUT --invite
-        ├── id_ed25519.pub         # client public key
+        ├── id_ed25519.pub         # client public key (the only key half the server holds)
         └── .applied               # marker: user registered on current relay
 ```
 
-!!! note "`--invite` keeps only the public key on the server"
-    `tw server user create --invite` never generates the client's private key
-    on the server at all — the enrollee generates its own SSH key pair and a
+!!! note "Only the public key lives on the server"
+    `tw server user invite` never generates the client's private key on the
+    server at all — the enrollee generates its own SSH key pair and a
     certificate signing request locally, and only `id_ed25519.pub` and the
-    signed certificate metadata land in `users/<name>/`. A plain
-    `tw server user create` (no `--invite`) still generates and stores both
-    halves server-side, as before.
+    signed certificate metadata land in `users/<name>/`. (An `id_ed25519`
+    private key in a user directory is a leftover from the removed
+    pre-invite creation flow and is never read.)
 
 ## File Layout (Client)
 

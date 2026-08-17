@@ -29,7 +29,7 @@ Templates pre-fill user mappings in the dashboard:
 - **Creating a user** — pick a template from the **Load from Application** dropdown on the create form; its mappings populate the form and can be adjusted before saving.
 - **Editing a user** — the **Add from Application** dropdown appends a template's mappings to the ones being edited.
 
-On the CLI, `tw server user create` takes mappings via `-m` or `--from <user>`; to reuse a template's ports, check them with `tw server app list` and pass them as `-m` flags.
+On the CLI, `tw server user invite` takes mappings via `-m` or `--from <user>`; to reuse a template's ports, check them with `tw server app list` and pass them as `-m` flags.
 
 !!! note "No retroactive changes"
     A template is copied into the user at creation/edit time. Editing or deleting a template does not affect users previously created from it — only new users or manual edits pick up the change.

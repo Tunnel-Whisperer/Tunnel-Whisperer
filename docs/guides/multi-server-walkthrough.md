@@ -103,12 +103,12 @@ tw relay get-servers     # lists server1 and server2
 
 ![Step 4 — create the client users](../assets/multi-server-step4-users.gif)
 
-Each client gets a user on the server it should reach, with a port map `clientLocalPort:serverPort`. For SSH, the server port is **22**. `--invite` mints a one-time code and blocks, waiting for the client to redeem it.
+Each client gets a user on the server it should reach, with a port map `clientLocalPort:serverPort`. For SSH, the server port is **22**. `tw server user invite` mints a one-time code and blocks, waiting for the client to redeem it.
 
 **On server1** (for client1):
 
 ```bash
-tw server user create client1 -m 2201:22 --invite
+tw server user invite client1 -m 2201:22
 ```
 
 Read the code to client1's operator; approve on the matching SAS read-back.
@@ -116,7 +116,7 @@ Read the code to client1's operator; approve on the matching SAS read-back.
 **On server2** (for client2):
 
 ```bash
-tw server user create client2 -m 2202:22 --invite
+tw server user invite client2 -m 2202:22
 ```
 
 Same dance, with client2.
@@ -167,7 +167,7 @@ tw client status
 
 A user (and its context) belongs to one server, but clients handle multiple via kubectl-style contexts:
 
-1. On server2, also invite `client1` (`tw server user create client1 -m 2211:22 --invite`) — and mirror for client2 on server1.
+1. On server2, also invite `client1` (`tw server user invite client1 -m 2211:22`) — and mirror for client2 on server1.
 2. On the client, redeem the second invite too: `tw join relay.example.com <code> --name <ctx>` (`tw join` never touches the currently active context).
 3. Switch with `tw config use-context <name|id>` (`tw config get-contexts` lists them). Switching reconnects — one server connection is active at a time.
 
@@ -175,6 +175,6 @@ A user (and its context) belongs to one server, but clients handle multiple via 
 
 - Modes are enforced and signed: a client box can't run `tw server ...` commands and vice versa. If you set up a machine in the wrong mode, wipe its tw config dir and start that machine's steps over.
 - The relay VM's SSH is tunnel-only after install — the admin reaches it via `tw relay ssh`. If you provisioned with `--ssh-open`, the admin key also works directly over port 22 (close it later from the dashboard's relay page).
-- If you edit a user's port mappings later (`tw server user edit`), the client's context does not pick it up automatically — there's no push, and `--invite` refuses to re-invite an existing name, so delete the user and invite them again to hand out the new mappings.
+- A user's port mappings are fixed at enrollment — there is no edit command. To change them, delete the user and invite them again under the same name (a "renew").
 - To kick a server off the relay: admin runs `tw relay un-enroll-server <server-id> --yes`; to revoke a client: server runs `tw server user unregister <name>` / `delete <name>` (takes effect on their next connection attempt).
 - Invite codes are single-use and short-lived (15 minutes by default) — if one expires before it's redeemed, just mint a fresh one.

@@ -41,15 +41,12 @@ The innermost layer is a full **SSH session** providing end-to-end encryption be
 
 - All connections use **Ed25519 public key authentication** — a 256-bit elliptic curve algorithm
 - **No passwords** are used. There is no brute-force attack surface
-- Each user gets an **individual Ed25519 key pair**. With `tw server user create --invite`, the client generates its own key pair locally — the private half never touches the server at all. A plain `tw server user create` (no `--invite`) still generates both halves on the server, as before
+- Each user gets an **individual Ed25519 key pair**, generated on the client machine during `tw server user invite` enrollment — the private half never touches the server at all
 - The SSH session encrypts all forwarded port traffic, ensuring that neither the relay nor any intermediate network can read application data
 
 ```
-# Example: an invited user "alice" (--invite; private key born on her own machine)
+# Example: an enrolled user "alice" (private key born on her own machine)
 /etc/tw/config/users/alice/id_ed25519.pub   # public key only — added to the server's authorized_keys
-
-# Example: a plain (non-invite) user "bob" — legacy path, server-generated key
-/etc/tw/config/users/bob/id_ed25519         # private key, generated and stored server-side
 /etc/tw/config/users/bob/id_ed25519.pub     # public key — added to the server's authorized_keys
 ```
 

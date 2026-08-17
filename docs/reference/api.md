@@ -178,43 +178,16 @@ when the daemon runs in relay mode.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/users` | List all configured users |
-| `POST` | `/api/users` | Create a new user |
 | `DELETE` | `/api/users/{name}` | Delete a user by name |
-| `PUT` | `/api/users/{name}/mappings` | Update a user's port mappings |
 | `POST` | `/api/users/{name}/single-session` | Enable/disable the user's single-session flag |
 | `POST` | `/api/users/apply` | Register users on the relay. Body: `{ "names": [...] }` (empty = all) |
 | `POST` | `/api/users/unregister` | Unregister users from the relay |
 | `GET` | `/api/users/online` | List currently connected users |
 
-**Create user request body:**
-
-```json
-{
-  "name": "alice",
-  "mappings": [
-    { "client_port": 3389, "server_port": 3389 },
-    { "client_port": 8443, "server_port": 443 }
-  ]
-}
-```
-
-**Update user mappings request body:**
-
-```json
-{
-  "mappings": [
-    { "client_port": 3389, "server_port": 3389 },
-    { "client_port": 8443, "server_port": 443 }
-  ]
-}
-```
-
-After updating, the user's `authorized_keys` entry is rewritten with new
-`permitopen` restrictions and a mappings-dirty flag is set (shown as the
-"config outdated" badge in the dashboard's Users page). There is no REST
-endpoint to clear it — delivering the new mappings to the client means
-deleting the user and inviting them again (`tw server user create --invite`),
-which starts them fresh.
+There is no create or edit endpoint: users come to exist only through the
+interactive invite ceremony (`tw server user invite`), and their mappings are
+fixed at enrollment — changing them means deleting the user and inviting them
+again.
 
 ### Application templates
 
@@ -302,12 +275,11 @@ does: `grpc.CallContentSubtype("json")`, plaintext, 2-second dial timeout).
 | `StartClient` / `StopClient` | `Empty` → `Empty` | Start/stop the client |
 | `UploadClientConfig` | `UploadClientConfigRequest` → `Empty` | Import a client context bundle (bytes) in client mode |
 | `ListUsers` | `Empty` → `ListUsersResponse` | All configured users with tunnel mappings |
-| `CreateUser` | `CreateUserRequest` → `Empty` | Create a user (name + port mappings) |
 | `DeleteUser` | `DeleteUserRequest` → `Empty` | Delete a user by name |
 
 The CLI's built-in client wraps the subset it needs: `GetStatus`,
 `TestRelay`, `ListUsers`, `DeleteUser`, and `DestroyRelay`; every CLI command
 that can use the daemon falls back to local (on-disk) operation when no
 daemon answers on `server.api_port`. The invite flows (`tw relay invite`,
-`tw server user create --invite`, `tw join`) don't go through this API at
+`tw server user invite`, `tw join`) don't go through this API at
 all — they dial the relay directly over the Xray/SSH tunnel.

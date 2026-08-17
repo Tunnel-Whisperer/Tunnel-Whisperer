@@ -107,7 +107,7 @@ tw server start
 - **Private keys never transit.** For server enrollment the SSH key and CA
   are generated locally by `tw join` and only public material crosses the
   wire, same as the old file-based handshake. For client enrollment
-  (`tw server user create --invite`, see [Users](../server/users.md)) it goes
+  (`tw server user invite`, see [Users](../server/users.md)) it goes
   further: the client generates its own SSH key *and* a certificate signing
   request locally, and the server signs the CSR — the client's private key
   never leaves the client machine at all.
@@ -221,7 +221,7 @@ something that doesn't itself depend on the missing `/enroll` route:
 Either one re-renders the Caddyfile and every tenant's `authorized_keys` from
 the registry, adding the admin's `/enroll` route and every tenant's enroll
 `permitlisten` in the same pass. After that, both `tw relay invite` and
-`tw server user create --invite` work normally. Relays provisioned by this
+`tw server user invite` work normally. Relays provisioned by this
 version of `tw` already have both from the start and need nothing.
 
 ## Dashboard equivalents
@@ -232,7 +232,7 @@ The admin dashboard's **Servers** page mirrors the read side of this:
   Enrolled, Tunnel), with the tunnel state queried live from the relay;
 - per-row **un-enroll**, with the same complete-removal semantics.
 
-Enrollment itself (`tw relay invite`, `tw server user create --invite`) is
+Enrollment itself (`tw relay invite`, `tw server user invite`) is
 CLI-only for now — the human-in-the-loop SAS confirmation doesn't yet have a
 dashboard equivalent.
 

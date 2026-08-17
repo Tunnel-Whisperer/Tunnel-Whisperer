@@ -40,7 +40,7 @@ Both the forward tunnel (client) and reverse tunnel (server) implement exponenti
 
 The SSH server re-reads `authorized_keys` on every authentication attempt. This means:
 
-- `tw server user create` takes effect immediately -- no need to restart the running server
+- `tw server user invite` takes effect immediately -- no need to restart the running server
 - Revoking a user (removing their key from `authorized_keys`) takes effect on the next connection attempt
 - Each key entry can have independent `permitopen` restrictions (and an optional `single-session` flag)
 
@@ -75,7 +75,7 @@ sequenceDiagram
     Note over TX: Tunnel destroyed (expected)
 ```
 
-`tw server user create` (and delete/unregister) updates the relay's Xray config remotely:
+`tw server user invite` (and delete/unregister) updates the relay's Xray config remotely:
 
 1. Starts a temporary Xray instance (dokodemo-door on `server.temp_xray_port+1`, default 59001, falling back to any free loopback port — separate from a running `tw server start`)
 2. SSHs into the relay through the temporary tunnel using the server's SSH key
@@ -171,7 +171,7 @@ func modeError(current string, allowed []string) error {
 }
 ```
 
-**Mode signature (tamper-evidence).** The mode is additionally protected by a detached ed25519 signature (`mode_auth: {sig, issuer}` in config, `internal/ops/modeauth`) over `(mode, profile identity)`, where the identity is the profile's own `id_ed25519.pub`. The relay signs its own mode with its own key; a server's mode is signed by the relay admin inside the invite grant (`tw relay invite` / `tw join`); a client's mode is signed by its server inside the invite grant (`tw server user create --invite` / `tw join`). `requireMode` verifies the signature on every gated command: a present-but-invalid signature (a hand-edited `mode` field) is refused with a re-enroll/re-import hint; a missing signature is legacy-tolerated with a warning (the relay self-heals by re-signing). This is deliberately *not* a security boundary — the real role boundary is the relay's `authorized_keys` restrictions and the mTLS/PKI trust chain.
+**Mode signature (tamper-evidence).** The mode is additionally protected by a detached ed25519 signature (`mode_auth: {sig, issuer}` in config, `internal/ops/modeauth`) over `(mode, profile identity)`, where the identity is the profile's own `id_ed25519.pub`. The relay signs its own mode with its own key; a server's mode is signed by the relay admin inside the invite grant (`tw relay invite` / `tw join`); a client's mode is signed by its server inside the invite grant (`tw server user invite` / `tw join`). `requireMode` verifies the signature on every gated command: a present-but-invalid signature (a hand-edited `mode` field) is refused with a re-enroll/re-import hint; a missing signature is legacy-tolerated with a warning (the relay self-heals by re-signing). This is deliberately *not* a security boundary — the real role boundary is the relay's `authorized_keys` restrictions and the mTLS/PKI trust chain.
 
 ---
 
@@ -379,8 +379,7 @@ authority. The lifecycle is handled transparently:
   per tenant, plus a certless `/enroll` route per tenant) is rewritten the
   same way. CA signing keys never leave their servers — the relay only ever
   holds public certificates.
-- **Distribution to clients** — for an invited client (`tw server user create
-  --invite`), the client generates its own key and a CSR locally; the server
+- **Distribution to clients** — for an invited client (`tw server user invite`), the client generates its own key and a CSR locally; the server
   signs the CSR with its CA and sends back only `client.crt` over the
   encrypted invite channel — `client.key` never transits at all. `internal/pki`
   (`GenerateKeyAndCSR`, `SignClientCSR`) backs this. The same per-server

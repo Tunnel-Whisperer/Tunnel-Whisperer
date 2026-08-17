@@ -20,7 +20,7 @@ Setting up a server is three steps, in order:
 2. **[Create users](users.md)** — one per client, each restricted to specific ports:
 
     ```bash
-    tw server user create alice -m 5432:5432 --invite
+    tw server user invite alice -m 5432:5432
     ```
 
 3. **[Start the server](running.md)** — run the daemon (or install it as a service):

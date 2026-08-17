@@ -69,7 +69,7 @@ match.
     the relay's route matcher treats all of a server's clients — and the
     server itself — identically: admission and routing are per-**server**,
     not per-user. What changed with invite-based enrollment is the *key
-    material*: `tw server user create --invite` signs each client's own CSR
+    material*: `tw server user invite` signs each client's own CSR
     (`internal/pki.SignClientCSR`), so every invited client holds a distinct
     keypair with a certificate the server never possessed the private half
     of. Per-user identity and authorization are enforced one layer deeper
@@ -229,7 +229,7 @@ relay.example.com {
 - **`protocols tls1.3`** — TLS 1.3 only.
 - **`@enroll_<server-id>` matcher** — routes a tenant's `/enroll/<tok>/*` path
   to its local invite listener (the port `tw relay invite` / `tw server user
-  create --invite` opens over the tenant's own reverse SSH tunnel), no
+  invite` opens over the tenant's own reverse SSH tunnel), no
   certificate required — the one-time code and SAS read-back are the gate
   here, not TLS.
 - **`@<server-id>` matcher** — path *and* client-certificate subject must both
@@ -249,7 +249,7 @@ relay.example.com {
 | **Scope** | Per **server** — every certificate a server's CA issues carries the same CN, whether or not the keypair behind it is shared | Per **user** |
 | **Checked by** | Relay's Caddy, at the TLS handshake | Server's embedded SSH server, after the tunnel is up |
 | **Purpose** | Admit the connection to the relay and route it to the right server | Authenticate the user, restrict forwardable ports |
-| **Issued by** | The server's CA (automatic, first profile init) | The server (`tw server user create`) |
+| **Issued by** | The server's CA (automatic, first profile init) | The server (`tw server user invite`) |
 | **Revocation** | `tw relay un-enroll-server` (removes the CA from the trust pool) | Remove the key from `authorized_keys` (immediate — re-read every auth) |
 
 To block a single user, remove their SSH key — the certificate layer is not

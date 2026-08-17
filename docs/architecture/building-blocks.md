@@ -78,7 +78,7 @@ The client starts:
 - **Xray Instance** -- in-process xray-core with dokodemo-door inbound on `:54001` (`client.xray_port`) forwarding to the server's remote SSH port on the relay
 - **Forward Tunnel** -- SSH local port forwards (`-L`) through Xray, mapping multiple local ports to server services over a single SSH session; listeners bind `client.listen_address` (default `127.0.0.1`)
 
-Clients receive their identity over a zero-file invite: the server mints a one-time code (`tw server user create --invite`), the client redeems it (`tw join`), generating its own SSH key and a certificate signing request locally — neither private key ever transits — and the server signs the CSR and sends back the coordinates over the same SPAKE2-encrypted, SAS-confirmed channel. The result is stored as a context, switched with `tw config use-context` like any other; `tw config export`/`import` remain available for moving an existing context's identity between a client's own machines.
+Clients receive their identity over a zero-file invite: the server mints a one-time code (`tw server user invite`), the client redeems it (`tw join`), generating its own SSH key and a certificate signing request locally — neither private key ever transits — and the server signs the CSR and sends back the coordinates over the same SPAKE2-encrypted, SAS-confirmed channel. The result is stored as a context, switched with `tw config use-context` like any other; `tw config export`/`import` remain available for moving an existing context's identity between a client's own machines.
 
 ### Dashboard (`tw dashboard`)
 
@@ -157,10 +157,9 @@ tw/
 │   │   ├── relay_ssh.go                # tw relay ssh (+ _unix.go / _windows.go)
 │   │   ├── serve.go                    # tw server start
 │   │   ├── join.go                     # tw join <relay-host> <code> (role-neutral, no mode required)
-│   │   ├── create_user.go              # tw server user create (wizard; --invite for zero-file client enrollment)
+│   │   ├── invite_user.go              # tw server user invite (zero-file client enrollment; wizard when run without a name)
 │   │   ├── list_users.go               # tw server user list
 │   │   ├── delete_user.go              # tw server user delete
-│   │   ├── edit_user.go                # tw server user edit
 │   │   ├── apply_users.go              # tw server user apply / unregister
 │   │   ├── app.go                      # tw server app list/create/edit/delete
 │   │   ├── client.go                   # tw client group, tw client listen
@@ -177,7 +176,7 @@ tw/
 │   │   ├── config.go                   # Load/Save, Dir/RelayDir/UsersDir, FileHash(), ModeAuth, CanonicalMode
 │   │   └── context.go                  # context index (contexts.yaml), ContextsDir, ShortID
 │   ├── pki/                            # per-server CA + client cert issuance (ECDSA P-256)
-│   │   └── pki.go                      # GenerateCA(), IssueClientCert(), GenerateKeyAndCSR(), SignClientCSR() — the last two back --invite's local-CSR flow
+│   │   └── pki.go                      # GenerateCA(), IssueClientCert(), GenerateKeyAndCSR(), SignClientCSR() — the last two back the invite flow's client-local CSRs
 │   ├── enroll/                         # zero-file invite protocol: SPAKE2 PAKE, SAS, single-use codes
 │   │   ├── invite.go                   # Mint/Redeem/ParseCode — code format <tok>-NN-word-word, burn-on-first-attempt
 │   │   ├── pake.go                     # SPAKE2 session + SAS derivation (HKDF-SHA256, "tw-sas v1")
@@ -193,7 +192,7 @@ tw/
 │   │   ├── identity.go                 # deriveServerID, enrollPort (tunnel port + 20000)
 │   │   ├── join.go                     # JoinRequest/JoinResponse payload types (now travel inside invite grants, not files)
 │   │   ├── joinflow.go                 # Ops.Join: the tw join enrollee side (SPAKE2 offer, applies the grant)
-│   │   ├── invite.go                   # Ops.InviteServer / InviteUser: the tw relay invite / --invite issuer side
+│   │   ├── invite.go                   # Ops.InviteServer / InviteUser: the tw relay invite / tw server user invite issuer side
 │   │   ├── addserver.go                # AddLocalServer: same-machine self-enrollment (tw relay add-server)
 │   │   ├── enroll.go                   # EnrollServer: registry add + full relay rewrite + gRPC live-add
 │   │   ├── unenroll.go                 # UnenrollServer: block re-auth, drop live state, clean files
@@ -253,7 +252,7 @@ tw/
 │   │   │   ├── layout.html             # base layout
 │   │   │   ├── partials/nav.html       # navigation (mode-aware)
 │   │   │   └── pages/                  # index, setup, config, relay, relay_home, relay_wizard,
-│   │   │                               # servers, users, user_new/detail/edit, bandwidth, apps, app_new/edit
+│   │   │                               # servers, users, user_detail, bandwidth, apps, app_new/edit
 │   │   └── static/                     # css/ + js/ (app, status, config, relay, servers, users,
 │   │                                   # bandwidth, apps) + vendor xterm.js
 │   ├── service/                        # native service install/run (systemd / SCM / launchd, build tags)

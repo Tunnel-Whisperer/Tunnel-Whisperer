@@ -98,7 +98,7 @@ with `tw client connect --map 4000:15432`. See
 this command requires server mode, but tw is configured in client mode
 ```
 
-Server-only commands (like `tw server user create`) cannot run in client mode, and vice versa.
+Server-only commands (like `tw server user invite`) cannot run in client mode, and vice versa.
 
 **Fix:** Ensure you're running the command on the correct machine, or check `mode` in your `config.yaml`.
 

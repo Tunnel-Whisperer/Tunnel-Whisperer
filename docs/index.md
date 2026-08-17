@@ -92,7 +92,7 @@ Connect a cloud Jupyter notebook to an on-premise database behind a corporate fi
 
     # Invite a client user: mint a code, read it to them,
     # approve on their SAS read-back
-    tw server user create alice -m 8080:80 --invite
+    tw server user invite alice -m 8080:80
 
     # Start the tunnel
     tw server start

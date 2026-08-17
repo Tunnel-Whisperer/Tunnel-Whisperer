@@ -55,10 +55,7 @@ The nav bar shows the pages for the current role, plus the **current context nam
 
 - Sortable user list with online status, registration status, and tunnel count
 - **Search box and pagination** (client-side filtering)
-- **Config outdated** badge (yellow) when a user's mappings changed since they last joined
-- **Create User** — form-based, with optional application-template pre-fill; there is no bundle download to hand the client afterwards — issue an invite from the CLI instead (`tw server user create <name> --invite`), which mints the code and does the client's key/cert exchange in one step
-- **Duplicate** — new user with the same port mappings (from the user detail page)
-- **Edit Mappings** — modify mappings, optionally adding from an application template
+- **Enrollment happens in the CLI** — `tw server user invite <name> -m <port:port>` mints the code and does the client's key/cert exchange in one step; the dashboard manages the resulting users
 - **Apply/Unregister** — batch relay registration
 - **Delete** — remove the user and revoke access
 
@@ -87,7 +84,7 @@ The multi-tenant view — every server enrolled on this relay, in a **live table
 - **Un-enroll** — per-row action with a confirmation; the server's relay access and all its live connections end immediately
 
 !!! note "Enrollment is CLI-only"
-    Admitting a new server or client tenant (`tw relay invite`, `tw server user create --invite`) requires a spoken SAS confirmation and isn't yet exposed in the dashboard — run it from the CLI, then manage the result here.
+    Admitting a new server or client tenant (`tw relay invite`, `tw server user invite`) requires a spoken SAS confirmation and isn't yet exposed in the dashboard — run it from the CLI, then manage the result here.
 
 ## Client Mode
 
