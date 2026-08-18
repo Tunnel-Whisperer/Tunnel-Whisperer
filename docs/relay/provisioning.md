@@ -59,8 +59,6 @@ walks through:
    wizard prints the exact console page where to generate them, then validates
    them against the provider API before touching anything. For AWS, leave both
    fields blank to use the credentials from your environment instead
-   (`AWS_PROFILE`, SSO session, instance role — whatever Terraform's AWS
-   provider resolves); `tw relay destroy` behaves the same way.
 4. **Confirm and provision** — `tw` generates cloud-init + Terraform config
    into `<config-dir>/relay/` and runs `terraform init` and
    `terraform apply`. SSH keys, the Xray UUID, and the CA/client certificates
