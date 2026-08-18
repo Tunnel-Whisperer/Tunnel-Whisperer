@@ -342,6 +342,13 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 			}
 		}
 	}
+	if req.Region != "" {
+		regionVar := "region"
+		if req.ProviderKey == "hetzner" {
+			regionVar = "location"
+		}
+		tfvars += fmt.Sprintf("%s = %q\n", regionVar, req.Region)
+	}
 	if tfvars != "" {
 		tfvarsPath := filepath.Join(relayDir, "terraform.tfvars")
 		if err := os.WriteFile(tfvarsPath, []byte(tfvars), 0600); err != nil {
