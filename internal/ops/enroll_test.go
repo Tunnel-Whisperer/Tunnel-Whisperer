@@ -145,6 +145,21 @@ func TestRelayTenantStateSeedsAdminFirst(t *testing.T) {
 	}
 }
 
+func TestRenderRelayAuthorizedKeysEnrollListen(t *testing.T) {
+	out := renderRelayAuthorizedKeys("ssh-ed25519 AAAA admin",
+		[]RegisteredServer{{ServerID: "s1", RemotePort: 20000, SSHPubkey: "ssh-ed25519 BBBB s1"}}, false)
+	if !strings.Contains(out, `permitlisten="127.0.0.1:20000"`) ||
+		!strings.Contains(out, `permitlisten="127.0.0.1:40000"`) {
+		t.Fatalf("tenant line must permit both the tunnel and enroll listens:\n%s", out)
+	}
+}
+
+func TestEnrollPort(t *testing.T) {
+	if got := enrollPort(20000); got != 40000 {
+		t.Fatalf("enrollPort(20000) = %d", got)
+	}
+}
+
 func signServerModeForTest(t *testing.T, o *Ops, req *JoinRequest) (*JoinResponse, string, string) {
 	t.Helper()
 	sig, issuer, err := o.signServerMode(req)

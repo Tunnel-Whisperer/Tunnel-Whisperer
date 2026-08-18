@@ -192,6 +192,9 @@ var ErrContextExists = errors.New("context already exists")
 // stored bundle and its metadata are overwritten in place (the existing
 // context is updated, not duplicated).
 func (o *Ops) ImportContext(bundle []byte, name string, replace bool) (string, error) {
+	if err := config.CheckWritable(); err != nil {
+		return "", err
+	}
 	idx, err := config.EnsureContextIndex()
 	if err != nil {
 		return "", err
@@ -439,7 +442,7 @@ func liveProfileEmpty() bool {
 
 // NewContext seals the current context (preserving it), then starts a FRESH
 // EMPTY context and switches to it. The new context is unconfigured — the caller
-// sets it up next (e.g. `tw server join-relay`). Bundles carry no passphrase.
+// sets it up next (e.g. `tw join <relay-host> <code>`). Bundles carry no passphrase.
 func (o *Ops) NewContext(name string) error {
 	idx, err := config.EnsureContextIndex()
 	if err != nil {

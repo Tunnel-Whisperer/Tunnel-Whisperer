@@ -1,7 +1,6 @@
 package ops
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -14,11 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/tunnelwhisperer/tw/internal/config"
-	"github.com/tunnelwhisperer/tw/internal/cryptobox"
-	"github.com/tunnelwhisperer/tw/internal/ops/modeauth"
-	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
 	twxray "github.com/tunnelwhisperer/tw/internal/xray"
 	proxymanCmd "github.com/xtls/xray-core/app/proxyman/command"
 	statsCmd "github.com/xtls/xray-core/app/stats/command"
@@ -41,7 +36,6 @@ type UserInfo struct {
 	Online        bool            `json:"online"`
 	SingleSession bool            `json:"single_session"`
 	Sessions      int             `json:"sessions"`
-	MappingsDirty bool            `json:"mappings_dirty"`
 	DirPath       string          `json:"-"`
 }
 
@@ -170,14 +164,13 @@ func (o *Ops) ListUsers() ([]UserInfo, error) {
 			}
 		}
 
-		if _, err := os.Stat(filepath.Join(ui.DirPath, "id_ed25519")); err == nil {
+		// Invited users leave only public material on the server; the private
+		// half is born on (and never leaves) the client machine.
+		if _, err := os.Stat(filepath.Join(ui.DirPath, "id_ed25519.pub")); err == nil {
 			ui.HasKey = true
 		}
 		if _, err := os.Stat(filepath.Join(ui.DirPath, ".applied")); err == nil {
 			ui.Active = true
-		}
-		if _, err := os.Stat(filepath.Join(ui.DirPath, ".mappings-dirty")); err == nil {
-			ui.MappingsDirty = true
 		}
 		if _, err := os.Stat(filepath.Join(ui.DirPath, ".single-session")); err == nil {
 			ui.SingleSession = true
@@ -197,19 +190,9 @@ func (o *Ops) ListUsers() ([]UserInfo, error) {
 	return users, nil
 }
 
-// CreateUser runs the user creation flow: generates credentials, updates the
-// relay, saves config, and updates authorized_keys.
-func (o *Ops) CreateUser(ctx context.Context, req CreateUserRequest, progress ProgressFunc) error {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-
-	if progress == nil {
-		progress = func(ProgressEvent) {}
-	}
-
-	cfg := o.cfg
-
-	// Validate.
+// validateCreateUser runs the guards for InviteUser: name shape, non-empty
+// mappings, a configured relay/UUID, and that the user doesn't already exist.
+func validateCreateUser(cfg config.Config, req CreateUserRequest) error {
 	if req.Name == "" {
 		return fmt.Errorf("user name is required")
 	}
@@ -232,99 +215,6 @@ func (o *Ops) CreateUser(ctx context.Context, req CreateUserRequest, progress Pr
 	if _, err := os.Stat(userDir); err == nil {
 		return fmt.Errorf("user %q already exists", req.Name)
 	}
-
-	// Step 1: Generate credentials.
-	progress(ProgressEvent{Step: 1, Total: 4, Label: "Generating credentials", Status: "running"})
-	clientUUID := uuid.New().String()
-	privPEM, pubAuthorized, err := twssh.GenerateKeyPair()
-	if err != nil {
-		progress(ProgressEvent{Step: 1, Total: 4, Label: "Generating credentials", Status: "failed", Error: err.Error()})
-		return fmt.Errorf("generating SSH key pair: %w", err)
-	}
-	progress(ProgressEvent{Step: 1, Total: 4, Label: "Generating credentials", Status: "completed", Message: "UUID: " + clientUUID})
-
-	// Step 2: Update relay.
-	progress(ProgressEvent{Step: 2, Total: 4, Label: "Updating relay", Status: "running"})
-	if err := addUUIDToRelay(cfg, clientUUID); err != nil {
-		slog.Warn("relay update failed", "error", err)
-		progress(ProgressEvent{Step: 2, Total: 4, Label: "Updating relay", Status: "completed", Message: "Warning: " + err.Error()})
-	} else {
-		progress(ProgressEvent{Step: 2, Total: 4, Label: "Updating relay", Status: "completed", Message: "UUID added to relay"})
-	}
-
-	// Step 3: Save user files.
-	progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "running"})
-
-	if err := os.MkdirAll(userDir, 0700); err != nil {
-		progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "failed", Error: err.Error()})
-		return fmt.Errorf("creating user directory: %w", err)
-	}
-
-	if err := os.WriteFile(filepath.Join(userDir, "id_ed25519"), privPEM, 0600); err != nil {
-		progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "failed", Error: err.Error()})
-		return fmt.Errorf("writing client private key: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(userDir, "id_ed25519.pub"), pubAuthorized, 0644); err != nil {
-		progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "failed", Error: err.Error()})
-		return fmt.Errorf("writing client public key: %w", err)
-	}
-
-	tunnels := make([]config.Tunnel, len(req.Mappings))
-	serverPorts := make([]int, len(req.Mappings))
-	for i, m := range req.Mappings {
-		tunnels[i] = config.Tunnel{
-			LocalPort:  m.ClientPort,
-			RemoteHost: "127.0.0.1",
-			RemotePort: m.ServerPort,
-		}
-		serverPorts[i] = m.ServerPort
-	}
-
-	clientCfg := struct {
-		Xray   config.XrayConfig   `yaml:"xray"`
-		Client config.ClientConfig `yaml:"client"`
-	}{
-		Xray: config.XrayConfig{
-			UUID:      clientUUID,
-			RelayHost: cfg.Xray.RelayHost,
-			RelayPort: cfg.Xray.RelayPort,
-			Path:      cfg.Xray.Path,
-		},
-		Client: config.ClientConfig{
-			SSHUser:       req.Name,
-			ServerSSHPort: cfg.Server.RemotePort,
-			Tunnels:       tunnels,
-		},
-	}
-
-	cfgData, err := yaml.Marshal(clientCfg)
-	if err != nil {
-		progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "failed", Error: err.Error()})
-		return fmt.Errorf("marshaling client config: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(userDir, "config.yaml"), cfgData, 0644); err != nil {
-		progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "failed", Error: err.Error()})
-		return fmt.Errorf("writing client config: %w", err)
-	}
-	if req.SingleSession {
-		if err := os.WriteFile(filepath.Join(userDir, ".single-session"), nil, 0644); err != nil {
-			progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "failed", Error: err.Error()})
-			return fmt.Errorf("writing single-session marker: %w", err)
-		}
-	}
-	progress(ProgressEvent{Step: 3, Total: 4, Label: "Saving configuration", Status: "completed"})
-
-	// Step 4: Update authorized_keys.
-	progress(ProgressEvent{Step: 4, Total: 4, Label: "Updating authorized_keys", Status: "running"})
-	if err := appendAuthorizedKey(pubAuthorized, req.Name, serverPorts, req.SingleSession); err != nil {
-		progress(ProgressEvent{Step: 4, Total: 4, Label: "Updating authorized_keys", Status: "failed", Error: err.Error()})
-		return fmt.Errorf("updating authorized_keys: %w", err)
-	}
-	progress(ProgressEvent{Step: 4, Total: 4, Label: "Updating authorized_keys", Status: "completed"})
-
-	// Mark user as applied to the current relay.
-	_ = os.WriteFile(filepath.Join(userDir, ".applied"), nil, 0644)
-
 	return nil
 }
 
@@ -367,80 +257,6 @@ func (o *Ops) DeleteUser(name string) error {
 			slog.Warn("could not remove authorized_keys entry", "user", name, "error", err)
 		}
 	}
-
-	return nil
-}
-
-// UpdateUserMappings replaces a user's port mappings. It rewrites their
-// config.yaml and updates their authorized_keys entry.
-func (o *Ops) UpdateUserMappings(name string, mappings []config.PortMapping) error {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-
-	if len(mappings) == 0 {
-		return fmt.Errorf("at least one port mapping is required")
-	}
-	for _, m := range mappings {
-		if m.ClientPort < 1 || m.ClientPort > 65535 || m.ServerPort < 1 || m.ServerPort > 65535 {
-			return fmt.Errorf("port numbers must be between 1 and 65535")
-		}
-	}
-
-	userDir := filepath.Join(config.UsersDir(), name)
-	cfgPath := filepath.Join(userDir, "config.yaml")
-
-	data, err := os.ReadFile(cfgPath)
-	if err != nil {
-		return fmt.Errorf("user %q not found", name)
-	}
-
-	var clientCfg struct {
-		Xray   config.XrayConfig   `yaml:"xray"`
-		Client config.ClientConfig `yaml:"client"`
-	}
-	if err := yaml.Unmarshal(data, &clientCfg); err != nil {
-		return fmt.Errorf("parsing user config: %w", err)
-	}
-
-	// Build new tunnels.
-	tunnels := make([]config.Tunnel, len(mappings))
-	serverPorts := make([]int, len(mappings))
-	for i, m := range mappings {
-		tunnels[i] = config.Tunnel{
-			LocalPort:  m.ClientPort,
-			RemoteHost: "127.0.0.1",
-			RemotePort: m.ServerPort,
-		}
-		serverPorts[i] = m.ServerPort
-	}
-	clientCfg.Client.Tunnels = tunnels
-
-	// Rewrite config.yaml.
-	cfgData, err := yaml.Marshal(clientCfg)
-	if err != nil {
-		return fmt.Errorf("marshaling user config: %w", err)
-	}
-	if err := os.WriteFile(cfgPath, cfgData, 0644); err != nil {
-		return fmt.Errorf("writing user config: %w", err)
-	}
-
-	// Update authorized_keys: remove old entry, add new one.
-	pubPath := filepath.Join(userDir, "id_ed25519.pub")
-	pubData, err := os.ReadFile(pubPath)
-	if err != nil {
-		return nil // no key — nothing to update in authorized_keys
-	}
-	if err := removeAuthorizedKey(pubData); err != nil {
-		slog.Warn("could not remove old authorized_keys entry", "user", name, "error", err)
-	}
-	// Preserve single-session flag when rebuilding authorized_keys entry.
-	_, singleErr := os.Stat(filepath.Join(userDir, ".single-session"))
-	if err := appendAuthorizedKey(pubData, name, serverPorts, singleErr == nil); err != nil {
-		return fmt.Errorf("updating authorized_keys: %w", err)
-	}
-
-	// Mark config as needing re-download.
-	_ = os.WriteFile(filepath.Join(userDir, ".mappings-dirty"), nil, 0644)
 
 	return nil
 }
@@ -781,127 +597,6 @@ func addMultipleUUIDsToRelay(cfg *config.Config, uuids []string) error {
 		}
 		return nil
 	})
-}
-
-// GetUserConfigBundle returns the user packaged as a role=client context: a
-// bundle (cryptobox TWBOX1 framing, no passphrase) the client imports with
-// `tw config import <file> --activate`.
-func (o *Ops) GetUserConfigBundle(name string) (bundle []byte, err error) {
-	userDir := filepath.Join(config.UsersDir(), name)
-	if _, err := os.Stat(userDir); os.IsNotExist(err) {
-		return nil, fmt.Errorf("user %q not found", name)
-	}
-
-	// The exported user is a role=client context: a profile zip (the same shape
-	// unsealProfile/ImportContext consume) sealed under a generated passphrase.
-	// The client imports it as a context and switches to it.
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
-
-	// config.yaml: the user's client config with mode:client injected so the
-	// imported context indexes as role=client and the client daemon runs as a
-	// client. The user's own config.yaml carries no mode.
-	userCfg, err := os.ReadFile(filepath.Join(userDir, "config.yaml"))
-	if err != nil {
-		return nil, fmt.Errorf("reading user config: %w", err)
-	}
-	clientCfg, err := injectMode(userCfg, "client")
-	if err != nil {
-		return nil, fmt.Errorf("setting client mode: %w", err)
-	}
-	userPub, err := os.ReadFile(filepath.Join(userDir, "id_ed25519.pub"))
-	if err != nil {
-		return nil, fmt.Errorf("reading user public key: %w", err)
-	}
-	clientCfg, err = injectClientModeAuth(clientCfg, userPub)
-	if err != nil {
-		return nil, fmt.Errorf("signing client mode: %w", err)
-	}
-	if w, err := zw.Create("config.yaml"); err != nil {
-		return nil, err
-	} else if _, err := w.Write(clientCfg); err != nil {
-		return nil, err
-	}
-
-	// The user's SSH identity and the per-server client cert/key (presented to
-	// the relay's mTLS gate). Cert paths are computed from the config dir at
-	// runtime, so these land flat in the client's config dir on unseal.
-	entries := []struct{ name, path string }{
-		{"id_ed25519", filepath.Join(userDir, "id_ed25519")},
-		{"id_ed25519.pub", filepath.Join(userDir, "id_ed25519.pub")},
-		{"client.crt", config.ClientCertPath()},
-		{"client.key", config.ClientKeyPath()},
-	}
-	for _, e := range entries {
-		data, err := os.ReadFile(e.path)
-		if err != nil {
-			return nil, fmt.Errorf("reading %s for bundle: %w", e.name, err)
-		}
-		w, err := zw.Create(e.name)
-		if err != nil {
-			return nil, fmt.Errorf("adding %s to bundle: %w", e.name, err)
-		}
-		if _, err := w.Write(data); err != nil {
-			return nil, fmt.Errorf("writing %s to bundle: %w", e.name, err)
-		}
-	}
-
-	if err := zw.Close(); err != nil {
-		return nil, err
-	}
-
-	// User-context bundles carry NO passphrase: the client imports them without
-	// a prompt. They're sealed with an empty passphrase (openable with "") only
-	// so the on-disk format matches other contexts. The bundle is as sensitive as
-	// the keys inside it — transfer it over a trusted channel.
-	sealed, err := cryptobox.Encrypt(buf.Bytes(), "")
-	if err != nil {
-		return nil, fmt.Errorf("sealing user context: %w", err)
-	}
-
-	// Clear the mappings-dirty flag on download.
-	_ = os.Remove(filepath.Join(userDir, ".mappings-dirty"))
-
-	return sealed, nil
-}
-
-// injectMode parses a config.yaml, sets its top-level mode, and re-marshals it,
-// preserving every other key. Used to stamp an exported user config as a client
-// context.
-func injectMode(cfgYAML []byte, mode string) ([]byte, error) {
-	var m map[string]interface{}
-	if err := yaml.Unmarshal(cfgYAML, &m); err != nil {
-		return nil, err
-	}
-	if m == nil {
-		m = map[string]interface{}{}
-	}
-	m["mode"] = mode
-	return yaml.Marshal(m)
-}
-
-// injectClientModeAuth signs (client, <user pubkey>) with the server's own key
-// and writes a mode_auth block into the user's client config.yaml, making the
-// exported client's mode tamper-evident. Best-effort: on any signing error the
-// bundle is emitted without a signature (legacy-tolerated on import).
-func injectClientModeAuth(cfgYAML, userPubAuthorized []byte) ([]byte, error) {
-	priv, err := profilePrivPEM()
-	if err != nil {
-		return cfgYAML, nil
-	}
-	sig, issuer, err := modeauth.Sign(priv, "client", strings.TrimSpace(string(userPubAuthorized)))
-	if err != nil {
-		return cfgYAML, nil
-	}
-	var m map[string]interface{}
-	if err := yaml.Unmarshal(cfgYAML, &m); err != nil {
-		return nil, err
-	}
-	if m == nil {
-		m = map[string]interface{}{}
-	}
-	m["mode_auth"] = map[string]string{"sig": sig, "issuer": issuer}
-	return yaml.Marshal(m)
 }
 
 // appendAuthorizedKey adds a public key to the server's authorized_keys

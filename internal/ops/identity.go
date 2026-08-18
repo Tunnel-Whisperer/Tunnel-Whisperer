@@ -39,3 +39,10 @@ func firstFreeFromBase(base int, used []int) (int, error) {
 	}
 	return 0, fmt.Errorf("relay tenant capacity (%d) exhausted", portRange)
 }
+
+// enrollPort is where an issuer's enrollment listener binds on the relay
+// loopback: its tunnel port + 20000. Derived, never stored — every full
+// render self-heals it for all tenants. Tenant tunnel ports allocate from
+// 20000 up and Caddy upstreams sit at tunnel+10000, so the three ranges stay
+// disjoint for any realistic tenant count (<2000).
+func enrollPort(remotePort int) int { return remotePort + 20000 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/ops"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -159,32 +158,9 @@ func (h *handler) ListUsers(ctx context.Context, req *Empty) (*ListUsersResponse
 	return &ListUsersResponse{Users: users}, nil
 }
 
-func (h *handler) CreateUser(ctx context.Context, req *CreateUserRequest) (*Empty, error) {
-	mappings := make([]config.PortMapping, len(req.Mappings))
-	for i, m := range req.Mappings {
-		mappings[i] = config.PortMapping{ClientPort: m.ClientPort, ServerPort: m.ServerPort}
-	}
-	opsReq := ops.CreateUserRequest{
-		Name:     req.Name,
-		Mappings: mappings,
-	}
-	if err := h.ops.CreateUser(ctx, opsReq, slogProgress); err != nil {
-		return nil, status.Errorf(codes.Internal, "%v", err)
-	}
-	return &Empty{}, nil
-}
-
 func (h *handler) DeleteUser(ctx context.Context, req *DeleteUserRequest) (*Empty, error) {
 	if err := h.ops.DeleteUser(req.Name); err != nil {
 		return nil, status.Errorf(codes.Internal, "%v", err)
 	}
 	return &Empty{}, nil
-}
-
-func (h *handler) GetUserConfig(ctx context.Context, req *GetUserConfigRequest) (*UserConfigResponse, error) {
-	data, err := h.ops.GetUserConfigBundle(req.Name)
-	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "%v", err)
-	}
-	return &UserConfigResponse{Data: data}, nil
 }

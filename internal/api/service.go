@@ -107,29 +107,9 @@ type ListUsersResponse struct {
 	Users []ops.UserInfo `json:"users"`
 }
 
-// CreateUserRequest names a new user and its client-port-to-server-port mappings.
-type CreateUserRequest struct {
-	Name     string `json:"name"`
-	Mappings []struct {
-		ClientPort int `json:"client_port"`
-		ServerPort int `json:"server_port"`
-	} `json:"mappings"`
-}
-
 // DeleteUserRequest names the user to remove.
 type DeleteUserRequest struct {
 	Name string `json:"name"`
-}
-
-// GetUserConfigRequest names the user whose client config bundle is requested.
-type GetUserConfigRequest struct {
-	Name string `json:"name"`
-}
-
-// UserConfigResponse carries an exported client context bundle. The bundle
-// carries no passphrase.
-type UserConfigResponse struct {
-	Data []byte `json:"data"`
 }
 
 // UploadClientConfigRequest carries a client config bundle to import in client mode.
@@ -157,9 +137,7 @@ type TunnelWhispererServer interface {
 	StopClient(ctx context.Context, req *Empty) (*Empty, error)
 	UploadClientConfig(ctx context.Context, req *UploadClientConfigRequest) (*Empty, error)
 	ListUsers(ctx context.Context, req *Empty) (*ListUsersResponse, error)
-	CreateUser(ctx context.Context, req *CreateUserRequest) (*Empty, error)
 	DeleteUser(ctx context.Context, req *DeleteUserRequest) (*Empty, error)
-	GetUserConfig(ctx context.Context, req *GetUserConfigRequest) (*UserConfigResponse, error)
 }
 
 // ── Registration ────────────────────────────────────────────────────────────
@@ -273,26 +251,12 @@ func RegisterTunnelWhispererServer(s *grpc.Server, srv TunnelWhispererServer) {
 			}
 			return srv.(TunnelWhispererServer).ListUsers(ctx, req)
 		}),
-		unaryMethod("CreateUser", func(srv interface{}, ctx context.Context, dec func(interface{}) error) (interface{}, error) {
-			req := new(CreateUserRequest)
-			if err := dec(req); err != nil {
-				return nil, err
-			}
-			return srv.(TunnelWhispererServer).CreateUser(ctx, req)
-		}),
 		unaryMethod("DeleteUser", func(srv interface{}, ctx context.Context, dec func(interface{}) error) (interface{}, error) {
 			req := new(DeleteUserRequest)
 			if err := dec(req); err != nil {
 				return nil, err
 			}
 			return srv.(TunnelWhispererServer).DeleteUser(ctx, req)
-		}),
-		unaryMethod("GetUserConfig", func(srv interface{}, ctx context.Context, dec func(interface{}) error) (interface{}, error) {
-			req := new(GetUserConfigRequest)
-			if err := dec(req); err != nil {
-				return nil, err
-			}
-			return srv.(TunnelWhispererServer).GetUserConfig(ctx, req)
 		}),
 	}
 
@@ -372,12 +336,6 @@ func (UnimplementedTunnelWhispererServer) UploadClientConfig(context.Context, *U
 func (UnimplementedTunnelWhispererServer) ListUsers(context.Context, *Empty) (*ListUsersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "not implemented")
 }
-func (UnimplementedTunnelWhispererServer) CreateUser(context.Context, *CreateUserRequest) (*Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "not implemented")
-}
 func (UnimplementedTunnelWhispererServer) DeleteUser(context.Context, *DeleteUserRequest) (*Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "not implemented")
-}
-func (UnimplementedTunnelWhispererServer) GetUserConfig(context.Context, *GetUserConfigRequest) (*UserConfigResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "not implemented")
 }

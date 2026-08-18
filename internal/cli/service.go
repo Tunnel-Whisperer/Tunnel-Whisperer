@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/service"
 )
 
@@ -23,6 +24,13 @@ var serviceInstallCmd = &cobra.Command{
 		}
 
 		svcArgs := []string{"dashboard", "--run-as-service"}
+		// A service starts with its own environment and working directory —
+		// an active TW_CONFIG_DIR/--config-dir would silently be dropped and
+		// the service would run against the platform default dir. Bake the
+		// (absolute) custom dir into the unit's arguments instead.
+		if os.Getenv("TW_CONFIG_DIR") != "" {
+			svcArgs = append(svcArgs, "--config-dir", config.Dir())
+		}
 
 		err = service.Install(service.Config{
 			Name:        "tw",
@@ -32,7 +40,7 @@ var serviceInstallCmd = &cobra.Command{
 			Args:        svcArgs,
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("installing service (requires elevated privileges — sudo on Linux/macOS, Administrator on Windows): %w", err)
 		}
 
 		fmt.Println("Service installed successfully.")
@@ -46,7 +54,7 @@ var serviceUninstallCmd = &cobra.Command{
 	Short: "Uninstall the system service",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := service.Uninstall(); err != nil {
-			return err
+			return fmt.Errorf("uninstalling service (requires elevated privileges — sudo on Linux/macOS, Administrator on Windows): %w", err)
 		}
 		fmt.Println("Service uninstalled successfully.")
 		return nil

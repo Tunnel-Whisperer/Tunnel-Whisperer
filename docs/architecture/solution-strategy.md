@@ -7,7 +7,7 @@ The system layers multiple protocols to achieve secure, firewall-transparent tun
 ```mermaid
 graph TB
     subgraph "Protocol Stack (outside → inside)"
-        TLS["TLS 1.3 + mutual auth<br/><small>Caddy terminates on relay :443; client_auth require_and_verify</small>"]
+        TLS["TLS 1.3 + mutual auth<br/><small>Caddy terminates on relay :443; client_auth verify_if_given</small>"]
         HTTP["XHTTP Transport<br/><small>Traffic split into standard HTTP requests</small>"]
         VLESS["VLESS Protocol<br/><small>UUID-authenticated proxy layer</small>"]
         SSH["SSH Session<br/><small>End-to-end encrypted, key-based auth</small>"]
@@ -80,7 +80,8 @@ graph LR
 | Firewalls block non-HTTPS traffic | Encapsulate all traffic in TLS on port 443 | Xray (VLESS + XHTTP) |
 | Server and client are behind NAT | All connections are outbound-only; relay is the rendezvous point | SSH reverse port forwarding |
 | Relay must never see plaintext | End-to-end encryption between client and server | SSH session layer |
-| Relay must admit only trusted servers | Mutual-TLS gate verifying an X.509 client cert against a per-tenant CA trust pool at the handshake | Caddy `client_auth require_and_verify` + `internal/pki` |
+| Relay must admit only trusted servers | Mutual-TLS gate verifying an X.509 client cert against a per-tenant CA trust pool (verified if presented; every tunnel route requires a verified, matching CN) | Caddy `client_auth verify_if_given` + `internal/pki` |
+| Enrollees have no client cert yet | A bare TLS handshake is allowed and routed to a per-tenant `/enroll/<tok>` endpoint; the SPAKE2 code + SAS read-back is the real gate there, not TLS | `internal/enroll` + Caddy `verify_if_given` |
 | TLS certificates for the relay | Automatic issuance and renewal | Caddy (ACME / Let's Encrypt) |
 | Per-server relay admission | One CA-issued client cert per server (CN = server-id), presented by Xray (`usage: "client-cert"`); Caddy routes only when path and cert CN match | xray-core mTLS + `internal/pki` |
 | Multiple servers on one relay | Per-tenant VLESS inbound on `127.0.0.1:<remote-port>+10000`, per-tenant Caddy `handle`, per-tenant allow/deny routing rules | `internal/relay/{caddy,xray}` |

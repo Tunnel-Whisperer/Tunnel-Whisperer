@@ -82,6 +82,10 @@ func runClientSetPort(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid server port %q", args[0])
 	}
 
+	if err := requireWritableConfig(); err != nil {
+		return err
+	}
+
 	o, err := ops.New()
 	if err != nil {
 		return err

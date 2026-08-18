@@ -32,7 +32,10 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install mkdocs-material mkdocs-minify-plugin
+        # Pinned to the combination verified locally: Material 9.x is
+        # incompatible with MkDocs 2.x but only declares mkdocs>=1.6, so an
+        # unpinned install can resolve a broken pair and fail --strict.
+        run: pip install 'mkdocs==1.6.1' 'mkdocs-material==9.7.3' 'mkdocs-minify-plugin==0.8.0'
 
       - name: Build docs
         run: mkdocs build --strict

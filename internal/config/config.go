@@ -188,6 +188,13 @@ func Default() *Config {
 // Override with TW_CONFIG_DIR environment variable.
 func Dir() string {
 	if d := os.Getenv("TW_CONFIG_DIR"); d != "" {
+		// Always absolute: derived paths (e.g. the client cert handed to
+		// xray-core) are consumed by subsystems that resolve relative paths
+		// against their OWN base (xray uses the executable's directory), not
+		// our working directory.
+		if abs, err := filepath.Abs(d); err == nil {
+			return abs
+		}
 		return d
 	}
 	if runtime.GOOS == "windows" {
@@ -257,6 +264,57 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// checkWritableSubdirs are the state subdirectories tw creates under Dir()
+// that CheckWritable probes individually, in addition to Dir() itself — a
+// subdirectory can have permissions that diverge from its parent (e.g. an
+// old root-owned "servers" dir surviving under an otherwise-writable, now
+// non-root config dir), so probing only Dir() can pass while a write that
+// actually lands under one of these still fails. Names must stay in sync
+// with config.ContextsDir/UsersDir and ops.RegistryDir ("servers").
+var checkWritableSubdirs = []string{"contexts", "users", "servers"}
+
+// CheckWritable ensures Dir() AND every standard state subdirectory
+// (contexts, users, servers) exist and are writable, proving each by
+// creating and removing a probe file — a permission-bit check is not
+// portable (Windows ACLs don't map to Unix mode bits), so this is the only
+// reliable way to know a write will actually succeed.
+//
+// Call this BEFORE any operation that mints or burns something remote or
+// single-use (an invite code, a relay-side enrollment) so a local write
+// failure is caught up front instead of stranding that side effect —
+// see the `tw join` incident this guards against. Signature is stable
+// (no dir argument): callers always mean "the active config dir and its
+// subdirectories", never an arbitrary path.
+func CheckWritable() error {
+	dir := Dir()
+	if err := checkDirWritable(dir); err != nil {
+		return err
+	}
+	for _, sub := range checkWritableSubdirs {
+		if err := checkDirWritable(filepath.Join(dir, sub)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkDirWritable is the single-directory probe CheckWritable applies to
+// Dir() and each of its state subdirectories.
+func checkDirWritable(dir string) error {
+	const hint = "run elevated (sudo / administrator) or point TW_CONFIG_DIR (or --config-dir) at a writable location"
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("config directory %q is not writable: %w — %s", dir, err, hint)
+	}
+	probe := filepath.Join(dir, ".tw-write-probe")
+	f, err := os.Create(probe)
+	if err != nil {
+		return fmt.Errorf("config directory %q is not writable: %w — %s", dir, err, hint)
+	}
+	f.Close()
+	_ = os.Remove(probe)
+	return nil
 }
 
 // Save writes the configuration to the platform-specific YAML file.

@@ -85,7 +85,7 @@ Every machine runs the same `tw` binary in one of three modes (set by its first 
 
 - **Relay (admin):** owns the relay VM — provisions it, enrolls/removes server tenants, holds the keys.
 - **Server:** joins a relay as a tenant, publishes its reverse tunnel, manages client users.
-- **Client:** imports a user bundle and opens local ports that reach the server's services.
+- **Client:** enrolls with `tw join` against a spoken invite code and opens local ports that reach the server's services.
 
 ## Quick Start: One Relay, One Server, One Client
 
@@ -107,19 +107,15 @@ tw relay create --provider manual --domain relay.example.com --ip <vps-ip>
 #     point DNS relay.example.com → <vps-ip>
 tw relay test                          # DNS → HTTPS/mTLS → SSH-over-tunnel
 
-# ── server: join the relay ──
-tw server join-relay relay.example.com # writes tw_join_<id>.json → send to admin
-# admin: tw relay enroll-server tw_join_<id>.json   → send response back
-tw server join-relay --apply tw_join_response_<id>.json
+# ── server: join the relay (admin runs `tw relay invite`, reads you the code) ──
+tw join relay.example.com <code>       # SAS spoken check on both sides
 tw server start                        # or: sudo tw service install && sudo tw service start
 
 # ── server: grant the client access to its SSH (port 22 → client's local 2201) ──
-tw server user create alice -m 2201:22
-tw server user apply alice
-tw config export-user alice            # → alice-tw-context.twctx, send over a trusted channel
+tw server user invite alice -m 2201:22 # mints a one-time code; read it to alice
 
-# ── client: import and connect ──
-tw config import alice-tw-context.twctx --activate
+# ── client: redeem the invite and connect ──
+tw join relay.example.com <code>       # keys are born locally; context stored ready-to-run
 tw client connect
 ssh -p 2201 user@127.0.0.1             # you are on the server, through the relay
 ```
@@ -140,20 +136,20 @@ Structured by role — with dynamic tab completion for contexts, users, and serv
 |---------|-------------|
 | **Relay (admin)** | |
 | `tw relay create` | Provision a relay: cloud wizard (Hetzner/DigitalOcean/AWS) or `--provider manual --domain --ip [--ssh-open]` |
-| `tw relay enroll-server <join.json>` | Enroll a joining server as a live tenant (no relay restart) |
+| `tw relay invite` / `add-server` | Enroll a joining server over a one-time code (SAS-confirmed) / self-enroll this machine |
 | `tw relay get-servers` | List tenants with live TUNNEL up/down state |
 | `tw relay un-enroll-server <id>` | Totally remove a tenant — config and live connections |
 | `tw relay ssh` / `test` / `status` / `destroy` | Shell over the tunnel, 3-step diagnostic, status, teardown |
 | **Server** | |
-| `tw server join-relay <host>` | Generate a join-request; `--apply` the admin's response |
+| `tw join <relay-host> <code>` | Redeem an admin's invite — becomes a server or client per the issuer's grant |
 | `tw server start` / `test` / `status` | Run the daemon (SSH server, tunnel, gRPC API, dashboard) |
-| `tw server user create/apply/list/edit/delete/unregister` | Per-user port grants; revocation is live, no restart |
+| `tw server user invite/apply/list/edit/delete/unregister` | Per-user port grants; revocation is live, no restart |
 | `tw server app list/create/edit/delete` | Reusable port-mapping templates |
 | **Client** | |
 | `tw client connect` / `listen` / `test` / `status` | Open the tunnel and local ports from the imported bundle |
 | **Global** | |
 | `tw status` | Unified status: active context, mode, live state (any role) |
-| `tw config get-contexts / use-context <name\|id> / import / export / export-user ...` | kubectl-style contexts: many relays/identities per machine |
+| `tw config get-contexts / use-context <name\|id> / import / export ...` | kubectl-style contexts: many relays/identities per machine |
 | `tw dashboard` | Web dashboard (role-aware: tenant management, users, contexts, stats) |
 | `tw proxy set/clear` | Outbound SOCKS5/HTTP proxy for all tunnel traffic |
 | `tw service install/start/stop/uninstall` | Native service (Linux systemd / Windows SCM / macOS launchd) |

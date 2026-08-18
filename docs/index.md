@@ -32,7 +32,7 @@ The same `tw` binary plays three mutually exclusive roles, selected by its confi
 
 - **Relay** — the admin who owns the relay VM: provisions it, holds the CA, enrolls servers (`tw relay …`)
 - **Server** — the operator exposing services: joins a relay, creates users, runs the tunnel endpoint (`tw server …`)
-- **Client** — the person connecting in: imports a user bundle, gets local port forwards (`tw client …`)
+- **Client** — the person connecting in: redeems a spoken invite code, gets local port forwards (`tw client …`)
 
 One relay serves many servers; each server serves many clients. See the [Global section](global/index.md) for the role model and everything shared across roles.
 
@@ -76,8 +76,9 @@ Connect a cloud Jupyter notebook to an on-premise database behind a corporate fi
     # Provision a relay VM (Hetzner, DigitalOcean, AWS — or bring your own)
     tw relay create
 
-    # Enroll a server (using the join request it sends you)
-    tw relay enroll-server tw_join_<server-id>.json
+    # Enroll a server: mint a one-time code, read it to the operator,
+    # approve on their SAS read-back
+    tw relay invite
 
     # See your tenants
     tw relay get-servers
@@ -86,14 +87,12 @@ Connect a cloud Jupyter notebook to an on-premise database behind a corporate fi
 === "Server"
 
     ```bash
-    # Join a relay: generate a join request, apply the admin's response
-    tw server join-relay relay.example.com
-    tw server join-relay --apply tw_join_response_<server-id>.json
+    # Join a relay: redeem the admin's spoken invite code
+    tw join relay.example.com <code>
 
-    # Create a client user and issue their bundle
-    tw server user create alice -m 8080:80
-    tw server user apply alice
-    tw config export-user alice
+    # Invite a client user: mint a code, read it to them,
+    # approve on their SAS read-back
+    tw server user invite alice -m 8080:80
 
     # Start the tunnel
     tw server start
@@ -102,8 +101,8 @@ Connect a cloud Jupyter notebook to an on-premise database behind a corporate fi
 === "Client"
 
     ```bash
-    # Import the bundle from the server operator, then connect
-    tw config import alice-tw-context.twctx --activate
+    # Redeem the server operator's spoken invite code, then connect
+    tw join relay.example.com <code>
     tw client connect
     ```
 

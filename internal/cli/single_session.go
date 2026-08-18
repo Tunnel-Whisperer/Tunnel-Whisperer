@@ -71,6 +71,9 @@ func runUserSingleSession(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := requireWritableConfig(); err != nil {
+		return err
+	}
 	if err := o.SetUserSingleSession(name, enabled); err != nil {
 		return err
 	}

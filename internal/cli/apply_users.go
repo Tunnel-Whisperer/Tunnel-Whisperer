@@ -34,6 +34,9 @@ func runApplyUsers(cmd *cobra.Command, args []string) error {
 	if err := requireMode("server"); err != nil {
 		return err
 	}
+	if err := requireWritableConfig(); err != nil {
+		return err
+	}
 
 	o, err := ops.New()
 	if err != nil {
@@ -62,6 +65,9 @@ func runApplyUsers(cmd *cobra.Command, args []string) error {
 
 func runUnregisterUser(cmd *cobra.Command, args []string) error {
 	if err := requireMode("server"); err != nil {
+		return err
+	}
+	if err := requireWritableConfig(); err != nil {
 		return err
 	}
 	name := args[0]

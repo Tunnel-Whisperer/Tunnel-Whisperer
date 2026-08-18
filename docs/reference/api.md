@@ -168,53 +168,26 @@ when the daemon runs in relay mode.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/servers` | List enrolled servers with live tunnel state (`tw relay get-servers`) |
-| `POST` | `/api/servers/enroll` | Enroll a server: `multipart/form-data` upload of the join-request JSON in a `request` field; the join-response JSON is returned as an attachment (`tw_join_response_<server-id>.json`) |
 | `POST` | `/api/servers/unenroll` | Un-enroll a server. Body: `{ "server_id": "..." }` |
+
+!!! note "Enrollment has no REST endpoint"
+    `tw relay invite` and `tw join` require a spoken SAS confirmation between two humans, which doesn't map to a stateless REST call — there is no `/api/servers/enroll`. Enroll from the CLI; the dashboard's Servers page only manages already-enrolled tenants.
 
 ### User management
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/users` | List all configured users |
-| `POST` | `/api/users` | Create a new user |
 | `DELETE` | `/api/users/{name}` | Delete a user by name |
-| `PUT` | `/api/users/{name}/mappings` | Update a user's port mappings |
 | `POST` | `/api/users/{name}/single-session` | Enable/disable the user's single-session flag |
-| `GET` | `/api/users/{name}/download` | Download the user's client context bundle (`{name}-tw-context.twctx`) |
 | `POST` | `/api/users/apply` | Register users on the relay. Body: `{ "names": [...] }` (empty = all) |
 | `POST` | `/api/users/unregister` | Unregister users from the relay |
 | `GET` | `/api/users/online` | List currently connected users |
 
-**Create user request body:**
-
-```json
-{
-  "name": "alice",
-  "mappings": [
-    { "client_port": 3389, "server_port": 3389 },
-    { "client_port": 8443, "server_port": 443 }
-  ]
-}
-```
-
-**Update user mappings request body:**
-
-```json
-{
-  "mappings": [
-    { "client_port": 3389, "server_port": 3389 },
-    { "client_port": 8443, "server_port": 443 }
-  ]
-}
-```
-
-After updating, the user's `authorized_keys` entry is rewritten with new
-`permitopen` restrictions and a mappings-dirty flag is set. The flag is
-cleared when the user's bundle is downloaded.
-
-**Download response:** `application/octet-stream` binary with
-`Content-Disposition` header (a sealed `.twctx` context bundle, no
-passphrase).
+There is no create or edit endpoint: users come to exist only through the
+interactive invite ceremony (`tw server user invite`), and their mappings are
+fixed at enrollment — changing them means deleting the user and inviting them
+again.
 
 ### Application templates
 
@@ -266,8 +239,8 @@ Daemon status is **polled** via `GET /api/status`, not streamed.
 The gRPC API listens on port **50051** (configurable via `server.api_port`)
 and is used for CLI-to-daemon communication. It starts automatically with
 `tw server start` and `tw dashboard`. When a daemon is running, CLI commands
-like `tw status`, `tw server user list`, and `tw config export-user` connect
-to this API instead of reading state directly from disk.
+like `tw status` and `tw server user list` connect to this API instead of
+reading state directly from disk.
 
 ### JSON codec — the proto is documentation only
 
@@ -302,11 +275,11 @@ does: `grpc.CallContentSubtype("json")`, plaintext, 2-second dial timeout).
 | `StartClient` / `StopClient` | `Empty` → `Empty` | Start/stop the client |
 | `UploadClientConfig` | `UploadClientConfigRequest` → `Empty` | Import a client context bundle (bytes) in client mode |
 | `ListUsers` | `Empty` → `ListUsersResponse` | All configured users with tunnel mappings |
-| `CreateUser` | `CreateUserRequest` → `Empty` | Create a user (name + port mappings) |
 | `DeleteUser` | `DeleteUserRequest` → `Empty` | Delete a user by name |
-| `GetUserConfig` | `GetUserConfigRequest` → `UserConfigResponse` | The user's client context bundle (`.twctx` bytes, no passphrase) |
 
 The CLI's built-in client wraps the subset it needs: `GetStatus`,
-`TestRelay`, `ListUsers`, `DeleteUser`, `DestroyRelay`, and `GetUserConfig`;
-every CLI command that can use the daemon falls back to local (on-disk)
-operation when no daemon answers on `server.api_port`.
+`TestRelay`, `ListUsers`, `DeleteUser`, and `DestroyRelay`; every CLI command
+that can use the daemon falls back to local (on-disk) operation when no
+daemon answers on `server.api_port`. The invite flows (`tw relay invite`,
+`tw server user invite`, `tw join`) don't go through this API at
+all — they dial the relay directly over the Xray/SSH tunnel.

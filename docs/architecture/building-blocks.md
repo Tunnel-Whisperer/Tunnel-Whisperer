@@ -58,13 +58,13 @@ The server brings up its internal services:
 - **API Server** -- a gRPC service exposing status and management operations (`:50051`)
 - **Dashboard** -- started alongside the server when `server.dashboard_port` is set
 
-A server that is not the relay's admin joins via `tw server join-relay <relay-host>` (emits a `join-request.json` of public material), is enrolled by the admin (`tw relay enroll-server`), and applies the returned `join-response.json` with `tw server join-relay --apply`.
+A server that is not the relay's admin joins via a zero-file invite: the admin mints a one-time code (`tw relay invite`), the server redeems it (`tw join <relay-host> <code>`), a SPAKE2 exchange derives a shared key from the code, both sides display a short authentication string (SAS) that the humans read back to each other, and only on an exact match does the admin's side enroll the tenant and hand back the grant (relay host, path, port, mode signature) over the same encrypted channel.
 
 ### Relay
 
 The relay is a lightweight VM provisioned by the admin machine (mode `relay`) via `tw relay create` — through Terraform on a cloud provider, or via a generated install script on a bring-your-own VM ("manual" provider). It runs:
 
-- **Caddy** -- reverse proxy on `:443`, automatic server TLS via Let's Encrypt, **mutual TLS** (`client_auth require_and_verify`, TLS 1.3 only) verifying client certificates against a trust pool holding one CA per tenant. Each tenant gets a `handle` block matching *both* its path (`/tw/<server-id>*`) *and* its certificate CN (`CN=<server-id>`), proxying h2c to that tenant's loopback VLESS inbound; anything else gets a 404. This is the relay's admission gate — see [Relay Authentication](../security/relay-authentication.md)
+- **Caddy** -- reverse proxy on `:443`, automatic server TLS via Let's Encrypt, **mutual TLS** (`client_auth verify_if_given`, TLS 1.3 only) verifying a *presented* client certificate against a trust pool holding one CA per tenant — a bare handshake with no certificate is allowed too, so certless enrollees can reach `/enroll`. Each tenant gets a `handle` block matching *both* its path (`/tw/<server-id>*`) *and* its verified certificate CN (`CN=<server-id>`), proxying h2c to that tenant's loopback VLESS inbound, plus an `@enroll_<server-id>` block routing `/enroll/<tok>/*` to its local invite listener (no certificate required there — the one-time code is the gate); anything else gets a 404. This is the relay's admission gate — see [Relay Authentication](../security/relay-authentication.md)
 - **Xray** (standalone, pinned version) -- one `vless-in-<server-id>` inbound per tenant on `127.0.0.1:<remote-port>+10000` with XHTTP transport, an `api-in` dokodemo inbound on `127.0.0.1:10085` exposing `HandlerService`/`StatsService`/`RoutingService`, a freedom outbound whose `finalRules` allow loopback destinations only, and per-tenant allow (ports `22,<remote-port>`) / deny (blackhole) routing rules
 - **SSH** -- OpenSSH on `127.0.0.1:22` (`--ssh-open` provisions it on `0.0.0.0` instead); password authentication disabled. The tw-managed `authorized_keys` holds the admin's key (pinned `from="127.0.0.1"` unless `--ssh-open`) plus one restricted line per tenant (`from="127.0.0.1",restrict,port-forwarding,permitopen=<sentinel>,permitlisten=<own remote-port>`) — only the admin can shell in; tenants can only publish their own reverse tunnel
 - **Firewall (ufw)** -- only ports 80 and 443 open (plus 22 with `--ssh-open`)
@@ -78,7 +78,7 @@ The client starts:
 - **Xray Instance** -- in-process xray-core with dokodemo-door inbound on `:54001` (`client.xray_port`) forwarding to the server's remote SSH port on the relay
 - **Forward Tunnel** -- SSH local port forwards (`-L`) through Xray, mapping multiple local ports to server services over a single SSH session; listeners bind `client.listen_address` (default `127.0.0.1`)
 
-Clients receive their identity as a sealed context bundle exported by the server (`tw config export-user`) and import it with `tw config import` — contexts are kubectl-style profiles switched with `tw config use-context`.
+Clients receive their identity over a zero-file invite: the server mints a one-time code (`tw server user invite`), the client redeems it (`tw join`), generating its own SSH key and a certificate signing request locally — neither private key ever transits — and the server signs the CSR and sends back the coordinates over the same SPAKE2-encrypted, SAS-confirmed channel. The result is stored as a context, switched with `tw config use-context` like any other; `tw config export`/`import` remain available for moving an existing context's identity between a client's own machines.
 
 ### Dashboard (`tw dashboard`)
 
@@ -150,15 +150,16 @@ tw/
 │   │   ├── relay.go                    # tw relay group (relay role)
 │   │   ├── create_relay.go             # tw relay create (wizard; cloud or manual, --ssh-open)
 │   │   ├── destroy_relay.go            # tw relay destroy
-│   │   ├── relay_enroll.go             # tw relay enroll-server / get-servers
+│   │   ├── relay_addserver.go          # tw relay add-server (same-machine self-enrollment)
+│   │   ├── relay_getservers.go         # tw relay get-servers
+│   │   ├── relay_invite.go             # tw relay invite (mint code, wait, SAS-approve)
 │   │   ├── relay_unenroll.go           # tw relay un-enroll-server
 │   │   ├── relay_ssh.go                # tw relay ssh (+ _unix.go / _windows.go)
 │   │   ├── serve.go                    # tw server start
-│   │   ├── server_join.go              # tw server join-relay (+ --apply)
-│   │   ├── create_user.go              # tw server user create (wizard)
+│   │   ├── join.go                     # tw join <relay-host> <code> (role-neutral, no mode required)
+│   │   ├── invite_user.go              # tw server user invite (zero-file client enrollment; wizard when run without a name)
 │   │   ├── list_users.go               # tw server user list
 │   │   ├── delete_user.go              # tw server user delete
-│   │   ├── edit_user.go                # tw server user edit
 │   │   ├── apply_users.go              # tw server user apply / unregister
 │   │   ├── app.go                      # tw server app list/create/edit/delete
 │   │   ├── client.go                   # tw client group, tw client listen
@@ -166,7 +167,6 @@ tw/
 │   │   ├── test_relay.go               # tw relay|server|client test
 │   │   ├── status.go                   # tw status (+ per-role status)
 │   │   ├── config.go                   # tw config *-context / import / export / view
-│   │   ├── export_user.go              # tw config export-user (client context bundle)
 │   │   ├── dashboard.go                # tw dashboard
 │   │   ├── proxy.go                    # tw proxy show/set/clear
 │   │   ├── service.go                  # tw service install/uninstall/start/stop
@@ -176,15 +176,24 @@ tw/
 │   │   ├── config.go                   # Load/Save, Dir/RelayDir/UsersDir, FileHash(), ModeAuth, CanonicalMode
 │   │   └── context.go                  # context index (contexts.yaml), ContextsDir, ShortID
 │   ├── pki/                            # per-server CA + client cert issuance (ECDSA P-256)
-│   │   └── pki.go                      # GenerateCA(), IssueClientCert()
+│   │   └── pki.go                      # GenerateCA(), IssueClientCert(), GenerateKeyAndCSR(), SignClientCSR() — the last two back the invite flow's client-local CSRs
+│   ├── enroll/                         # zero-file invite protocol: SPAKE2 PAKE, SAS, single-use codes
+│   │   ├── invite.go                   # Mint/Redeem/ParseCode — code format <tok>-NN-word-word, burn-on-first-attempt
+│   │   ├── pake.go                     # SPAKE2 session + SAS derivation (HKDF-SHA256, "tw-sas v1")
+│   │   ├── issuer.go                   # Handler: the issuer side of the /enroll HTTP exchange (mint → offer → grant)
+│   │   ├── enrollee.go                 # RunEnrollee: the redeemer side (tw join)
+│   │   └── wire.go                     # HTTP wire format between issuer and enrollee, tunnelled over the relay
 │   ├── cryptobox/                      # sealed context bundles (argon2id + AES-256-GCM, TWBOX1)
 │   ├── auth/                           # auth primitives (Credentials, Claims, JWT provider)
 │   ├── ops/                            # business logic shared by CLI + dashboard
 │   │   ├── ops.go                      # Ops struct, config change detection, lifecycle
 │   │   ├── modeauth/                   # ed25519 signature over (mode, identity) — tamper-evidence
 │   │   ├── keys.go                     # SSH key + CA/client-cert management (ensureCerts, applyClientCertPaths)
-│   │   ├── identity.go                 # deriveServerID (hostname + UUID short form)
-│   │   ├── join.go                     # JoinRequest/JoinResponse, GenerateJoinRequest, ApplyJoinResponse
+│   │   ├── identity.go                 # deriveServerID, enrollPort (tunnel port + 20000)
+│   │   ├── join.go                     # JoinRequest/JoinResponse payload types (now travel inside invite grants, not files)
+│   │   ├── joinflow.go                 # Ops.Join: the tw join enrollee side (SPAKE2 offer, applies the grant)
+│   │   ├── invite.go                   # Ops.InviteServer / InviteUser: the tw relay invite / tw server user invite issuer side
+│   │   ├── addserver.go                # AddLocalServer: same-machine self-enrollment (tw relay add-server)
 │   │   ├── enroll.go                   # EnrollServer: registry add + full relay rewrite + gRPC live-add
 │   │   ├── unenroll.go                 # UnenrollServer: block re-auth, drop live state, clean files
 │   │   ├── registry.go                 # enrolled-server registry (servers/ dir, relay role)
@@ -219,7 +228,7 @@ tw/
 │   ├── relay/
 │   │   ├── caddy/                      # relay Caddyfile renderer (mTLS gate + per-tenant handles)
 │   │   │   ├── config.go               # RenderCaddyfile(), Server/Config types
-│   │   │   └── Caddyfile.tmpl          # client_auth require_and_verify, trust_pool, tls1.3, path+CN matchers
+│   │   │   └── Caddyfile.tmpl          # client_auth verify_if_given, trust_pool, tls1.3, path+CN matchers, per-tenant /enroll routes
 │   │   ├── xray/                       # relay Xray config renderer (multi-tenant)
 │   │   │   ├── config.go               # RenderConfig(), Tenant (VlessInPort = remote_port+10000)
 │   │   │   ├── relayconfig.json.tmpl   # api-in :10085, per-tenant inbounds/rules, freedom finalRules (loopback only)
@@ -243,7 +252,7 @@ tw/
 │   │   │   ├── layout.html             # base layout
 │   │   │   ├── partials/nav.html       # navigation (mode-aware)
 │   │   │   └── pages/                  # index, setup, config, relay, relay_home, relay_wizard,
-│   │   │                               # servers, users, user_new/detail/edit, bandwidth, apps, app_new/edit
+│   │   │                               # servers, users, user_detail, bandwidth, apps, app_new/edit
 │   │   └── static/                     # css/ + js/ (app, status, config, relay, servers, users,
 │   │                                   # bandwidth, apps) + vendor xterm.js
 │   ├── service/                        # native service install/run (systemd / SCM / launchd, build tags)
@@ -252,7 +261,7 @@ tw/
 ├── proto/                              # gRPC protobuf definitions (documentation only — wire format is JSON)
 │   └── api/v1/
 │       └── service.proto
-├── e2e/                                # full-product e2e suite (Docker Compose, 12 scenarios, `make e2e`)
+├── e2e/                                # full-product e2e suite (Docker Compose, 16 scenarios, `make e2e`)
 │   ├── docker-compose.yaml             # relay (systemd) + admin/server/server2/client containers
 │   ├── e2e_test.go                     # scenario runner (dependency order)
 │   └── coverage.yaml                   # command → scenario map enforced by cli/coverage_test.go

@@ -6,7 +6,7 @@ Tunnel Whisperer creates resilient, application-layer bridges for specific ports
 
 ### Requirements Overview
 
-The system connects **servers** behind private networks to **clients** behind other private networks, via a publicly reachable **relay**. All connectivity is egress-only from both sides. The relay is provisioned and owned by an admin machine running in the **relay** role (`tw relay create` — an interactive CLI wizard, cloud/Terraform or manual install script). The relay is multi-tenant: additional servers join it through a join-request/join-response enrollment handshake (`tw server join-relay` / `tw relay enroll-server`), each tenant isolated behind its own URL path, CA, and loopback port. Every installation's role (`relay`, `server`, or `client`) is recorded in config and ed25519-signed as tamper-evidence (`internal/ops/modeauth`).
+The system connects **servers** behind private networks to **clients** behind other private networks, via a publicly reachable **relay**. All connectivity is egress-only from both sides. The relay is provisioned and owned by an admin machine running in the **relay** role (`tw relay create` — an interactive CLI wizard, cloud/Terraform or manual install script). The relay is multi-tenant: additional servers join it through a zero-file, spoken invite (`tw relay invite` mints a one-time code; `tw join` redeems it, running a SPAKE2 exchange confirmed by a short authentication string read back between the two humans), each tenant isolated behind its own URL path, CA, and loopback port. Every installation's role (`relay`, `server`, or `client`) is recorded in config and ed25519-signed as tamper-evidence (`internal/ops/modeauth`).
 
 ### Quality Goals
 
@@ -53,7 +53,7 @@ graph LR
 | -------- | ---- | --------- | ------- |
 | mTLS (Xray VLESS+XHTTP) | 443 | Server -> Relay | Transport tunnel for SSH reverse forwarding; presents X.509 client cert (CN = server-id) on path `/tw/<server-id>` |
 | mTLS (Xray VLESS+XHTTP) | 443 | Client -> Relay | Transport tunnel for SSH local forwarding; presents the same per-server client cert |
-| HTTPS + mTLS (Caddy) | 443 | External -> Relay | TLS 1.3 termination with `client_auth require_and_verify` against a per-tenant CA trust pool (admission gate), per-tenant `handle` blocks proxying to that tenant's loopback VLESS inbound |
+| HTTPS + mTLS (Caddy) | 443 | External -> Relay | TLS 1.3 termination with `client_auth verify_if_given` (verifies a presented cert against the per-tenant CA trust pool; a bare handshake is allowed for `/enroll`), per-tenant `handle` blocks matching path + verified CN and proxying to that tenant's loopback VLESS inbound — anything else is a 404 |
 | HTTP | 80 | External -> Relay | ACME challenge for Let's Encrypt certificate issuance |
 | SSH (over Xray) | -- | End-to-end | Reverse/local port forwarding and session security |
 | SSH (embedded) | 2222 | Local | Server's embedded SSH server (Go `x/crypto/ssh`) |

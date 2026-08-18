@@ -84,7 +84,10 @@ admin machine — the relay never generates anything itself):
 
 - An SSH user (`ubuntu` by default) holding the tw-managed `authorized_keys`
 - **Caddy** from the official apt repository — TLS/ACME termination with
-  `client_auth require_and_verify` against the per-tenant CA trust pool
+  `client_auth verify_if_given` against the per-tenant CA trust pool (a bare
+  handshake is allowed so unenrolled invitees can reach `/enroll`; every
+  tunnel route still requires a verified per-tenant CN — see [Relay
+  Authentication](../security/relay-authentication.md))
 - **Xray** at pinned version `v26.6.27` — VLESS inbound on localhost with
   XHTTP transport
 - The rendered Caddyfile and Xray `config.json`, plus the admin's CA
@@ -173,8 +176,11 @@ the other roles):
 
 1. **DNS** — the relay domain resolves.
 2. **HTTPS (Caddy)** — a TLS connection presenting this machine's client
-   certificate succeeds; without a cert to present, a "certificate required"
-   rejection still proves Caddy is up and the mTLS gate is active.
+   certificate succeeds, proving Caddy is up and the certificate is accepted.
+   Caddy's `verify_if_given` mode admits a bare handshake too (certless
+   invitees need to reach `/enroll`), so without a cert to present this step
+   confirms only that Caddy answers — routing to a tenant still requires the
+   cert.
 3. **Xray + SSH** — a full tunnel is established. On the relay and server, a
    real SSH command is executed on the relay. On the client, an SSH publickey
    handshake authenticates against the server's embedded SSH through the tunnel

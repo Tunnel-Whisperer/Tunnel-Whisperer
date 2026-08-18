@@ -37,6 +37,12 @@ HTTPS/WebSocket to traverse strict firewalls and DPI.`,
 		// config.Dir reads the env.
 		if configDir != "" {
 			d := filepath.Clean(configDir)
+			// Absolutize before it enters the environment: consumers like
+			// xray-core resolve relative paths against their own base (the
+			// executable's directory), not our working directory.
+			if abs, err := filepath.Abs(d); err == nil {
+				d = abs
+			}
 			os.Setenv("TW_CONFIG_DIR", d)
 			_ = os.MkdirAll(d, 0o755)
 		}
@@ -72,6 +78,15 @@ func init() {
 
 func Execute() error {
 	return rootCmd.Execute()
+}
+
+// requireWritableConfig fails fast if the config directory is not writable.
+// Call it before any command that mints or burns something remote or
+// single-use (an invite code, a relay-side enrollment) — otherwise a local
+// write failure after that point strands the side effect with nothing to
+// show for it locally.
+func requireWritableConfig() error {
+	return config.CheckWritable()
 }
 
 // requireMode returns an error if the current config mode is set and is not one

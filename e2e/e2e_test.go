@@ -35,16 +35,22 @@ func TestE2E(t *testing.T) {
 	}{
 		{"Smoke", testSmoke},
 		{"RelayInstall", testRelayInstall},
+		{"CertlessProbe", testCertlessProbe},
 		{"ServerJoin", testServerJoin},
 		{"MTLSGate", testMTLSGate},
 		{"UserLifecycle", testUserLifecycle},
 		{"PortOverride", testPortOverride},
 		{"PermitOpen", testPermitOpen},
+		{"AppCatalog", testAppCatalog},
+		{"ProxyRoute", testProxyRoute},
 		{"Revocation", testRevocation},
 		{"Contexts", testContexts},
 		{"SecondTenant", testSecondTenant},
+		{"InviteBurn", testInviteBurn},
+		{"SelfEnroll", testSelfEnroll},
 		{"Dashboard", testDashboard},
 		{"RelayResilience", testRelayResilience},
+		{"ConfigDirSafety", testConfigDirSafety},
 		{"Teardown", testTeardown},
 	}
 	names := make([]string, len(steps))

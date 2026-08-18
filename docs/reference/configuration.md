@@ -62,7 +62,7 @@ xray:
   relay_port: 443
 
   # XHTTP path used by Xray. Default /tw; rewritten to /tw/<server-id> when a
-  # relay is provisioned or a join response is applied.
+  # relay is provisioned or an invite is granted (tw relay create / tw join).
   path: /tw
 
   # X.509 client certificate presented to the relay's mutual-TLS gate.

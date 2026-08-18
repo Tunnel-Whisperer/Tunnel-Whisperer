@@ -75,6 +75,6 @@ func runRelayUnenrollServer(cmd *cobra.Command, args []string) error {
 	if err := o.UnenrollServer(serverID, cliProgress); err != nil {
 		return err
 	}
-	fmt.Printf("\n  Un-enrolled %s. Run 'tw server join-relay' on it to re-enroll.\n", serverID)
+	fmt.Printf("\n  Un-enrolled %s. Mint a fresh invite ('tw relay invite') and have it run 'tw join <relay-host> <code>' to re-enroll.\n", serverID)
 	return nil
 }

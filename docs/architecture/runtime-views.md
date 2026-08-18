@@ -50,7 +50,7 @@ The cloud-init / install script on the relay:
 2. Installs Caddy from the official apt repo, Xray via the official install script pinned to `terraform.XrayVersion`
 3. Writes the rendered Xray config (`api-in` on `127.0.0.1:10085`; the admin's own `vless-in-<id>` inbound on `127.0.0.1:<remote-port>+10000` with XHTTP; freedom outbound restricted to loopback via `finalRules`; per-tenant allow/deny routing rules)
 4. Writes the admin's CA public certificate to `/etc/caddy/ca/<server-id>.crt` (base64 in cloud-init)
-5. Writes the rendered Caddyfile — the mutual-TLS gate (`client_auth require_and_verify` against the CA trust pool, TLS 1.3 only) plus a per-tenant `handle` matching `/tw/<server-id>*` and cert `CN=<server-id>`, proxying h2c to the tenant's VLESS inbound
+5. Writes the rendered Caddyfile — the mutual-TLS gate (`client_auth verify_if_given` against the CA trust pool, TLS 1.3 only) plus a per-tenant `handle` matching `/tw/<server-id>*` and cert `CN=<server-id>`, proxying h2c to the tenant's VLESS inbound, plus a certless `@enroll_<server-id>` handle for `/enroll/<tok>/*`
 6. Locks down SSH to `127.0.0.1` only (`0.0.0.0` with `--ssh-open`), disables password authentication
 7. Configures firewall: deny all incoming, allow 80/tcp + 443/tcp (+ 22/tcp with `--ssh-open`)
 
@@ -61,9 +61,16 @@ so the relay boots with the mTLS gate already in place. See
 
 ---
 
-## Server Enrollment (`tw server join-relay` / `tw relay enroll-server`)
+## Server Enrollment (`tw relay invite` / `tw join`)
 
-A second (or Nth) server joins an existing relay without touching the relay VM directly — the admin mediates via two small JSON artifacts:
+A second (or Nth) server joins an existing relay through a zero-file, spoken
+invite: the admin mints a one-time code, reads it to the joining operator
+over any channel, and the two sides run a SPAKE2 key exchange (keyed by the
+code) tunnelled through the relay's `/enroll/<tok>` route — the same route a
+certless connection can reach under `client_auth verify_if_given`. Neither
+side's private key material ever crosses the wire; only the exchange itself
+is protected by the derived session key, confirmed out-of-band by the two
+humans reading back a short authentication string.
 
 ```mermaid
 sequenceDiagram
@@ -71,48 +78,95 @@ sequenceDiagram
     participant A as Admin (relay role)
     participant R as Relay VM
 
-    S ->> S: tw server join-relay relay.example.com
-    S ->> S: Generate identity (SSH key, CA, client cert CN=server-id),<br/>set mode=server, path=/tw/<server-id>
-    S -->> A: join-request.json (server-id, UUID, CA cert PEM, SSH pubkey — public material only)
+    A ->> A: tw relay invite
+    A ->> A: enroll.Mint(tok, ttl) — code = tok-NN-word-word
+    Note over A: opens a listener on the relay via its own<br/>reverse SSH tunnel, serving /enroll/tok/*
+    A ->> S: reads the code aloud (any channel)
 
-    A ->> A: tw relay enroll-server join-request.json
+    S ->> S: tw join relay.example.com <code>
+    S ->> S: Generate identity (SSH key, CA, client cert CN=server-id)
+    S ->> R: POST /enroll/tok/start, /offer (SPAKE2 + encrypted join-request payload)
+    R ->> A: forwarded over the tunnel (relay sees only ciphertext)
+
+    A ->> A: derives session key, computes SAS
+    S ->> S: derives session key, computes SAME SAS
+    A ->> A: shows SAS; S shows SAS
+    S ->> A: reads SAS aloud
+    A ->> A: confirms exact match, approves
+
     A ->> A: [1] Register server, allocate remote_port (registry under servers/)
     A ->> A: [2] Build FULL tenant list (admin + every registered server)
     A ->> R: [3] Over relay SSH: write CA certs, re-render + validate +<br/>graceful-reload Caddyfile, rewrite authorized_keys in full,<br/>persist full Xray config.json
     A ->> R: [4] gRPC live-add (AddInbound + AddRule via :10085<br/>over the SSH tunnel) — no Xray restart
-    A -->> S: join-response.json (relay host, path, remote_port, ssh_user,<br/>+ ed25519 mode signature)
+    A ->> S: encrypted grant (relay host, path, remote_port, ssh_user,<br/>+ ed25519 mode signature), via /enroll/tok/result
 
-    S ->> S: tw server join-relay --apply join-response.json
-    S ->> S: Persist coordinates + mode_auth signature
+    S ->> S: Store context (auto-activate if no live profile), persist coordinates + mode_auth signature
     S ->> R: tw server start — reverse tunnel on remote_port
 ```
 
 Key properties:
 
+- **The code is a PAKE password, not a bearer credential** (`internal/enroll`,
+  SPAKE2) — the relay forwards only ciphertext between issuer and enrollee.
+  The invite is single-use and burns on the *first* redemption attempt,
+  successful or not, and expires after its TTL (default 15 minutes).
+- **The SAS defeats theft and MITM** — both sides derive the same short
+  authentication string from the session key (`internal/enroll/pake.go`,
+  HKDF-SHA256); the admin approves only on an exact spoken match. A thief who
+  redeems first burns the invite, so the real operator's join fails
+  "already used" — the detectable tell.
 - **Non-disruptive** — existing tenants' tunnels stay up: Caddy reloads gracefully, and the new Xray inbound + routing rules are added live over the gRPC API; the full `config.json` is written only for restart persistence.
 - **Full-rewrite philosophy** — the Caddyfile, relay `authorized_keys`, and relay Xray config are re-rendered from the complete registry on every enroll/un-enroll, so stale or corrupted state self-heals.
 - **Serialized** — enroll and un-enroll take a local file lock (`internal/ops/oplock.go`), so concurrent admin operations cannot interleave.
-- **Tenant confinement** — each server's `authorized_keys` line is `from="127.0.0.1",restrict,port-forwarding,permitopen=<dead sentinel>,permitlisten=<own remote_port>`: it can publish exactly its own reverse port and nothing else (no shell, no reaching the relay's gRPC API).
+- **Tenant confinement** — each server's `authorized_keys` line carries
+  `from="127.0.0.1",restrict,port-forwarding,permitopen=<dead sentinel>` plus
+  **two** `permitlisten` entries: its tunnel port (`remote_port`) and its
+  enroll port (`remote_port + 20000`, `enrollPort()` in `identity.go`) — it
+  can publish exactly these two reverse listeners and nothing else (no shell,
+  no reaching the relay's gRPC API).
 - **Un-enroll** (`tw relay un-enroll-server <id>`) reverses everything *and* severs live state: rewrites `authorized_keys` first (blocks re-auth), removes the tenant's routing rules and inbound via gRPC, kills the sshd session holding its reverse listener, removes its Caddy handle and CA cert, then forgets the registry entry.
+- **Two-phase delivery** (`internal/ops/invite.go`) — the grant is handed
+  over on the same connection that served the offer where possible, but a
+  second Caddy reload landing mid-exchange can kill that connection first;
+  `deliverGrantPhase2` re-serves the same handler on fresh connections
+  (retrying dial/listen failures) so the enrollee's next poll still collects
+  the grant even then. The tenant is enrolled either way — an error here
+  means "collect a grant that already exists," never a partial enrollment.
 
 ---
 
-## User Creation (`tw server user create`)
+## User Enrollment (`tw server user invite`)
 
-Interactive wizard, four progress steps:
+The only way a user comes to exist: the server operator mints a one-time
+invite code and the client redeems it with `tw join`, running the same
+SPAKE2 + SAS exchange as [server enrollment](#server-enrollment-tw-relay-invite-tw-join)
+over the tenant's own `/enroll/<tok>` route.
 
 ```mermaid
 sequenceDiagram
     participant Admin as Server operator (tw)
+    participant C as Client machine (tw join)
     participant R as Relay (via management tunnel)
     participant AK as authorized_keys
 
     Admin ->> Admin: Enter username + port mappings<br/>(client local port -> server port, localhost only)
-    Admin ->> Admin: [1] Generate UUID + ed25519 SSH key pair
-    Admin ->> R: [2] Hot-add UUID to this server's own<br/>vless-in-&lt;server-id&gt; inbound on the relay
-    Admin ->> Admin: [3] Write client config + keys to users/<name>/
-    Admin ->> AK: [4] Append public key with permitopen restrictions
+    Admin -->> C: One-time invite code (spoken; a SPAKE2 password)
+    C ->> C: Generate ed25519 SSH key pair + CSR locally
+    C ->> Admin: SSH public key + CSR + proposed UUID<br/>(SPAKE2-encrypted channel)
+    Admin ->> Admin: SAS confirmation (both terminals, exact match)
+    Admin ->> Admin: Sign the CSR with the server CA
+    Admin ->> R: Hot-add UUID to this server's own<br/>vless-in-&lt;server-id&gt; inbound on the relay
+    Admin ->> AK: Append public key with permitopen restrictions
+    Admin ->> C: Signed cert + coordinates +<br/>mode_auth-signed config (encrypted channel)
 ```
+
+The *client* generates its SSH key pair and certificate signing request
+locally (`clientMaterial.makeOffer` in `internal/ops/joinflow.go`) — no
+private key ever transits — and the server's `grantClient`
+(`internal/ops/invite.go`) signs the CSR, registers the UUID, and writes
+`authorized_keys` plus only the client's *public* key server-side. The client
+stores the grant as a new context and connects with `tw client connect`.
+There is no other creation path and no bundle file.
 
 **Port mapping flow:** Ports are entered one mapping at a time in sequence. For each mapping, the wizard asks for the client's local port and the server port. The remote host is locked to `127.0.0.1` -- clients cannot forward to the server's wider network.
 
@@ -125,11 +179,10 @@ sequenceDiagram
 5. Writes the updated config via `sudo tee` (persistence across Xray restarts)
 6. Hot-adds the UUID via the Xray gRPC API (`AlterInbound` / `AddUserOperation` on `:10085`); falls back to `systemctl restart xray` if the API call fails
 
-**Generated files** in `<config_dir>/users/<name>/`:
+**Server-side files** in `<config_dir>/users/<name>/`:
 
-- `config.yaml` -- client config with Xray settings (client UUID, relay host/port, the server's `/tw/<server-id>` path) and tunnel mappings
-- `id_ed25519` -- client SSH private key
-- `id_ed25519.pub` -- client SSH public key
+- `config.yaml` -- copy of the granted client config (client UUID, relay host/port, the server's `/tw/<server-id>` path, tunnel mappings) — used by `user list`/`apply`
+- `id_ed25519.pub` -- the client's enrolled SSH public key (the private half is born on the client machine and never leaves it)
 
 The generated `authorized_keys` entry:
 
@@ -138,8 +191,6 @@ permitopen="127.0.0.1:5432",permitopen="127.0.0.1:8080" ssh-ed25519 AAAA... alic
 ```
 
 This restricts the client to forwarding only to the specified `127.0.0.1` ports on the server. An optional `single-session` option (toggled per user) limits the user to one concurrent SSH session.
-
-**Delivery:** `tw config export-user <name>` seals the user's config, SSH keys, and the per-server `client.crt`/`client.key` into a portable context bundle. The user's `config.yaml` is stamped `mode: client` and carries a `mode_auth` signature issued by the server. The client imports it with `tw config import` and connects.
 
 ---
 

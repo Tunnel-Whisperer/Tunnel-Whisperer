@@ -8,11 +8,11 @@ Every machine runs the same `tw` binary. What it *does* is decided by the **mode
 
 | Role | Who runs it | Top-level commands |
 | ---- | ----------- | ------------------ |
-| **Relay** | The admin who owns the relay VM: provisions it, holds the CA, admits servers | `tw relay create / destroy / test / ssh / status / enroll-server / get-servers / un-enroll-server` |
-| **Server** | The operator of the network being exposed: joins a relay, manages users and apps, runs the tunnel endpoint | `tw server start / join-relay / test / status / user … / app …` |
-| **Client** | The person connecting in: imports a user bundle, brings up local port forwards | `tw client connect / listen / test / status` |
+| **Relay** | The admin who owns the relay VM: provisions it, holds the CA, admits servers | `tw relay create / destroy / test / ssh / status / invite / get-servers / un-enroll-server` |
+| **Server** | The operator of the network being exposed: joins a relay, manages users and apps, runs the tunnel endpoint | `tw server start / test / status / user … / app …` |
+| **Client** | The person connecting in: joins via invite or imports a bundle, brings up local port forwards | `tw client connect / listen / test / status` |
 
-The mode is set by the first role action a machine performs — `tw relay create` (relay), `tw server join-relay <relay-host>` (server — the request step already stamps it), or importing **and activating** a user bundle (`tw config import --activate`, client) — and every context carries exactly one role.
+The mode is set by the first role action a machine performs — `tw relay create` (relay), `tw join <relay-host> <code>` against a `tw relay invite` code (server or client — the issuer's invite decides which), or importing **and activating** a context bundle (`tw config import --activate`) — and every context carries exactly one role.
 
 !!! warning "One role per context"
     Once a context has a role, it keeps it — commands of the other roles refuse to run in it:
@@ -28,7 +28,7 @@ The mode is set by the first role action a machine performs — `tw relay create
 The `mode` field in `config.yaml` is **signed** (ed25519) against the profile's identity. If the file is hand-edited to flip a client into a server — or the signature no longer matches the identity — `tw` refuses to run role commands until the profile is restored (re-enroll for servers, re-import for clients, re-create for relays). Relay profiles hold their own signing key and self-heal an unsigned mode.
 
 !!! note "Tamper evidence, not the security boundary"
-    The signature only makes local tampering *evident*. The real access control lives on the other end of the wire: the relay admits tunnels via **mTLS** (Caddy verifies a CA-issued client certificate at the TLS handshake), and the server's SSH `authorized_keys` gates every user with per-port `permitopen` restrictions. A tampered local mode gains nothing — the relay and server still reject unknown keys and certificates.
+    The signature only makes local tampering *evident*. The real access control lives on the other end of the wire: the relay routes every tunnel via **mTLS** (Caddy verifies a CA-issued client certificate and matches it to a tenant before proxying), and the server's SSH `authorized_keys` gates every user with per-port `permitopen` restrictions. A tampered local mode gains nothing — the relay and server still reject unknown keys and certificates.
 
 ## Shared Across All Roles
 

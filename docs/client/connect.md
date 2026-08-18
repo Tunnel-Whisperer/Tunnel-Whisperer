@@ -1,21 +1,25 @@
 # Connecting
 
-This page covers the full client workflow: import the bundle, connect, use your local ports — plus binding, testing, status, and reconnection behavior.
+This page covers the full client workflow: redeem the invite, connect, use your local ports — plus binding, testing, status, and reconnection behavior.
 
-## 1. Import the Bundle
+## 1. Redeem the Invite
 
-The server operator sends you a `.twctx` file (e.g. `alice-tw-context.twctx`). It contains your client config (relay address, port mappings, SSH user), your SSH key pair, and the `client.crt`/`client.key` presented to the relay's mutual-TLS gate. The certificate is the same for every user of that server; your individual access is enforced by your per-user SSH key.
+The server operator runs `tw server user invite <name>` and reads you the resulting one-time code over any channel. Redeem it with:
 
 ```bash
-tw config import alice-tw-context.twctx --activate
+tw join relay.example.com <code> [--name alice]
 ```
 
-- The imported context is auto-named after your user (`alice`); override with `--name`.
-- `--activate` switches to it immediately and applies its mode. Without it, the context is stored and you activate later with `tw config use-context alice`.
-- Importing a bundle for an already-existing context prompts before replacing it (`--force` skips the prompt). Re-importing the *active* context refreshes it in place — this is how you apply updated port mappings the server operator re-exports for you.
+Both terminals show a short authentication string (SAS) once the code exchange completes — **read yours aloud to the server operator**; they approve only on an exact match, which is what makes overhearing the code alone useless to an eavesdropper. On approval:
 
-!!! warning "Treat the bundle like a private key"
-    Bundles carry no passphrase — anyone holding the file can connect as you. Receive it over a trusted channel and delete stray copies.
+- your machine generates an ed25519 SSH key pair **and** a certificate signing request locally — neither private key ever leaves it;
+- the server signs the CSR and sends back the relay coordinates, your port mappings, and the signed client certificate for the relay's mutual-TLS gate, all over the encrypted PAKE channel;
+- the result is stored as a new context, auto-named after your user (`alice`) unless you pass `--name`, and activated immediately if this machine has no active profile yet — otherwise `tw config use-context alice`.
+
+The client certificate is the same for every user of that server; your individual access is enforced by your per-user SSH key.
+
+!!! note "Moving your own identity between machines"
+    `tw join` is for *receiving* a new identity from a server operator. To move a context you already own to another machine of yours, use `tw config export` / `tw config import` — a `.twctx` bundle carries no passphrase, so treat it like a private key in transit.
 
 ## 2. Connect
 
@@ -57,12 +61,15 @@ Takes effect on the next reconnect.
 
 ## Local Port Conflicts & Overrides
 
-The `local_port` values in your bundle were chosen by the server admin — they
+The `local_port` values granted to you were chosen by the server admin — they
 may clash with something already running on *your* machine. The local port is
 purely your machine's business (access control is enforced on the server
 port), so you can remap it freely.
 
-If a port is taken, `tw client connect` fails fast with:
+`tw join` already preflights every granted port during enrollment and prompts
+for a replacement on the spot if one's busy, so a fresh join usually never
+hits this. If a port is taken later — something else grabbed it since, or you
+freed and re-lost it — `tw client connect` fails fast with:
 
 ```text
 local port 8080 (→ server port 15432) is already in use — override it with
@@ -91,8 +98,9 @@ dashboard or service drops it.
 
 !!! note "Re-importing a bundle resets overrides"
     `tw config import` replaces the whole context, including
-    `port_overrides`. After importing an updated bundle, re-run
-    `tw client set-port` for any ports you had remapped.
+    `port_overrides` — this matters if you re-import your own exported
+    backup bundle onto a different machine. Re-run `tw client set-port` for
+    any ports you had remapped.
 
 ## Test and Status
 
@@ -119,12 +127,12 @@ If this persists, ask the server operator to check `tw server status` and `tw se
 
 ## Multiple Servers
 
-A bundle belongs to one server, but a client can hold several as kubectl-style contexts:
+Each context belongs to one server, but a client can hold several as kubectl-style contexts — `tw join` never disturbs the active context, so joining a second server (whether it's a second tenant on the same relay or a different relay entirely) is safe from an already-configured client:
 
 ```bash
-tw config import bob-tw-context.twctx      # second server's bundle
-tw config get-contexts                     # list stored contexts
-tw config use-context bob                  # switch (reconnects)
+tw join relay.example.com <code2> --name bob   # a second server's invite
+tw config get-contexts                         # list stored contexts
+tw config use-context bob                      # switch (reconnects)
 ```
 
 One server connection is active at a time; switching contexts reconnects to the newly selected one.

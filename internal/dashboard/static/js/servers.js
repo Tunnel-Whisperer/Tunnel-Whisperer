@@ -89,42 +89,4 @@ async function unenrollServer(serverID, port) {
   }
 }
 
-async function enrollServer() {
-  const fileInput = $('#enroll-file'), btn = $('#btn-enroll');
-  const errBox = $('#enroll-error'), okBox = $('#enroll-success');
-  errBox.classList.add('hidden');
-  okBox.classList.add('hidden');
-  if (!fileInput.files.length) {
-    errBox.textContent = 'Choose a tw_join_*.json file first.';
-    errBox.classList.remove('hidden');
-    return;
-  }
-  btn.disabled = true;
-  btn.textContent = 'Enrolling…';
-  try {
-    const form = new FormData();
-    form.append('request', fileInput.files[0]);
-    const resp = await fetch('/api/servers/enroll', { method: 'POST', body: form });
-    if (!resp.ok) throw new Error(await resp.text());
-    const blob = await resp.blob();
-    const dispo = resp.headers.get('Content-Disposition') || '';
-    const m = dispo.match(/filename="?([^";]+)"?/);
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = m ? m[1] : 'tw_join_response.json';
-    a.click();
-    URL.revokeObjectURL(a.href);
-    okBox.textContent = 'Enrolled. The join response downloaded — send it to the server and apply it there.';
-    okBox.classList.remove('hidden');
-    fileInput.value = '';
-    loadServers();
-  } catch (err) {
-    errBox.textContent = err.message;
-    errBox.classList.remove('hidden');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Enroll';
-  }
-}
-
 document.addEventListener('DOMContentLoaded', loadServers);

@@ -82,6 +82,9 @@ func runAppCreate(cmd *cobra.Command, args []string) error {
 	if err := requireMode("server"); err != nil {
 		return err
 	}
+	if err := requireWritableConfig(); err != nil {
+		return err
+	}
 
 	o, err := ops.New()
 	if err != nil {
@@ -116,6 +119,9 @@ func runAppCreate(cmd *cobra.Command, args []string) error {
 
 func runAppEdit(cmd *cobra.Command, args []string) error {
 	if err := requireMode("server"); err != nil {
+		return err
+	}
+	if err := requireWritableConfig(); err != nil {
 		return err
 	}
 	name := args[0]
@@ -173,6 +179,9 @@ func runAppEdit(cmd *cobra.Command, args []string) error {
 
 func runAppDelete(cmd *cobra.Command, args []string) error {
 	if err := requireMode("server"); err != nil {
+		return err
+	}
+	if err := requireWritableConfig(); err != nil {
 		return err
 	}
 	name := args[0]

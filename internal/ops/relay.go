@@ -163,6 +163,8 @@ func (o *Ops) renderRelayConfigs(cfg *config.Config) (serverID, caddyfileB64, xr
 			CACertPath: fmt.Sprintf("/etc/caddy/ca/%s.crt", serverID),
 			Upstream:   fmt.Sprintf("h2c://127.0.0.1:%d", vlessInPort),
 			Role:       role,
+			EnrollTok:  first8(cfg.Xray.UUID),
+			EnrollPort: enrollPort(remotePort),
 		}},
 	})
 	if err != nil {

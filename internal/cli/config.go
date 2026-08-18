@@ -104,12 +104,15 @@ func init() {
 
 // newContextSealingCurrent creates a fresh empty context named `name` and
 // switches to it, preserving the current context (sealed with no passphrase).
-// Shared by `tw config new-context` and `tw server join-relay --new-context`.
+// Used by `tw config new-context`.
 func newContextSealingCurrent(o *ops.Ops, name string) error {
 	return o.NewContext(name)
 }
 
 func runConfigNewContext(cmd *cobra.Command, args []string) error {
+	if err := requireWritableConfig(); err != nil {
+		return err
+	}
 	o, err := ops.New()
 	if err != nil {
 		return err
@@ -117,7 +120,7 @@ func runConfigNewContext(cmd *cobra.Command, args []string) error {
 	if err := newContextSealingCurrent(o, args[0]); err != nil {
 		return err
 	}
-	fmt.Printf("  Created context %q and switched to it. Configure it (e.g. tw server join-relay / a relay), then\n", args[0])
+	fmt.Printf("  Created context %q and switched to it. Configure it (e.g. tw join <relay-host> <code>), then\n", args[0])
 	fmt.Println("  switch back any time with: tw config use-context <name>")
 	return nil
 }
@@ -160,6 +163,9 @@ func runConfigCurrentContext(cmd *cobra.Command, args []string) error {
 }
 
 func runConfigUseContext(cmd *cobra.Command, args []string) error {
+	if err := requireWritableConfig(); err != nil {
+		return err
+	}
 	o, err := ops.New()
 	if err != nil {
 		return err
@@ -250,6 +256,9 @@ func jsonSafe(v any) any {
 }
 
 func runConfigRenameContext(cmd *cobra.Command, args []string) error {
+	if err := requireWritableConfig(); err != nil {
+		return err
+	}
 	o, err := ops.New()
 	if err != nil {
 		return err
@@ -262,6 +271,9 @@ func runConfigRenameContext(cmd *cobra.Command, args []string) error {
 }
 
 func runConfigDeleteContext(cmd *cobra.Command, args []string) error {
+	if err := requireWritableConfig(); err != nil {
+		return err
+	}
 	o, err := ops.New()
 	if err != nil {
 		return err
@@ -299,6 +311,9 @@ func runConfigDeleteContext(cmd *cobra.Command, args []string) error {
 }
 
 func runConfigImport(cmd *cobra.Command, args []string) error {
+	if err := requireWritableConfig(); err != nil {
+		return err
+	}
 	data, err := os.ReadFile(args[0])
 	if err != nil {
 		return fmt.Errorf("reading bundle: %w", err)
