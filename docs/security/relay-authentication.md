@@ -96,7 +96,7 @@ sequenceDiagram
     alt certificate presented but not signed by a trusted CA
         Caddy--xC: handshake rejected (no app data exchanged)
     else no certificate, or a certificate that verified
-        Note over Caddy: route by path /tw/<server-id> AND<br/>certificate subject CN=<server-id>
+        Note over Caddy: route by path /tw/&lt;server-id&gt; AND<br/>certificate subject CN=&lt;server-id&gt;
         alt path + verified CN match a tenant
             Caddy->>X: reverse_proxy (h2c) the VLESS/XHTTP stream
             X->>S: opaque stream → server's reverse SSH tunnel

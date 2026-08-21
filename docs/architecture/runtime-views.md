@@ -83,14 +83,15 @@ sequenceDiagram
     Note over A: opens a listener on the relay via its own<br/>reverse SSH tunnel, serving /enroll/tok/*
     A ->> S: reads the code aloud (any channel)
 
-    S ->> S: tw join relay.example.com <code>
+    S ->> S: tw join relay.example.com &lt;code&gt;
     S ->> S: Generate identity (SSH key, CA, client cert CN=server-id)
     S ->> R: POST /enroll/tok/start, /offer (SPAKE2 + encrypted join-request payload)
     R ->> A: forwarded over the tunnel (relay sees only ciphertext)
 
     A ->> A: derives session key, computes SAS
     S ->> S: derives session key, computes SAME SAS
-    A ->> A: shows SAS; S shows SAS
+    A ->> A: shows SAS
+    S ->> S: shows the same SAS
     S ->> A: reads SAS aloud
     A ->> A: confirms exact match, approves
 
@@ -150,7 +151,7 @@ sequenceDiagram
     participant AK as authorized_keys
 
     Admin ->> Admin: Enter username + port mappings<br/>(client local port -> server port, localhost only)
-    Admin -->> C: One-time invite code (spoken; a SPAKE2 password)
+    Admin -->> C: One-time invite code (spoken — a SPAKE2 password)
     C ->> C: Generate ed25519 SSH key pair + CSR locally
     C ->> Admin: SSH public key + CSR + proposed UUID<br/>(SPAKE2-encrypted channel)
     Admin ->> Admin: SAS confirmation (both terminals, exact match)
