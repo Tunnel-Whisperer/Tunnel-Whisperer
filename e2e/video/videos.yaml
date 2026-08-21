@@ -1,0 +1,29 @@
+# What each committed tutorial GIF shows — the curated metadata for the
+# walkthrough videos. When product behavior changes, compare these summaries
+# (and the machine check below) against reality: e2e/video/videos.lock records
+# a fingerprint of every input that shaped the last recording, and
+# e2e/video/sync_test.go fails the ordinary `go test ./...` when those inputs
+# drift — the signal that the GIFs no longer show the product as it is.
+# Re-record with: bash e2e/video/record.sh
+videos:
+  - gif: docs/assets/multi-server-step1-relay.gif
+    source: parts/01-relay.tape
+    summary: Admin provisions the relay with `tw relay create --provider manual`, runs the generated install script on the relay VM, and verifies with `tw relay test`.
+  - gif: docs/assets/multi-server-step2-server1.gif
+    source: parts/02-server1.tape
+    summary: Two panes — admin mints `tw relay invite`, server1 redeems with `tw join`, both show the same SAS, admin approves, server starts and `tw server test` passes. Zero files.
+  - gif: docs/assets/multi-server-step3-server2.gif
+    source: parts/03-server2.tape
+    summary: server2 joins by the same invite ceremony (compressed, run for real off camera); `tw relay get-servers` lists both tenants — enrollment is live, no relay restart.
+  - gif: docs/assets/multi-server-step4-users.gif
+    source: parts/04-users.tape
+    summary: Two panes — server1 mints `tw server user invite client1 -m 2201:22`, the client redeems with `tw join`, SAS approved, the client context is delivered in the ceremony (no bundle files); `user list` shows client1.
+  - gif: docs/assets/multi-server-step5-client.gif
+    source: parts/05-client.tape
+    summary: client1's context is already active from the invite — `tw client connect`, then a real SSH through the tunnel (`ssh -p 2201`) lands on server1.
+  - gif: docs/assets/multi-server-step6-verify.gif
+    source: parts/06-outro.tape
+    summary: Final verify from the admin — `tw relay test && tw relay get-servers` — and the end card.
+  - gif: docs/assets/multi-server-walkthrough.gif
+    source: all parts concatenated
+    summary: The full walkthrough in one GIF — relay install, two spoken-invite server enrollments, invite-delivered client users, a live SSH through the tunnel, final verify.

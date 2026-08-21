@@ -1,5 +1,6 @@
-# Part 5/6: client1 imports its bundle, connects, and SSHes to server1
-# through the tunnel.
+# Part 5/6: client1 connects and SSHes to server1 through the tunnel. The
+# client context arrived during part 4's invite ceremony (auto-activated on
+# this fresh machine) — there is nothing to import.
 
 Output e2e/video/out/part-05.mp4
 
@@ -13,10 +14,10 @@ Set TypingSpeed 40ms
 Set Framerate 24
 
 Hide
-Type@3ms `bash e2e/video/caption.sh "Step 5 — On client1: import the bundle and connect"`
+Type@3ms `bash e2e/video/caption.sh "Step 5 — On client1: connect" "The invite already delivered and activated the client context —" "no files to import. Just connect."`
 Enter
 Show
-Sleep 3s
+Sleep 4s
 Hide
 Type@1ms "clear; docker compose -f e2e/docker-compose.yaml exec client bash"
 Enter
@@ -29,10 +30,10 @@ Enter
 Sleep 1s
 Show
 Sleep 1s
-Type "tw config import client1-tw-context.twctx --activate"
+Type "tw config current-context"
 Enter
-Wait+Screen@30s /Imported and switched to context/
-Sleep 3s
+Wait+Screen@30s /client1/
+Sleep 2s
 Type "nohup tw client connect >/var/log/tw-client.log 2>&1 &"
 Enter
 Sleep 2s
