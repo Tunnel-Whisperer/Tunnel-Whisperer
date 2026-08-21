@@ -79,8 +79,16 @@ echo '{{.CACertB64}}' | base64 -d > /etc/caddy/ca/{{.ServerID}}.crt
 echo '{{.CaddyfileB64}}' | base64 -d > /etc/caddy/Caddyfile
 
 # ── Install Xray (pinned version for reproducibility) ──────
+# Download to a file, never inline into argv: `bash -c "$(curl ...)"` breaks
+# past the 128 KiB per-argument limit and would happily execute whatever HTML
+# an error/rate-limit page returns. -f fails on HTTP errors; --retry rides
+# out transient 429s from raw.githubusercontent.com.
 echo "[4/7] Installing Xray {{.XrayVersion}}..."
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --version {{.XrayVersion}}
+curl -fsSL --retry 3 --retry-delay 10 -o /tmp/xray-install-release.sh \
+  https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh \
+  || { echo "ERROR: downloading the Xray installer failed (offline or rate-limited?)"; exit 1; }
+bash /tmp/xray-install-release.sh install --version {{.XrayVersion}}
+rm -f /tmp/xray-install-release.sh
 
 mkdir -p /usr/local/etc/xray
 echo '{{.XrayConfigB64}}' | base64 -d > /usr/local/etc/xray/config.json
