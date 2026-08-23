@@ -1,8 +1,24 @@
 name: e2e
+# Docs-only changes skip the suite; docs/assets stays in because the video
+# drift gate (e2e/video/sync_test.go) checks the committed GIFs there.
 on:
   push:
     branches: [main]
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!mkdocs.yml'
+      - '!**.md'
+      - '!.github/workflows/docs.yml'
+      - 'docs/assets/**'
   pull_request:
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!mkdocs.yml'
+      - '!**.md'
+      - '!.github/workflows/docs.yml'
+      - 'docs/assets/**'
 jobs:
   e2e:
     runs-on: ubuntu-latest
