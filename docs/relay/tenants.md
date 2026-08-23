@@ -25,9 +25,9 @@ sequenceDiagram
     participant R as Relay VM
 
     A->>A: tw relay invite
-    Note over A: mints code &lt;tok&gt;-NN-word-word, waits
+    Note over A: mints code #lt;tok#gt;-NN-word-word, waits
     A->>S: read the code aloud (any channel)
-    S->>S: tw join relay.example.com &lt;code&gt;
+    S->>S: tw join relay.example.com #lt;code#gt;
     S->>R: SPAKE2 key exchange (code is the password)
     Note over S,A: both sides derive the same session key
     A->>A: shows SAS (e.g. "7F2-A91")

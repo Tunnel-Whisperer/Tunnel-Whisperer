@@ -65,7 +65,7 @@ sequenceDiagram
     S ->> R: SSH through temp tunnel
     S ->> R: sudo cat /usr/local/etc/xray/config.json
     R -->> S: JSON config
-    S ->> S: Parse JSON, check duplicate UUID,<br/>add client to vless-in-&lt;server-id&gt;
+    S ->> S: Parse JSON, check duplicate UUID,<br/>add client to vless-in-#lt;server-id#gt;
     S ->> R: sudo tee config.json (updated)
     S ->> XR: gRPC AlterInbound / AddUserOperation (:10085)
     alt gRPC fails

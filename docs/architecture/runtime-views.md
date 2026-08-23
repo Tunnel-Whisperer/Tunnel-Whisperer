@@ -83,7 +83,7 @@ sequenceDiagram
     Note over A: opens a listener on the relay via its own<br/>reverse SSH tunnel, serving /enroll/tok/*
     A ->> S: reads the code aloud (any channel)
 
-    S ->> S: tw join relay.example.com &lt;code&gt;
+    S ->> S: tw join relay.example.com #lt;code#gt;
     S ->> S: Generate identity (SSH key, CA, client cert CN=server-id)
     S ->> R: POST /enroll/tok/start, /offer (SPAKE2 + encrypted join-request payload)
     R ->> A: forwarded over the tunnel (relay sees only ciphertext)
@@ -156,7 +156,7 @@ sequenceDiagram
     C ->> Admin: SSH public key + CSR + proposed UUID<br/>(SPAKE2-encrypted channel)
     Admin ->> Admin: SAS confirmation (both terminals, exact match)
     Admin ->> Admin: Sign the CSR with the server CA
-    Admin ->> R: Hot-add UUID to this server's own<br/>vless-in-&lt;server-id&gt; inbound on the relay
+    Admin ->> R: Hot-add UUID to this server's own<br/>vless-in-#lt;server-id#gt; inbound on the relay
     Admin ->> AK: Append public key with permitopen restrictions
     Admin ->> C: Signed cert + coordinates +<br/>mode_auth-signed config (encrypted channel)
 ```
