@@ -197,6 +197,18 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 		progress = func(ProgressEvent) {}
 	}
 
+	// Validate AWS credentials up front, before any state is mutated. Both
+	// blank means "use the ambient AWS environment" (awsEnv stays nil and
+	// terraform, which inherits os.Environ(), resolves them itself).
+	var awsEnv map[string]string
+	if req.ProviderName == "AWS" {
+		var err error
+		if awsEnv, err = AWSCredsEnv(req.Token, req.AWSSecretKey); err != nil {
+			return err
+		}
+		req.Region = awsProvisionRegion(awsEnv != nil, req.Region)
+	}
+
 	// Generate a default instance name if not provided.
 	if req.Name == "" {
 		req.Name = "relay-" + randomSuffix(4)
@@ -331,8 +343,9 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 	tfEnv := map[string]string{}
 	var tfvars string
 	if req.ProviderName == "AWS" {
-		tfEnv["AWS_ACCESS_KEY_ID"] = req.Token
-		tfEnv["AWS_SECRET_ACCESS_KEY"] = req.AWSSecretKey
+		for k, v := range awsEnv {
+			tfEnv[k] = v
+		}
 	} else {
 		for _, p := range CloudProviders() {
 			if p.Key == req.ProviderKey {

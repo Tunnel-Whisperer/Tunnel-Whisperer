@@ -31,7 +31,7 @@
 <!-- AWS credential prompt (hidden by default) -->
 <div id="destroy-creds" class="card hidden">
   <div class="card-header"><h2>AWS Credentials Required</h2></div>
-  <p class="text-dim mb-16">Terraform needs AWS credentials to destroy the relay resources.</p>
+  <p class="text-dim mb-16">Terraform needs AWS credentials to destroy the relay resources. Leave both blank to use the AWS credentials from the environment of the machine running tw.</p>
   <div class="form-group">
     <label>AWS Access Key ID</label>
     <input type="text" id="destroy-aws-key">
@@ -40,6 +40,7 @@
     <label>AWS Secret Access Key</label>
     <input type="password" id="destroy-aws-secret">
   </div>
+  <div id="destroy-creds-error" class="alert alert-error mb-16 hidden"></div>
   <div class="flex gap-8">
     <button class="btn btn-danger" id="btn-destroy-confirm" onclick="destroyRelay()">Confirm Destroy</button>
     <button class="btn" onclick="hideDestroyPrompt()">Cancel</button>

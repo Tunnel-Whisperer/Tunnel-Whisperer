@@ -349,7 +349,10 @@ func (s *Server) apiDestroyRelay(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Creds map[string]string `json:"creds"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
 
 	sessionID, progress := s.sse.create()
 

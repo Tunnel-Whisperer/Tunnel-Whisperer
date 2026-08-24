@@ -108,7 +108,7 @@ Provider-specific Terraform files are embedded in the Go binary via `go:embed` a
 
 | Provider | Template | Instance | Firewall |
 | -------- | -------- | -------- | -------- |
-| AWS | `aws.tf.tmpl` | `t3.micro`, Ubuntu 24.04, `us-east-1` | Security group: 80 + 443 ingress (+ 22 with `--ssh-open`) |
+| AWS | `aws.tf.tmpl` | `t3.micro`, Ubuntu 24.04, `us-east-1` with explicit keys / environment region with ambient credentials | Security group: 80 + 443 ingress (+ 22 with `--ssh-open`) |
 | Hetzner | `hetzner.tf.tmpl` | `cx22`, Ubuntu 24.04, `nbg1` | Hetzner firewall: 80 + 443 (+ 22 with `--ssh-open`) |
 | DigitalOcean | `digitalocean.tf.tmpl` | `s-1vcpu-1gb`, Ubuntu 24.04, `fra1` | DO firewall: 80 + 443 (+ 22 with `--ssh-open`) |
 

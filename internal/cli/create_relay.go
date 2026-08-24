@@ -107,17 +107,16 @@ func runCreateRelayServer(cmd *cobra.Command, args []string) error {
 		var creds map[string]string
 		if status.Provider == "AWS" {
 			fmt.Println("  AWS credentials needed to destroy resources.")
+			fmt.Println("  Leave both blank to use the AWS credentials from your environment (profiles, SSO).")
 			fmt.Print("  AWS Access Key ID: ")
 			scanner.Scan()
 			keyID := strings.TrimSpace(scanner.Text())
 			fmt.Print("  AWS Secret Access Key: ")
 			scanner.Scan()
 			secret := strings.TrimSpace(scanner.Text())
-			if keyID != "" && secret != "" {
-				creds = map[string]string{
-					"AWS_ACCESS_KEY_ID":     keyID,
-					"AWS_SECRET_ACCESS_KEY": secret,
-				}
+			var err error
+			if creds, err = ops.AWSCredsEnv(keyID, secret); err != nil {
+				return err
 			}
 		}
 		fmt.Println("  Destroying existing relay resources...")
@@ -208,14 +207,15 @@ func runCreateRelayServer(cmd *cobra.Command, args []string) error {
 
 	var token, awsSecretKey string
 	if selected.Name == "AWS" {
+		fmt.Println("      Leave both blank to use the AWS credentials from your environment (profiles, SSO).")
 		fmt.Print("      AWS Access Key ID: ")
 		scanner.Scan()
 		token = strings.TrimSpace(scanner.Text())
 		fmt.Print("      AWS Secret Access Key: ")
 		scanner.Scan()
 		awsSecretKey = strings.TrimSpace(scanner.Text())
-		if token == "" || awsSecretKey == "" {
-			return fmt.Errorf("both AWS Access Key ID and Secret Access Key are required")
+		if _, err := ops.AWSCredsEnv(token, awsSecretKey); err != nil {
+			return err
 		}
 	} else {
 		fmt.Printf("      %s: ", selected.TokenName)

@@ -3,6 +3,8 @@ package ops
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -78,6 +80,66 @@ func CloudProviders() []CloudProvider {
 	}
 }
 
+// AWSCredsEnv validates an AWS Access Key ID / Secret Access Key pair and maps
+// it to the environment variables terraform reads. Both blank means "use the
+// AWS credentials already in the environment": the returned map is nil and
+// terraform, which inherits this process's environment, resolves credentials
+// itself (profiles, SSO, instance roles). Exactly one blank is an error.
+func AWSCredsEnv(keyID, secret string) (map[string]string, error) {
+	if (keyID == "") != (secret == "") {
+		return nil, fmt.Errorf("provide both AWS Access Key ID and Secret Access Key, or leave both blank to use the AWS credentials from your environment")
+	}
+	if keyID == "" {
+		return nil, nil
+	}
+	return map[string]string{
+		"AWS_ACCESS_KEY_ID":     keyID,
+		"AWS_SECRET_ACCESS_KEY": secret,
+	}, nil
+}
+
+// awsProvisionRegion picks the region to pin for an AWS provision: an
+// explicit choice always wins; explicit keys with no choice keep the
+// historical us-east-1 default; ambient credentials with no choice inherit
+// the ambient region (empty = the template's null fallback).
+func awsProvisionRegion(explicitKeys bool, chosen string) string {
+	if chosen == "" && explicitKeys {
+		return "us-east-1"
+	}
+	return chosen
+}
+
+// awsAmbientCredentials reports whether this process can see any ambient AWS
+// credential source: static env keys, a named profile, shared credential or
+// config files, or web-identity/container credentials. It is a cheap local
+// pre-flight only — terraform still does the authoritative resolution.
+func awsAmbientCredentials() bool {
+	if os.Getenv("AWS_ACCESS_KEY_ID") != "" && os.Getenv("AWS_SECRET_ACCESS_KEY") != "" {
+		return true
+	}
+	if os.Getenv("AWS_PROFILE") != "" || os.Getenv("AWS_ROLE_ARN") != "" ||
+		os.Getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") != "" ||
+		os.Getenv("AWS_CONTAINER_CREDENTIALS_FULL_URI") != "" {
+		return true
+	}
+	for _, p := range []string{os.Getenv("AWS_SHARED_CREDENTIALS_FILE"), os.Getenv("AWS_CONFIG_FILE")} {
+		if p == "" {
+			continue
+		}
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		for _, p := range []string{filepath.Join(home, ".aws", "credentials"), filepath.Join(home, ".aws", "config")} {
+			if _, err := os.Stat(p); err == nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // TestCloudCredentials validates credentials for the given provider.
 func (o *Ops) TestCloudCredentials(providerName, token, awsSecret string) error {
 	switch providerName {
@@ -86,6 +148,17 @@ func (o *Ops) TestCloudCredentials(providerName, token, awsSecret string) error 
 	case "DigitalOcean":
 		return testHTTPToken("https://api.digitalocean.com/v2/account", token)
 	case "AWS":
+		if _, err := AWSCredsEnv(token, awsSecret); err != nil {
+			return err
+		}
+		if token == "" {
+			// Ambient mode: fail fast if no credential source is visible at
+			// all, instead of minutes later inside terraform apply.
+			if !awsAmbientCredentials() {
+				return fmt.Errorf("no AWS credentials found in the environment: set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or AWS_PROFILE, or configure ~/.aws/credentials")
+			}
+			return nil
+		}
 		if len(token) < 16 {
 			return fmt.Errorf("Access Key ID looks too short")
 		}

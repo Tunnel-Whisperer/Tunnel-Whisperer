@@ -95,3 +95,39 @@ func TestInstallScriptRerunSafe(t *testing.T) {
 		t.Error("gpg --dearmor must carry --yes so an existing keyring never aborts the run")
 	}
 }
+
+// TestAWSTemplateRegionContract: three couplings the AWS template must keep.
+// (1) GetRelayStatus detects the provider by grepping the rendered main.tf
+// for `provider "aws"` — without it, destroy flows stop prompting for AWS
+// credentials. (2) ops.ProvisionRelay writes the chosen region into
+// terraform.tfvars, so `variable "region"` must stay declared or the value is
+// silently discarded. (3) The region default must be empty with a null
+// fallback in the provider block, so ambient-credential deploys inherit the
+// environment's region while an explicit choice still wins.
+func TestAWSTemplateRegionContract(t *testing.T) {
+	dir := t.TempDir()
+	if err := Generate(dir, Config{
+		Domain: "relay.example", UUID: "u-1", XrayPath: "/tw/x", SSHUser: "tw",
+		PublicKey: "ssh-ed25519 AAAA admin@tw", ServerID: "adm-1", Provider: "aws",
+		CACertB64: "Zm9v", CaddyfileB64: "Zm9v", XrayConfigB64: "Zm9v",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "main.tf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tf := strings.Join(strings.Fields(string(data)), " ")
+	if !strings.Contains(tf, `provider "aws"`) {
+		t.Error(`main.tf must contain a provider "aws" block — GetRelayStatus greps for it to detect the provider`)
+	}
+	if !strings.Contains(tf, `variable "region"`) {
+		t.Error(`main.tf must declare variable "region" — ops writes it into terraform.tfvars`)
+	}
+	if !strings.Contains(tf, `variable "region" { default = "" }`) {
+		t.Error(`variable "region" must default to empty so ambient deploys inherit the environment's region`)
+	}
+	if !strings.Contains(tf, `region = var.region != "" ? var.region : null`) {
+		t.Error(`provider "aws" must fall back to null region when none is chosen`)
+	}
+}

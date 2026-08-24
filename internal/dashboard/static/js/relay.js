@@ -170,6 +170,7 @@ function buildCredFields(provider) {
 
   if (provider.name === 'AWS') {
     fields.innerHTML = `
+      <p class="text-dim mb-16">Leave both blank to use the AWS credentials from the environment of the machine running tw.</p>
       <div class="form-group">
         <label>AWS Access Key ID</label>
         <input type="text" id="cred-token">
@@ -317,6 +318,20 @@ function hideDestroyPrompt() {
 }
 
 async function destroyRelay() {
+  // Both AWS fields or neither: a half-filled pair must not silently fall
+  // back to the ambient credentials of the machine running tw.
+  const keyVal = $('#destroy-aws-key') ? $('#destroy-aws-key').value.trim() : '';
+  const secretVal = $('#destroy-aws-secret') ? $('#destroy-aws-secret').value.trim() : '';
+  const credsErr = $('#destroy-creds-error');
+  if ((keyVal === '') !== (secretVal === '')) {
+    if (credsErr) {
+      credsErr.textContent = 'Provide both AWS Access Key ID and Secret Access Key, or leave both blank to use the AWS credentials from the environment.';
+      credsErr.classList.remove('hidden');
+    }
+    return;
+  }
+  if (credsErr) credsErr.classList.add('hidden');
+
   const btn = $('#btn-destroy-confirm') || $('#btn-destroy');
   if (btn) btn.disabled = true;
   relayOpInProgress = true;

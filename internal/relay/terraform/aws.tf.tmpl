@@ -8,8 +8,11 @@ terraform {
   }
 }
 
+# Blank inherits the region from the ambient AWS config (env vars, profile,
+# SSO); tw pins it via terraform.tfvars when a region was chosen or explicit
+# access keys were entered.
 variable "region" {
-  default = "us-east-1"
+  default = ""
 }
 
 variable "instance_type" {
@@ -17,7 +20,7 @@ variable "instance_type" {
 }
 
 provider "aws" {
-  region = var.region
+  region = var.region != "" ? var.region : null
 }
 
 data "aws_ami" "ubuntu" {

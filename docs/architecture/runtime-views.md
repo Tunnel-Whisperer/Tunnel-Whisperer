@@ -42,7 +42,7 @@ For a **manual** relay, `GenerateManualInstallScript()` renders the same materia
 Credentials are stored as:
 
 - Hetzner/DO: `terraform.tfvars` in the relay directory (e.g. `hcloud_token = "..."`)
-- AWS: passed via `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` environment variables to `terraform` commands
+- AWS: passed via `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` environment variables to `terraform` commands. Left blank, nothing is exported and terraform (which inherits `os.Environ()`) resolves the AWS credentials already in the environment (profiles, SSO, instance roles).
 
 The cloud-init / install script on the relay:
 
