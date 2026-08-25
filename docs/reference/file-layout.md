@@ -20,6 +20,14 @@ state under a single platform-specific directory.
 | `id_ed25519` / `id_ed25519.pub` | The profile's ed25519 SSH identity key pair, generated on first initialization. Server: authenticates the reverse tunnel to the relay. Relay: the admin management key. Client: the per-user key received in the bundle. Also the signing/identity key for `mode_auth`. |
 | `contexts.yaml` | Plaintext context index: the active context name plus non-secret metadata (role, relay, user, short ID, created) per stored context |
 | `contexts/<name>.twctx` | Sealed bundle of each **non-active** stored context (the active context lives unpacked in the config dir itself and is sealed on switch-away) |
+| `tw.log` | Plain-text log file, written when running as a Windows service (elsewhere logs go to the console) |
+
+The `contexts/`, `users/`, and `servers/` subdirectories are created (and
+write-probed) in **every** mode, even where a role never populates them.
+Two transient artifacts may also appear briefly: `.tw-write-probe` (a
+write-permission probe file, created and removed in the config dir and its
+subdirectories before irreversible actions) and `.profile-staging-*/`
+(a temporary staging directory used during context import/switch).
 
 ## Server file tree
 
@@ -78,6 +86,9 @@ For a **cloud (Terraform) relay**, created by `tw relay create`:
 | `cloud-init.yaml` | Cloud-init user data that installs Caddy + Xray and configures SSH |
 | `terraform.tfvars` | Input variables (provider credentials/region), written `0600` |
 | `terraform.tfstate` | Terraform state tracking the provisioned resources — its presence marks the relay as cloud-provisioned |
+| `terraform.tfstate.backup` | Terraform's automatic backup of the previous state |
+| `.terraform/` | Terraform working directory: downloaded provider plugins (can be large) |
+| `.terraform.lock.hcl` | Terraform provider dependency lock file |
 | `relay-meta.json` | Relay metadata (`ssh_open`, name) |
 
 For a **manual (bring-your-own-VM) relay** there is no Terraform state; the
@@ -85,7 +96,7 @@ marker is:
 
 | File | Description |
 |---|---|
-| `manual-relay.json` | Manual relay marker: domain, IP, `ssh_open` |
+| `manual-relay.json` | Manual relay marker: domain, IP, `created_at`, `ssh_open` |
 
 The generated install script itself (`tw-install-<domain>.sh`) is written to
 the directory where you ran `tw relay create`, not the config dir.
@@ -105,6 +116,7 @@ which unpacks into the config directory:
 ├── contexts.yaml / contexts/
 ├── id_ed25519               # This user's SSH private key (from the bundle)
 ├── id_ed25519.pub
+├── authorized_keys          # Seeded with the profile's own key on init (unused in client mode)
 ├── client.crt               # Per-server client certificate (from the bundle) for relay mTLS
 └── client.key               # Private key for client.crt
 ```
@@ -125,6 +137,19 @@ files sealed in the `TWBOX1` container format, **with no passphrase**:
 | Bundle | Produced by | Contents |
 |---|---|---|
 | `tw_<name>.twctx` | `tw config export` (and automatically at the end of `tw relay create`) | The full profile of the exported context |
+| `tw_rescue_<name>.twctx` | `tw join`, when a granted context can't be stored (e.g. unwritable config dir) | The received profile, written to the current directory (or the system temp dir) so the one-time invite isn't lost — recover with `tw config import` |
+
+A sealed context contains `config.yaml`, the identity key pair
+(`id_ed25519`/`id_ed25519.pub`), the certificates (`ca.crt`, `ca.key`,
+`client.crt`, `client.key`), and the `relay/`, `users/`, and `servers/`
+directories — whichever of those exist for the profile.
+
+!!! note "Not part of a context"
+    `authorized_keys` and `ssh_host_ed25519_key` are **not** sealed into
+    bundles and are not cleared on context switch — they persist in the
+    config dir across switches. In practice only server mode uses them, and
+    a server machine rarely switches contexts; but if you repurpose a
+    machine, remove them along with the rest of the config dir.
 
 Client identities are no longer packaged as a separate per-user bundle type —
 `tw server user invite` / `tw join` deliver them directly over an

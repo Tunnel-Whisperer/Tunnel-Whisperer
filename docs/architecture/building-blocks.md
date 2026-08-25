@@ -168,7 +168,7 @@ tw/
 │   │   ├── status.go                   # tw status (+ per-role status)
 │   │   ├── config.go                   # tw config *-context / import / export / view
 │   │   ├── dashboard.go                # tw dashboard
-│   │   ├── proxy.go                    # tw proxy show/set/clear
+│   │   ├── proxy.go                    # tw proxy (show) / set / clear
 │   │   ├── service.go                  # tw service install/uninstall/start/stop
 │   │   ├── completion.go               # shell completion
 │   │   └── coverage_test.go            # fails the build unless e2e/coverage.yaml maps every command
@@ -261,7 +261,7 @@ tw/
 ├── proto/                              # gRPC protobuf definitions (documentation only — wire format is JSON)
 │   └── api/v1/
 │       └── service.proto
-├── e2e/                                # full-product e2e suite (Docker Compose, 16 scenarios, `make e2e`)
+├── e2e/                                # full-product e2e suite (Docker Compose, 19 scenarios, `make e2e`)
 │   ├── docker-compose.yaml             # relay (systemd) + admin/server/server2/client containers
 │   ├── e2e_test.go                     # scenario runner (dependency order)
 │   └── coverage.yaml                   # command → scenario map enforced by cli/coverage_test.go

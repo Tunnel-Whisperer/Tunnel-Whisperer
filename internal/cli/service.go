@@ -11,7 +11,7 @@ import (
 
 var serviceCmd = &cobra.Command{
 	Use:   "service",
-	Short: "Manage system service (Linux systemd / Windows SCM)",
+	Short: "Manage system service (Linux systemd / Windows SCM / macOS launchd)",
 }
 
 var serviceInstallCmd = &cobra.Command{

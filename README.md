@@ -95,8 +95,8 @@ The smallest setup — one relay, one server, one client:
 flowchart TD
     S1["Admin provisions the relay"]
     S2["Server joins, admin enrolls it"]
-    S3["Server creates the client user and exports a bundle"]
-    S4["Client imports the bundle and connects"]
+    S3["Server invites the client user with a one-time code"]
+    S4["Client redeems the code with tw join and connects"]
     S1 --> S2 --> S3 --> S4
 ```
 
@@ -109,10 +109,10 @@ tw relay test                          # DNS → HTTPS/mTLS → SSH-over-tunnel
 
 # ── server: join the relay (admin runs `tw relay invite`, reads you the code) ──
 tw join relay.example.com <code>       # SAS spoken check on both sides
-tw server start                        # or: sudo tw service install && sudo tw service start
 
 # ── server: grant the client access to its SSH (port 22 → client's local 2201) ──
 tw server user invite alice -m 2201:22 # mints a one-time code; read it to alice
+tw server start                        # or: sudo tw service install && sudo tw service start
 
 # ── client: redeem the invite and connect ──
 tw join relay.example.com <code>       # keys are born locally; context stored ready-to-run
@@ -120,7 +120,7 @@ tw client connect
 ssh -p 2201 user@127.0.0.1             # you are on the server, through the relay
 ```
 
-> **Scaling out?** The relay is multi-tenant, and enrollment is live — adding a server never restarts the relay or interrupts the others. The [Multi-Server Walkthrough](https://tunnel-whisperer.github.io/Tunnel-Whisperer/guides/multi-server-walkthrough/) covers 1 relay, 2 servers, 2 clients across five machines — with step-by-step videos, how one client reaches *both* servers by switching kubectl-style contexts (`tw config use-context`), and the gotchas (modes are permanent per machine, bundles are unprotected, re-export after editing mappings). The whole thing, recorded live in a real topology (~3 min, silent):
+> **Scaling out?** The relay is multi-tenant, and enrollment is live — adding a server never restarts the relay or interrupts the others. The [Multi-Server Walkthrough](https://tunnel-whisperer.github.io/Tunnel-Whisperer/guides/multi-server-walkthrough/) covers 1 relay, 2 servers, 2 clients across five machines — with step-by-step videos, how one client reaches *both* servers by switching kubectl-style contexts (`tw config use-context`), and the gotchas (modes are permanent per machine, port mappings are fixed at enrollment — delete + re-invite to change them, invite codes are single-use and short-lived). The whole thing, recorded live in a real topology (~3 min, silent):
 
 [![Multi-server walkthrough recording](docs/assets/multi-server-walkthrough.gif)](https://tunnel-whisperer.github.io/Tunnel-Whisperer/guides/multi-server-walkthrough/)
 
@@ -143,10 +143,10 @@ Structured by role — with dynamic tab completion for contexts, users, and serv
 | **Server** | |
 | `tw join <relay-host> <code>` | Redeem an admin's invite — becomes a server or client per the issuer's grant |
 | `tw server start` / `test` / `status` | Run the daemon (SSH server, tunnel, gRPC API, dashboard) |
-| `tw server user invite/apply/list/edit/delete/unregister` | Per-user port grants; revocation is live, no restart |
+| `tw server user invite/apply/list/single-session/delete/unregister` | Per-user port grants; revocation is live, no restart |
 | `tw server app list/create/edit/delete` | Reusable port-mapping templates |
 | **Client** | |
-| `tw client connect` / `listen` / `test` / `status` | Open the tunnel and local ports from the imported bundle |
+| `tw client connect` / `listen` / `set-port` / `test` / `status` | Open the tunnel and the local ports granted at enrollment |
 | **Global** | |
 | `tw status` | Unified status: active context, mode, live state (any role) |
 | `tw config get-contexts / use-context <name\|id> / import / export ...` | kubectl-style contexts: many relays/identities per machine |

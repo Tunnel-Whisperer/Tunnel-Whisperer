@@ -150,7 +150,7 @@ The version is used in:
 | `make run` | Build + execute `./bin/tw` | Build and run |
 | `make clean` | `rm -rf bin/` | Remove build artifacts |
 | `make proto` | `protoc --go_out=... --go-grpc_out=...` | Regenerate gRPC stubs from `.proto` (rarely needed — wire format is JSON) |
-| `make e2e` | Build + `docker compose up` + `go test -tags e2e` | Full-product e2e suite (16 scenarios); `E2E_KEEP=1` leaves the topology up |
+| `make e2e` | Build + `docker compose up` + `go test -tags e2e` | Full-product e2e suite (19 scenarios); `E2E_KEEP=1` leaves the topology up |
 | `make e2e-up` / `e2e-down` | | Start / tear down the e2e Docker Compose topology |
 
 ---

@@ -92,6 +92,17 @@ port — persistently with `tw client set-port 15432 4000`, or for one run
 with `tw client connect --map 4000:15432`. See
 [Local Port Conflicts & Overrides](../client/connect.md#local-port-conflicts-overrides).
 
+### `tw join` Couldn't Store the Context
+
+If a join succeeds (the issuer approved the SAS) but the granted context
+can't be stored — typically an unwritable config dir — the invite code is
+already burned. `tw join` saves the received profile as
+`tw_rescue_<name>.twctx` in the current directory (or the system temp dir)
+so nothing is lost.
+
+**Fix:** resolve the storage problem (permissions, disk space), then run
+`tw config import tw_rescue_<name>.twctx --activate`. No new invite needed.
+
 ### Mode Enforcement Errors
 
 ```

@@ -177,8 +177,8 @@ mode_auth:
 | `relay_host` | string | _(empty)_ | Relay server domain or IP address. |
 | `relay_port` | int | `443` | HTTPS port on the relay. |
 | `path` | string | `/tw` | XHTTP path for the Xray transport. Becomes `/tw/<server-id>` once a relay is provisioned/joined. |
-| `client_cert_path` | string | _(empty)_ | Path to the X.509 client certificate (PEM) presented to the relay's mutual-TLS gate. Auto-derived at runtime from `<config-dir>/client.crt` when present; rarely set by hand. See [Relay Authentication](../security/relay-authentication.md). |
-| `client_key_path` | string | _(empty)_ | Path to the private key (PEM) for `client_cert_path`. Auto-derived from `<config-dir>/client.key`. |
+| `client_cert_path` | string | _(empty)_ | Path to the X.509 client certificate (PEM) presented to the relay's mutual-TLS gate. Auto-derived at runtime from `<config-dir>/client.crt` when present; rarely set by hand. An explicit relative path is resolved against the config dir. See [Relay Authentication](../security/relay-authentication.md). |
+| `client_key_path` | string | _(empty)_ | Path to the private key (PEM) for `client_cert_path`. Auto-derived from `<config-dir>/client.key`; relative paths resolve against the config dir. |
 
 ### `server` section
 
@@ -186,7 +186,7 @@ mode_auth:
 |---|---|---|---|
 | `ssh_port` | int | `2222` | Local SSH server listen port. |
 | `api_port` | int | `50051` | gRPC API listen port. Read in every mode to locate a running daemon. |
-| `dashboard_port` | int | `8080` | Web dashboard listen port. Set to `0` to disable. |
+| `dashboard_port` | int | `8080` | Web dashboard listen port. Setting it to `0` (by editing the file — the CLI and API ignore a `0`) disables the dashboard for `tw server start`; `tw dashboard` always needs a real port. |
 | `dashboard_listen` | string | `127.0.0.1` | Interface the web dashboard binds to. Default `127.0.0.1` (loopback only). Set to `0.0.0.0` to expose on all interfaces — the dashboard is unauthenticated, so only on a trusted network. Also settable per run with `tw dashboard --listen`. |
 | `relay_ssh_port` | int | `22` | SSH port on the relay for the reverse tunnel. |
 | `relay_ssh_user` | string | `ubuntu` | SSH user on the relay server. |
@@ -236,6 +236,28 @@ Analytics works in both server and client modes. In server mode, stats are track
 | `local_port` | int | Port to listen on locally (client machine). |
 | `remote_host` | string | Target host on the server side (usually `127.0.0.1`). |
 | `remote_port` | int | Target port on the server side. |
+
+## `contexts.yaml` (context index)
+
+Alongside `config.yaml`, the config dir holds `contexts.yaml` — the plaintext
+index of stored contexts (see [File Layout](file-layout.md)). It is managed
+entirely by the `tw config` context commands and holds no secrets:
+
+```yaml
+current-context: hetzner-relay
+contexts:
+  hetzner-relay:
+    role: relay          # relay | server | client
+    relay: relay.example.com
+    id: 3f2a9c1b         # short ID of the profile's xray.uuid
+    created: "2026-07-01T10:00:00Z"
+  alice:
+    role: client
+    relay: relay.example.com
+    user: alice          # client contexts only: client.ssh_user
+    id: 9b1e4d02
+    created: "2026-07-02T09:30:00Z"
+```
 
 ## Editing the config
 

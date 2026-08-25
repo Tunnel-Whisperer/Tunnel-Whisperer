@@ -206,6 +206,13 @@ For the client role, port conflicts on this machine are checked during the
 join itself — if a granted local port is busy, you're prompted for a
 replacement before the context is stored.
 
+!!! note "Rescue bundle"
+    If the grant arrives but the context can't be stored (for example the
+    config directory isn't writable), `tw join` writes the received profile
+    as `tw_rescue_<name>.twctx` in the current directory (falling back to
+    the system temp directory) so the one-time invite isn't lost. Recover it
+    with `tw config import tw_rescue_<name>.twctx --activate`.
+
 ## `tw config` (contexts)
 
 Contexts are kubectl-style stored profiles — each one a complete relay/server/
@@ -307,8 +314,8 @@ relay's `authorized_keys` and the mTLS trust chain (see
 ## Running as a Service
 
 Tunnel Whisperer can run as a system service on Linux (systemd), Windows (SCM), and macOS (launchd). The
-service runs `tw dashboard`, which auto-starts the server or client based on
-the config mode.
+service runs `tw dashboard` (with the internal `--run-as-service` flag), which
+auto-starts the server or client based on the config mode.
 
 === "Linux (systemd)"
 
@@ -328,6 +335,15 @@ the config mode.
     tw.exe service uninstall  # removes the service
     ```
 
+=== "macOS (launchd)"
+
+    ```bash
+    sudo tw service install    # writes /Library/LaunchDaemons/com.tunnelwhisperer.tw.plist
+    sudo tw service start      # launchctl load
+    sudo tw service stop       # launchctl unload
+    sudo tw service uninstall  # unloads and removes the plist
+    ```
+
 ## Shell completion
 
 `tw completion` generates a **zsh** completion script:
@@ -345,7 +361,7 @@ tw completion > "${fpath[1]}/_tw"
 
 Completion is **dynamic** for arguments that name local state — context names
 and IDs (`tw config use-context/delete-context/export/rename-context`), user
-names (`tw server user delete/unregister/apply`), enrolled server IDs
+names (`tw server user delete/unregister/apply/single-session`), enrolled server IDs
 (`tw relay un-enroll-server`), and app template names (`tw server app
 edit/delete`). Candidates come with descriptions (role, relay, port count,
 applied state) and are read purely from local files — completion never dials

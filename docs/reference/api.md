@@ -138,9 +138,15 @@ collector is created or destroyed on the fly.
 | `POST` | `/api/client/stop` | Stop the client |
 | `POST` | `/api/client/reconnect` | Disconnect and reconnect the client |
 | `POST` | `/api/client/upload` | Upload a client context bundle (`.twctx`) to configure the client |
+| `POST` | `/api/client/port-override` | Set or clear a tunnel's local port override, keyed by server port (client mode only; the HTTP counterpart of `tw client set-port`) |
 
 **Upload:** `POST /api/client/upload` expects a `multipart/form-data` body
 with the bundle in a `config` file field (10 MB max).
+
+**Port override:** `POST /api/client/port-override` takes a JSON body
+`{"server_port": <int>, "local_port": <int>}`, or
+`{"server_port": <int>, "clear": true}` to remove an override. Takes effect
+on next reconnect.
 
 ### Relay management
 
