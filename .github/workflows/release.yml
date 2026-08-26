@@ -26,9 +26,14 @@ jobs:
         run: |
           GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X github.com/tunnelwhisperer/tw/internal/version.Version=${{ github.ref_name }}" -o tw ./cmd/tw
 
+      # The Windows binary is deliberately NOT stripped (-s -w): stripped,
+      # unsigned Go binaries score worse in Defender's ML heuristics, and the
+      # go-winres syso embeds a version-info resource + manifest for the same
+      # reason.
       - name: Build Windows binary
         run: |
-          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X github.com/tunnelwhisperer/tw/internal/version.Version=${{ github.ref_name }}" -o tw.exe ./cmd/tw
+          go tool go-winres make --in cmd/tw/winres/winres.json --out cmd/tw/rsrc --arch amd64 --file-version "${{ github.ref_name }}" --product-version "${{ github.ref_name }}"
+          GOOS=windows GOARCH=amd64 go build -ldflags="-X github.com/tunnelwhisperer/tw/internal/version.Version=${{ github.ref_name }}" -o tw.exe ./cmd/tw
 
       - name: Build macOS binary
         run: |
@@ -68,6 +73,52 @@ jobs:
           } > CHANGELOG.md
 
           cat CHANGELOG.md
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          path: |
+            tw
+            tw.exe
+            tw-darwin
+            CHANGELOG.md
+          if-no-files-found: error
+
+  # Gate the release on a real Windows Defender scan so a build that trips
+  # Defender's heuristics never ships to users.
+  defender-scan:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-files
+
+      - name: Update Defender signatures
+        shell: pwsh
+        run: |
+          & "$env:ProgramFiles\Windows Defender\MpCmdRun.exe" -SignatureUpdate
+          if ($LASTEXITCODE -ne 0) { Write-Warning "Signature update failed (exit $LASTEXITCODE); scanning with preinstalled signatures." }
+
+      - name: Scan tw.exe with Windows Defender
+        shell: pwsh
+        run: |
+          & "$env:ProgramFiles\Windows Defender\MpCmdRun.exe" -Scan -ScanType 3 -File "$PWD\tw.exe" -DisableRemediation
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Windows Defender flagged tw.exe (MpCmdRun exit $LASTEXITCODE). Not releasing."
+            exit 1
+          }
+
+  release:
+    needs: [build, defender-scan]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-files
 
       - name: Create release
         uses: softprops/action-gh-release@v2

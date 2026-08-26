@@ -9,7 +9,7 @@ LDFLAGS := -X github.com/tunnelwhisperer/tw/internal/version.Version=$(VERSION)
 # once the system go is >= the go.mod toolchain directive.
 export GOTOOLCHAIN := auto
 
-.PHONY: build build-linux build-windows build-darwin build-all run clean proto e2e e2e-up e2e-down
+.PHONY: build build-linux build-windows build-darwin build-all winres run clean proto e2e e2e-up e2e-down
 
 build:
 	@mkdir -p $(BIN_DIR)
@@ -19,9 +19,14 @@ build-linux:
 	@mkdir -p $(BIN_DIR)
 	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) $(CMD)
 
-build-windows:
+build-windows: winres
 	@mkdir -p $(BIN_DIR)
 	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY).exe $(CMD)
+
+# Embed a version-info resource + manifest into the Windows binary. An anonymous
+# PE (no metadata, no manifest) scores far worse in Defender's ML heuristics.
+winres:
+	go tool go-winres make --in $(CMD)/winres/winres.json --out $(CMD)/rsrc --arch amd64 --file-version "$(VERSION)" --product-version "$(VERSION)"
 
 build-darwin:
 	@mkdir -p $(BIN_DIR)

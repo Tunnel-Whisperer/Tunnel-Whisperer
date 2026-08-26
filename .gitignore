@@ -9,3 +9,4 @@ CLAUDE.md
 .vscode/
 e2e/e2e-report.md
 e2e/video/out/
+cmd/tw/rsrc_windows_*.syso
