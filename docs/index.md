@@ -6,6 +6,26 @@ Tunnel Whisperer creates **port-to-port bridges** across separated private netwo
 
 ---
 
+## Why it's different
+
+Two design choices set Tunnel Whisperer apart from mesh VPNs like **Tailscale**, **NetBird**, and the rest:
+
+- **Your users' identities never leave your server.** Authorization lives entirely in the on-prem server's `authorized_keys` — SSH public keys with per-user `permitopen` rules, re-read on every connection. No cloud or third-party control plane ever brokers or stores who your users are. The relay is a blind forwarder: it holds no credentials, no CA signing keys, and never sees plaintext.
+- **You grant ports, not networks.** A user is allowed exactly the `host:port` targets you specify — nothing else. There is no virtual network and no routable overlay: a granted user reaches only the services you opened, never the network they sit on. No subnet exposure, no lateral movement.
+
+| | **Tunnel Whisperer** | **Tailscale** | **NetBird** |
+| :--- | :--- | :--- | :--- |
+| Where user identity & authz live | **Only on your server** (`authorized_keys`) — no external control plane | Coordination plane (SaaS; self-host via Headscale) | Management plane (SaaS or self-hosted) |
+| Unit of access granted | **A specific `host:port`** | A device on the overlay, ACL-scoped (can include ports) | Peers/networks, policy-scoped |
+| Creates a routable overlay network? | **No** — port forwards only | Yes (WireGuard mesh) | Yes (WireGuard mesh) |
+| Default reachability | **Only the exact ports you allow** | Tailnet devices per ACL | Peers/networks per policy |
+| Relay/infra holds keys or sees traffic? | **No** — no creds, no CA signing keys, end-to-end SSH | Coordination plane holds node keys + ACLs; DERP relays carry encrypted WireGuard | Management/signal plane holds config |
+| Transport | HTTPS (TLS 1.3 + VLESS/XHTTP) — survives DPI on `:443` | WireGuard (UDP; TCP fallback via DERP) | WireGuard (UDP; relays) |
+
+Mesh VPNs are excellent at building a private network you join. Tunnel Whisperer is for the opposite need: exposing **one service on one port to one person**, across hostile networks — without a network overlay, and without handing your user directory to anyone. This on-prem, port-scoped model is detailed in [Access Control](security/access-control.md).
+
+---
+
 ## How It Works
 
 ```
