@@ -1,6 +1,14 @@
 // Package cryptobox seals and opens byte blobs with a passphrase, using
 // argon2id for key derivation and AES-256-GCM for authenticated encryption.
-// It is used to password-protect the admin bundle. Output layout:
+//
+// NOTE ON CONFIDENTIALITY: tw deliberately ships passphrase-less — every caller
+// seals with the empty passphrase. With an empty passphrase the argon2id key is
+// derived from the (in-band) salt alone, so the AES-256-GCM layer provides
+// framing and INTEGRITY but NOT confidentiality: a bundle can be opened by
+// anyone who holds the file. Identity bundles (which carry the CA signing key,
+// SSH host key, and client keys) are therefore protected only by 0600 file
+// permissions and by being transferred over a trusted channel — never treat a
+// .twctx blob as safe-at-rest encryption. Output layout:
 //
 //	magic("TWBOX1") | salt(16) | nonce(12) | AES-256-GCM ciphertext
 package cryptobox

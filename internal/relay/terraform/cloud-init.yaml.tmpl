@@ -48,6 +48,19 @@ write_files:
 {{end}}      PasswordAuthentication no
       ClientAliveInterval 60
       ClientAliveCountMax 5
+{{if .HostKeyB64}}
+  # tw-managed SSH host key: the relay presents a key the admin already holds,
+  # so the direct (port-22) management channel can be host-key-pinned instead
+  # of trusting on first use. `systemctl restart ssh` below loads it.
+  - path: /etc/ssh/ssh_host_ed25519_key
+    permissions: "0600"
+    encoding: b64
+    content: {{.HostKeyB64}}
+
+  - path: /etc/ssh/ssh_host_ed25519_key.pub
+    permissions: "0644"
+    content: '{{.HostKeyPub}}'
+{{end}}
 {{if .CaddyCertsB64}}
   - path: /tmp/caddy-certs.tar.gz
     permissions: "0600"
@@ -65,8 +78,12 @@ runcmd:
   - cp /tmp/Caddyfile.tw /etc/caddy/Caddyfile
   - rm -f /tmp/Caddyfile.tw
 
-  # Install Xray (pinned version for reproducibility)
-  - bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --version {{.XrayVersion}}
+  # Install Xray (pinned version). Download the installer to a file with
+  # `curl -fsSL` (so an HTTP error page can never be piped into a root shell)
+  # and run it as `bash <file>` rather than piping the fetch into a shell.
+  - curl -fsSL --retry 3 --retry-delay 10 -o /tmp/xray-install-release.sh https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh
+  - bash /tmp/xray-install-release.sh install --version {{.XrayVersion}}
+  - rm -f /tmp/xray-install-release.sh
 
   # Firewall
   - ufw default deny incoming

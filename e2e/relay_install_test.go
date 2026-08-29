@@ -135,14 +135,15 @@ func testRelayInstall(t *testing.T) {
 
 	// Close SSH via the dashboard API (its only exposure; async — poll for
 	// the closed state). Posture returns to tunnel-only for later scenarios.
+	execIn(t, "admin", "tw dashboard token >/dev/null")
 	killMatching(t, "admin", "tw dashboard")
 	execDetached(t, "admin", "tw dashboard > /shared/dash-close.log 2>&1")
 	defer killMatching(t, "admin", "tw dashboard")
 	waitFor(t, "admin dashboard up", 30*time.Second, func() (bool, string) {
-		out, err := execInOK("admin", "curl -sf http://127.0.0.1:8080/api/status")
+		out, err := execInOK("admin", "curl -sf"+bearer+"http://127.0.0.1:8080/api/status")
 		return err == nil, out
 	})
-	execIn(t, "admin", "curl -sf -X POST http://127.0.0.1:8080/api/relay/close-ssh")
+	execIn(t, "admin", "curl -sf"+bearer+"-X POST http://127.0.0.1:8080/api/relay/close-ssh")
 	waitFor(t, "SSH closed and key re-pinned", 60*time.Second, func() (bool, string) {
 		ak, err := execInOK("relay", "cat /home/*/.ssh/authorized_keys")
 		if err != nil || !strings.Contains(ak, `from="127.0.0.1"`) {

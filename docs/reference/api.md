@@ -11,6 +11,14 @@ communication.
 The dashboard HTTP server registers the endpoints listed below. All REST
 endpoints accept and return JSON unless noted otherwise.
 
+!!! note "Authentication required"
+    Every route except `/login`, `/logout`, and `/static/*` requires the
+    dashboard token — either a `SameSite=Strict` session cookie (set at login)
+    or an `Authorization: Bearer <token>` header. `/metrics` is gated too. Fetch
+    the token with `tw dashboard token` (see [Dashboard → Signing in](../global/dashboard.md#signing-in)).
+    Unauthenticated browser requests are redirected to `/login`; unauthenticated
+    API requests get `401`.
+
 ### Read-only
 
 | Method | Path | Description |
@@ -242,11 +250,21 @@ Daemon status is **polled** via `GET /api/status`, not streamed.
 
 ## gRPC API
 
-The gRPC API listens on port **50051** (configurable via `server.api_port`)
-and is used for CLI-to-daemon communication. It starts automatically with
-`tw server start` and `tw dashboard`. When a daemon is running, CLI commands
-like `tw status` and `tw server user list` connect to this API instead of
-reading state directly from disk.
+The gRPC API listens on **`127.0.0.1:50051`** (loopback only; port configurable
+via `server.api_port`) and is used for CLI-to-daemon communication. It starts
+automatically with `tw server start` and `tw dashboard`. When a daemon is
+running, CLI commands like `tw status` and `tw server user list` connect to this
+API instead of reading state directly from disk.
+
+### Authentication
+
+Loopback is not treated as an auth boundary: **every RPC requires a per-daemon
+bearer token**. The daemon generates a 32-byte token into a `0600` file
+(`api.token` in the config directory) on startup; the built-in client reads it
+from the same directory and attaches it as `authorization: Bearer <token>`
+metadata. A caller that cannot read the token file gets `Unauthenticated`, so a
+local process cannot overwrite keys or config, flip mode, delete users, or read
+secrets through the API merely by reaching loopback.
 
 ### JSON codec — the proto is documentation only
 
@@ -257,8 +275,9 @@ involved. The file `proto/api/v1/service.proto` exists as documentation only;
 `make proto` regenerates stubs that are not used on the wire. The service is
 registered as `api.v1.TunnelWhisperer` and every RPC is unary.
 
-Clients must therefore dial with the JSON call option (the built-in client
-does: `grpc.CallContentSubtype("json")`, plaintext, 2-second dial timeout).
+Clients must therefore dial with the JSON call option and attach the bearer
+token (the built-in client does: `grpc.CallContentSubtype("json")`, per-RPC
+token credentials over the plaintext loopback transport, 2-second dial timeout).
 
 !!! note
     The gRPC API is an internal interface. Its message shapes may change

@@ -36,6 +36,7 @@ type ClientGrant struct {
 	Path          string        `json:"path"`
 	SSHUser       string        `json:"ssh_user"`
 	ServerSSHPort int           `json:"server_ssh_port"`
+	ServerHostKey string        `json:"server_host_key,omitempty"` // server SSH host public key (authorized_keys format), pinned by the client
 	Tunnels       []GrantTunnel `json:"tunnels"`
 	ClientCertPEM string        `json:"client_cert_pem"`
 	ModeSig       string        `json:"mode_sig,omitempty"`

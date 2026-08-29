@@ -67,10 +67,15 @@ type ServerConfig struct {
 	SSHPort       int `yaml:"ssh_port"`
 	APIPort       int `yaml:"api_port"`
 	DashboardPort int `yaml:"dashboard_port"`
-	// DashboardListen is the interface the web dashboard binds.
-	// Defaults to 127.0.0.1; set to 0.0.0.0 to expose it (the dashboard is
-	// unauthenticated — only do this on a trusted network).
-	DashboardListen string        `yaml:"dashboard_listen,omitempty"`
+	// DashboardListen is the interface the web dashboard binds. Defaults to
+	// 127.0.0.1. Binding off-loopback serves the login token and session cookie
+	// over cleartext HTTP, so it is refused unless DashboardAllowLAN is set (and
+	// even then only behind a TLS terminator on a trusted network).
+	DashboardListen string `yaml:"dashboard_listen,omitempty"`
+	// DashboardAllowLAN must be set to true to permit an off-loopback
+	// DashboardListen. It is the explicit acknowledgement that the dashboard's
+	// bearer token/cookie travel in cleartext unless fronted by TLS.
+	DashboardAllowLAN bool          `yaml:"dashboard_allow_lan,omitempty"`
 	RelaySSHPort    int           `yaml:"relay_ssh_port"`
 	RelaySSHUser    string        `yaml:"relay_ssh_user"`
 	RemotePort      int           `yaml:"remote_port"`
@@ -95,6 +100,10 @@ type Application struct {
 type ClientConfig struct {
 	SSHUser       string `yaml:"ssh_user"`
 	ServerSSHPort int    `yaml:"server_ssh_port"`
+	// ServerHostKey is the server's SSH host public key (authorized_keys
+	// format), pinned when the forward tunnel connects so a compromised relay
+	// cannot MITM the end-to-end SSH session. Delivered by enrollment.
+	ServerHostKey string `yaml:"server_host_key,omitempty"`
 	XrayPort      int    `yaml:"xray_port,omitempty"`
 	// ListenAddress is the local interface forwarded tunnels bind to.
 	// Defaults to 127.0.0.1; set to 0.0.0.0 to expose tunnels (e.g. in containers).
@@ -228,6 +237,21 @@ func AuthorizedKeysPath() string {
 	return filepath.Join(Dir(), "authorized_keys")
 }
 
+// DashboardTokenPath is the file holding the dashboard login token. Kept in its
+// own 0600 file rather than config.yaml so it is not exposed by the
+// world-readable config.
+func DashboardTokenPath() string {
+	return filepath.Join(Dir(), "dashboard.token")
+}
+
+// APITokenPath is the file holding the local gRPC control-plane token. Kept in
+// its own 0600 file (like the dashboard token) so a local process cannot invoke
+// the daemon's privileged RPCs — key/config overwrite, mode flip, user
+// deletion, secret reads — merely by reaching loopback.
+func APITokenPath() string {
+	return filepath.Join(Dir(), "api.token")
+}
+
 // CACertPath is the server's CA certificate (PEM). Shared with the relay.
 func CACertPath() string { return filepath.Join(Dir(), "ca.crt") }
 
@@ -328,8 +352,16 @@ func Save(cfg *Config) error {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
 
-	if err := os.WriteFile(FilePath(), data, 0644); err != nil {
+	// 0600: config.yaml can hold secrets (proxy credentials, the VLESS UUID),
+	// so it must not be world-readable (finding #12).
+	if err := os.WriteFile(FilePath(), data, 0o600); err != nil {
 		return fmt.Errorf("writing config: %w", err)
+	}
+	// os.WriteFile does not tighten the mode of an EXISTING file, so an upgrade
+	// from a version that wrote 0644 would keep the loose bits — chmod to be
+	// sure. (No-op on Windows, where mode bits don't map to ACLs.)
+	if err := os.Chmod(FilePath(), 0o600); err != nil {
+		return fmt.Errorf("tightening config permissions: %w", err)
 	}
 
 	return nil

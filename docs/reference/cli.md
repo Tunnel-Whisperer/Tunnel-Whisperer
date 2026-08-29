@@ -271,11 +271,25 @@ and the gRPC API, then auto-starts the appropriate role:
 | Flag | Description |
 |---|---|
 | `--port <n>` | Dashboard listen port (overrides config). |
-| `--listen <addr>` | Dashboard listen address (default `127.0.0.1`, loopback only; set to `0.0.0.0` to expose on all interfaces). Overrides config. |
+| `--listen <addr>` | Dashboard listen address (default `127.0.0.1`, loopback only). An off-loopback value is **refused** over cleartext HTTP unless `server.dashboard_allow_lan` is set (see [Configuration](configuration.md)). Overrides config. |
 
 The dashboard also starts the gRPC API, so CLI commands like `tw status` and
 `tw server user list` talk to the running daemon instead of reading state
 from disk.
+
+### `tw dashboard token`
+
+The dashboard requires a login token — there is no anonymous access. Print the
+current token to paste into the login page (or send as an
+`Authorization: Bearer` header):
+
+```bash
+tw dashboard token            # print the token
+tw dashboard token --rotate   # generate a new token and invalidate all active sessions
+```
+
+The token is stored in a `0600` file (`dashboard.token`) in the config
+directory. The same token also gates `/metrics`.
 
 ## `tw proxy`
 

@@ -46,10 +46,11 @@ func testPortOverride(t *testing.T) {
 	// tw dashboard auto-connects its in-process client on launch; with the
 	// default port still occupied that auto-connect must fail the bind
 	// preflight (in the dashboard log) while the dashboard keeps serving.
+	execIn(t, "client", "tw dashboard token >/dev/null")
 	execDetached(t, "client", "tw dashboard > /var/log/tw-client-dash.log 2>&1")
 	defer killMatching(t, "client", "tw dashboard")
 	waitFor(t, "client dashboard serving", 60*time.Second, func() (bool, string) {
-		code, err := execInOK("client", "curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/")
+		code, err := execInOK("client", "curl -sS -o /dev/null -w '%{http_code}'"+bearer+"http://127.0.0.1:8080/api/status")
 		if err != nil || !strings.Contains(code, "200") {
 			tail, _ := execInOK("client", "tail -5 /var/log/tw-client-dash.log")
 			return false, tail
@@ -62,11 +63,11 @@ func testPortOverride(t *testing.T) {
 		fatalf(t, "dashboard auto-connect did not hit the bind preflight:\n%s", tail)
 	}
 	dashSet := execIn(t, "client",
-		`curl -sS -X POST -d '{"server_port":`+echoPort+`,"local_port":`+dashPort+`}' http://127.0.0.1:8080/api/client/port-override`)
+		`curl -sS`+bearer+`-X POST -d '{"server_port":`+echoPort+`,"local_port":`+dashPort+`}' http://127.0.0.1:8080/api/client/port-override`)
 	if !strings.Contains(dashSet, `"status":"ok"`) {
 		fatalf(t, "dashboard set-override failed:\n%s", dashSet)
 	}
-	execIn(t, "client", `curl -sS -X POST -d '{}' http://127.0.0.1:8080/api/client/start`)
+	execIn(t, "client", `curl -sS`+bearer+`-X POST -d '{}' http://127.0.0.1:8080/api/client/start`)
 	waitFor(t, "dashboard-set override tunnel listening", 120*time.Second, func() (bool, string) {
 		if _, err := execInOK("client", "nc -z 127.0.0.1 "+dashPort); err != nil {
 			tail, _ := execInOK("client", "tail -5 /var/log/tw-client-dash.log")
@@ -78,9 +79,9 @@ func testPortOverride(t *testing.T) {
 	if strings.TrimSpace(dashEcho) != "hello-dashboard" {
 		fatalf(t, "echo through dashboard-set port mismatch: %q", dashEcho)
 	}
-	execIn(t, "client", `curl -sS -X POST -d '{}' http://127.0.0.1:8080/api/client/stop`)
+	execIn(t, "client", `curl -sS`+bearer+`-X POST -d '{}' http://127.0.0.1:8080/api/client/stop`)
 	dashClear := execIn(t, "client",
-		`curl -sS -X POST -d '{"server_port":`+echoPort+`,"clear":true}' http://127.0.0.1:8080/api/client/port-override`)
+		`curl -sS`+bearer+`-X POST -d '{"server_port":`+echoPort+`,"clear":true}' http://127.0.0.1:8080/api/client/port-override`)
 	if !strings.Contains(dashClear, `"cleared":true`) {
 		fatalf(t, "dashboard clear-override failed:\n%s", dashClear)
 	}

@@ -156,6 +156,15 @@ Removes the server's CA from the relay trust pool, its `authorized_keys` line, a
 
 ---
 
+## Management-Plane Access — the dashboard and control API
+
+Two local management surfaces control the daemon, and both are gated by a bearer token so that reaching the port is not enough to drive them.
+
+- **Web dashboard** — requires a login token (see [Dashboard → Signing in](../global/dashboard.md#signing-in)). Every route except the login page and static assets needs either a `SameSite=Strict`, `HttpOnly` session cookie or an `Authorization: Bearer` header; `/metrics` is gated too. The token lives in a `0600` file; `tw dashboard token --rotate` invalidates all sessions. The dashboard binds loopback by default and **refuses** an off-loopback bind over cleartext unless `server.dashboard_allow_lan` is explicitly set (then only behind a TLS terminator).
+- **gRPC control API** (`tw server start`, `127.0.0.1:50051`) — bound to loopback **and** requires a per-daemon bearer token on every RPC, held in a separate `0600` file (`api.token`). Loopback is not treated as an auth boundary: a local process that cannot read the operator's token file cannot overwrite keys or config, flip mode, delete users, or read secrets through the API. The CLI reads the token from the shared config directory automatically.
+
+---
+
 ## Compliance Properties
 
 Tunnel Whisperer's access control model supports the following compliance-relevant properties:

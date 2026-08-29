@@ -55,6 +55,11 @@ type ForwardTunnel struct {
 	User string
 	// Path to the private key for authentication.
 	KeyPath string
+	// ServerHostKey is the server's SSH host public key in authorized_keys
+	// format. It is pinned to verify the end-to-end SSH session, so a
+	// compromised relay cannot terminate and MITM the tunnel. Empty = refuse
+	// to connect (host-key verification cannot be skipped).
+	ServerHostKey string
 	// Local interface for the per-mapping listeners. Empty = 127.0.0.1.
 	ListenAddr string
 	// Port mappings to forward.
@@ -180,6 +185,21 @@ func (ft *ForwardTunnel) cleanup() {
 	ft.connected = false
 }
 
+// hostKeyCallback pins the server's SSH host key. The forward tunnel is the
+// end-to-end SSH session that keeps the semi-trusted relay from seeing
+// plaintext, so it must never accept an unverified host key: an empty pin is a
+// hard failure rather than a silent downgrade to InsecureIgnoreHostKey.
+func (ft *ForwardTunnel) hostKeyCallback() (gossh.HostKeyCallback, error) {
+	if strings.TrimSpace(ft.ServerHostKey) == "" {
+		return nil, fmt.Errorf("server host key not pinned: refusing to connect without host-key verification (re-enroll this client to pin the server's SSH host key)")
+	}
+	pub, _, _, _, err := gossh.ParseAuthorizedKey([]byte(ft.ServerHostKey))
+	if err != nil {
+		return nil, fmt.Errorf("parsing pinned server host key: %w", err)
+	}
+	return gossh.FixedHostKey(pub), nil
+}
+
 func (ft *ForwardTunnel) connect() error {
 	keyData, err := os.ReadFile(ft.KeyPath)
 	if err != nil {
@@ -191,12 +211,17 @@ func (ft *ForwardTunnel) connect() error {
 		return fmt.Errorf("parsing private key: %w", err)
 	}
 
+	hostKeyCallback, err := ft.hostKeyCallback()
+	if err != nil {
+		return err
+	}
+
 	sshConfig := &gossh.ClientConfig{
 		User: ft.User,
 		Auth: []gossh.AuthMethod{
 			gossh.PublicKeys(signer),
 		},
-		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         10 * time.Second,
 	}
 

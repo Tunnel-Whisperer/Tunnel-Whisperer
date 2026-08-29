@@ -44,7 +44,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		slog.Info("dashboard listening", "addr", dashAddr)
 		dashSrv := dashboard.NewServer(dashAddr, o)
 		go func() {
-			fmt.Printf("Dashboard on http://%s\n", dashAddr)
+			fmt.Printf("Dashboard on http://%s (sign in with: tw dashboard token)\n", dashAddr)
 			if err := dashSrv.Run(); err != nil {
 				fmt.Printf("Dashboard error: %v\n", err)
 			}
@@ -57,7 +57,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	// Start gRPC API server.
-	apiAddr := fmt.Sprintf(":%d", cfg.Server.APIPort)
+	apiAddr := apiListenAddr(cfg.Server.APIPort)
 	apiSrv := api.NewServer(o, apiAddr)
 	go func() {
 		slog.Info("gRPC API listening", "addr", apiAddr)

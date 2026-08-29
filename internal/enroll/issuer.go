@@ -56,7 +56,15 @@ func (h *Handler) handleStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	// Redeem FIRST: any start attempt — right or wrong code — burns the invite.
+	// Redeem FIRST: any well-formed start attempt — right or wrong code — burns
+	// the invite. This is a DELIBERATE tradeoff (finding #9): burning on the
+	// first attempt makes the short PAKE code single-guess, defeating online
+	// brute-force of the code, at the cost of a cheap denial-of-service (a
+	// stranger who reaches the endpoint can burn an unredeemed invite). We
+	// accept the DoS because an invite is short-lived and re-issued in one
+	// command (`tw relay invite` / `tw server user invite`), whereas allowing
+	// repeated guesses would weaken the code's secrecy — the opposite priority.
+	// (A malformed request is rejected above, before this, so it never burns.)
 	if err := h.invite.Redeem(); err != nil {
 		http.Error(w, err.Error(), http.StatusGone)
 		return

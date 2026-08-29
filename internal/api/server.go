@@ -16,7 +16,16 @@ type Server struct {
 }
 
 func NewServer(o *ops.Ops, addr string) *Server {
-	gs := grpc.NewServer()
+	// Require a per-daemon bearer token on every RPC. If the token cannot be
+	// established we still start (with a fresh unmatchable token) so the daemon
+	// runs, but every call is rejected until the token file is readable — we
+	// never fall back to an unauthenticated control plane.
+	token, err := EnsureAPIToken()
+	if err != nil {
+		slog.Error("could not establish API token; control plane will reject all calls", "error", err)
+		token = unmatchableToken() // never leave the token empty (which could weaken the check)
+	}
+	gs := grpc.NewServer(grpc.UnaryInterceptor(authUnaryInterceptor(token)))
 	s := &Server{
 		ops:  o,
 		addr: addr,

@@ -1,6 +1,11 @@
 // ── Bandwidth page — sorting, search, pagination, live polling ───────────────
 
 (function() {
+  // Escape a value before it goes into innerHTML — a username is user-supplied,
+  // so concatenating it raw would allow stored XSS (finding SP-16).
+  const esc = (v) => String(v).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
   const PAGE_SIZE = 10;
   let currentPage = 1;
   let sortCol = 'sent';
@@ -89,7 +94,7 @@
       let html = '';
       page.forEach(s => {
         html += '<tr>' +
-          '<td><a href="/users/' + s.user + '">' + s.user + '</a></td>' +
+          '<td><a href="/users/' + encodeURIComponent(s.user) + '">' + esc(s.user) + '</a></td>' +
           '<td class="text-mono">' + s.port + '</td>' +
           '<td class="text-mono">' + formatBytes(s.bytes_sent) + '</td>' +
           '<td class="text-mono">' + formatBytes(s.bytes_recv) + '</td>' +

@@ -38,7 +38,8 @@
       "protocol": "freedom",
       "settings": {
         "finalRules": [
-          { "action": "allow", "ip": ["127.0.0.1/32"] }
+          { "action": "allow", "ip": ["127.0.0.1/32"] },
+          { "action": "block", "ip": ["0.0.0.0/0", "::/0"] }
         ]
       }
     },

@@ -42,25 +42,37 @@ func TestRenderConfigPerTenant(t *testing.T) {
 	}
 }
 
-// TestRenderConfigFreedomAllowsLoopback: since Xray 26.3–26.6 the freedom
-// outbound blocks loopback/private targets for vless-originated traffic by
-// default (anti-SSRF hardening; symptom: "blocked target: tcp:127.0.0.1:22,
-// blackholing"). The relay's whole job is vless → freedom → 127.0.0.1:<port>,
-// so the freedom outbound must carry an explicit finalRules allow for
-// loopback. Per-tenant port restrictions stay enforced by the routing
-// allow/deny rules; all other private ranges remain blocked by the upstream
-// default. Older xray (≤26.2.x) ignores the unknown finalRules key.
-func TestRenderConfigFreedomAllowsLoopback(t *testing.T) {
+// TestRenderConfigFreedomLoopbackOnly: the relay's whole job is
+// vless → freedom → 127.0.0.1:<port>. Since Xray 26.3–26.6 the freedom outbound
+// blocks loopback/private targets by default (anti-SSRF), so it needs an
+// explicit finalRules allow for loopback. But the upstream default still lets
+// PUBLIC destinations through, which turned the relay into an open outbound
+// proxy for authenticated tenants (finding SP-5). A terminal block after the
+// loopback allow makes freedom default-DENY: only 127.0.0.1 egresses, every
+// other destination (public or private) is blocked. Per-tenant port
+// restrictions stay enforced by the routing allow/deny rules.
+func TestRenderConfigFreedomLoopbackOnly(t *testing.T) {
 	out, err := RenderConfig(Config{Tenants: []Tenant{
 		{ServerID: "web-01-a1b2c3d4", UUID: "11111111-1111-1111-1111-111111111111", RemotePort: 20000},
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Loopback is allowed...
 	for _, want := range []string{`"finalRules"`, `"action": "allow"`, `"127.0.0.1/32"`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("freedom outbound missing loopback allow (%q)\n---\n%s", want, out)
 		}
+	}
+	// ...and everything else is blocked (no open proxy).
+	for _, want := range []string{`"action": "block"`, `"0.0.0.0/0"`, `"::/0"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("freedom outbound missing terminal block (%q) — relay would be an open proxy\n---\n%s", want, out)
+		}
+	}
+	// The allow must precede the block, or the loopback path would be blocked too.
+	if strings.Index(out, `"127.0.0.1/32"`) > strings.Index(out, `"0.0.0.0/0"`) {
+		t.Error("loopback allow must come before the terminal block in finalRules")
 	}
 }
 

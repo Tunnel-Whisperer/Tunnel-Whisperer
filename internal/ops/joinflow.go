@@ -179,6 +179,10 @@ func (o *Ops) applyClientGrant(c *clientMaterial, grant []byte, name string, ui 
 	ccfg.Xray.Path = g.Path
 	ccfg.Client.SSHUser = g.SSHUser
 	ccfg.Client.ServerSSHPort = g.ServerSSHPort
+	ccfg.Client.ServerHostKey = g.ServerHostKey
+	if strings.TrimSpace(g.ServerHostKey) == "" {
+		slog.Warn("issuer grant did not include the server SSH host key; this client will refuse to connect until re-enrolled against a server that supplies it")
+	}
 	for _, gt := range g.Tunnels {
 		t := config.Tunnel{LocalPort: gt.LocalPort, RemoteHost: gt.RemoteHost, RemotePort: gt.RemotePort}
 		// Preflight: the port must be bindable HERE, now — the whole point of

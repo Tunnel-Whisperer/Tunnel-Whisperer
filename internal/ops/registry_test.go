@@ -33,7 +33,7 @@ func TestAddServerRejectsAdminOwnID(t *testing.T) {
 
 	// A normal id is unaffected.
 	if _, err := o.AddServer(&JoinRequest{Version: 1, ServerID: "srv-1", UUID: "u-1",
-		Hostname: "srv", SSHPubkey: "ssh-ed25519 AAAA s@tw"}); err != nil {
+		Hostname: "srv", SSHPubkey: genPubKey(t)}); err != nil {
 		t.Fatalf("normal enroll must still work: %v", err)
 	}
 }
@@ -44,21 +44,21 @@ func TestAddAndListServers(t *testing.T) {
 		t.Fatal(err)
 	}
 	o, _ := New()
-	a, err := o.AddServer(&JoinRequest{Version: 1, ServerID: "a-1", UUID: "ua", CACertPEM: testCAPEM(t), SSHPubkey: "ssh-ed25519 AAAA"})
+	a, err := o.AddServer(&JoinRequest{Version: 1, ServerID: "a-1", UUID: "ua", CACertPEM: testCAPEM(t, "a-1"), SSHPubkey: genPubKey(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if a.RemotePort != 20000 {
 		t.Errorf("first port = %d, want 20000", a.RemotePort)
 	}
-	b, err := o.AddServer(&JoinRequest{Version: 1, ServerID: "b-2", UUID: "ub", CACertPEM: testCAPEM(t), SSHPubkey: "ssh-ed25519 BBBB"})
+	b, err := o.AddServer(&JoinRequest{Version: 1, ServerID: "b-2", UUID: "ub", CACertPEM: testCAPEM(t, "b-2"), SSHPubkey: genPubKey(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if b.RemotePort != 20001 {
 		t.Errorf("second port = %d, want 20001", b.RemotePort)
 	}
-	if _, err := o.AddServer(&JoinRequest{Version: 1, ServerID: "a-1", UUID: "ua2", CACertPEM: testCAPEM(t), SSHPubkey: "ssh-ed25519 CCCC"}); err == nil {
+	if _, err := o.AddServer(&JoinRequest{Version: 1, ServerID: "a-1", UUID: "ua2", CACertPEM: testCAPEM(t, "a-1"), SSHPubkey: genPubKey(t)}); err == nil {
 		t.Error("duplicate server-id should be rejected")
 	}
 	list, _ := o.ListServers()

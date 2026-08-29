@@ -157,3 +157,19 @@ func TestDirAbsolutizesRelativeOverride(t *testing.T) {
 		t.Fatalf("Dir() = %q, want %q", got, want)
 	}
 }
+
+// TestSaveWritesConfig0600 is the #12 regression: config.yaml can hold secrets
+// (proxy credentials, the VLESS UUID), so Save must not write it world-readable.
+func TestSaveWritesConfig0600(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	if err := Save(&Config{Mode: "server"}); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(FilePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0o600 {
+		t.Errorf("config.yaml perms = %o, want 600", perm)
+	}
+}

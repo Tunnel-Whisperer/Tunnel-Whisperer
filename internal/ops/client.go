@@ -147,12 +147,13 @@ func (m *clientManager) Start(o *Ops, progress ProgressFunc, overrides map[int]i
 
 	privPath := filepath.Join(config.Dir(), "id_ed25519")
 	ft := &twssh.ForwardTunnel{
-		RemoteAddr: fmt.Sprintf("127.0.0.1:%d", xrayPort),
-		User:       cfg.Client.SSHUser,
-		KeyPath:    privPath,
-		ListenAddr: cfg.Client.ListenAddress,
-		Mappings:   mappings,
-		Stats:      o.stats,
+		RemoteAddr:    fmt.Sprintf("127.0.0.1:%d", xrayPort),
+		User:          cfg.Client.SSHUser,
+		KeyPath:       privPath,
+		ServerHostKey: cfg.Client.ServerHostKey,
+		ListenAddr:    cfg.Client.ListenAddress,
+		Mappings:      mappings,
+		Stats:         o.stats,
 	}
 	go func() {
 		if err := ft.Run(); err != nil {

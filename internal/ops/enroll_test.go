@@ -10,17 +10,30 @@ import (
 	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
 )
 
+// genPubKey returns a real, canonical ("<type> <base64>", no comment)
+// authorized_keys public key for use as a test fixture.
+func genPubKey(t *testing.T) string {
+	t.Helper()
+	_, pub, err := twssh.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(pub))
+}
+
 // TestRenderRelayAuthorizedKeys is a regression test for the second-tenant
 // enroll bug: key lines were appended without a trailing newline, so the
 // second server's line glued onto the first server's, corrupting both entries
 // and making the relay sshd reject both keys. The file is now fully rewritten
 // from the tenant list, every line newline-terminated.
 func TestRenderRelayAuthorizedKeys(t *testing.T) {
+	admin := genPubKey(t)
+	s1, s2 := genPubKey(t), genPubKey(t)
 	servers := []RegisteredServer{
-		{RemotePort: 20000, SSHPubkey: "ssh-ed25519 AAAAkey1 s1@tw\n"}, // trailing newline must be trimmed
-		{RemotePort: 20001, SSHPubkey: "ssh-ed25519 AAAAkey2 s2@tw"},
+		{RemotePort: 20000, SSHPubkey: s1 + "\n"}, // trailing newline must be trimmed
+		{RemotePort: 20001, SSHPubkey: s2},
 	}
-	out := renderRelayAuthorizedKeys("ssh-ed25519 AAAAadmin admin@tw\n", servers, false)
+	out := renderRelayAuthorizedKeys(admin+"\n", servers, false)
 
 	if !strings.HasSuffix(out, "\n") {
 		t.Error("authorized_keys content must end with a newline")
@@ -29,21 +42,47 @@ func TestRenderRelayAuthorizedKeys(t *testing.T) {
 	if len(lines) != 3 {
 		t.Fatalf("want 3 lines (admin + 2 servers), got %d:\n%s", len(lines), out)
 	}
-	if lines[0] != `from="127.0.0.1" ssh-ed25519 AAAAadmin admin@tw` {
+	if lines[0] != `from="127.0.0.1" `+admin {
 		t.Errorf("admin line = %q", lines[0])
 	}
-	for i, port := range []string{"20000", "20001"} {
+	for i, want := range []struct{ port, key string }{{"20000", s1}, {"20001", s2}} {
 		l := lines[i+1]
-		for _, want := range []string{
+		for _, tok := range []string{
 			`from="127.0.0.1"`, "restrict", "port-forwarding",
-			`permitopen="127.0.0.1:1"`, `permitlisten="127.0.0.1:` + port + `"`,
+			`permitopen="127.0.0.1:1"`, `permitlisten="127.0.0.1:` + want.port + `"`, want.key,
 		} {
-			if !strings.Contains(l, want) {
-				t.Errorf("server line %d missing %q: %q", i+1, want, l)
+			if !strings.Contains(l, tok) {
+				t.Errorf("server line %d missing %q: %q", i+1, tok, l)
 			}
 		}
 		if strings.Contains(l, "\n") {
 			t.Errorf("server line %d contains embedded newline: %q", i+1, l)
+		}
+	}
+}
+
+// TestRenderRelayAuthorizedKeysRejectsInjection is the SP-1/SP-3 regression:
+// a tenant key carrying an embedded newline (plus an unrestricted second line)
+// must NOT produce an extra, option-free authorized_keys line on the relay.
+func TestRenderRelayAuthorizedKeysRejectsInjection(t *testing.T) {
+	admin := genPubKey(t)
+	evil := genPubKey(t)
+	// Attacker offers a valid first key with a smuggled unrestricted line.
+	poisoned := genPubKey(t) + "\n" + evil
+	out := renderRelayAuthorizedKeys(admin, []RegisteredServer{
+		{ServerID: "srv-1", RemotePort: 20000, SSHPubkey: poisoned},
+	}, false)
+
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	// The malformed tenant is dropped (fail-closed): admin line only.
+	if len(lines) != 1 {
+		t.Fatalf("poisoned tenant must be skipped, got %d lines:\n%s", len(lines), out)
+	}
+	// The injected key must appear nowhere — and certainly not on a line
+	// lacking the restriction prefix.
+	for _, l := range lines {
+		if strings.Contains(l, evil) && !strings.Contains(l, "restrict") {
+			t.Fatalf("injected unrestricted key leaked into authorized_keys: %q", l)
 		}
 	}
 }
@@ -56,7 +95,7 @@ func TestEnrollServerSignsServerMode(t *testing.T) {
 	// The join request carries the SERVER's identity pubkey; reuse a fresh key.
 	_, serverPub, _ := twssh.GenerateKeyPair()
 	req := &JoinRequest{Version: 1, ServerID: "srv-1", UUID: "u-srv",
-		Hostname: "srv", RelayHost: "relay.example", CACertPEM: testCAPEM(t),
+		Hostname: "srv", RelayHost: "relay.example", CACertPEM: testCAPEM(t, "srv-1"),
 		SSHPubkey: strings.TrimSpace(string(serverPub))}
 	// Sign only — call the signing helper EnrollServer uses, not the full
 	// SSH flow. If EnrollServer cannot be unit-run without a relay, assert on
@@ -74,15 +113,16 @@ func TestEnrollServerSignsServerMode(t *testing.T) {
 // open port unusable with tw's own key). Tenant lines stay pinned and
 // forward-only regardless.
 func TestRenderRelayAuthorizedKeysSSHOpen(t *testing.T) {
+	admin := genPubKey(t)
 	servers := []RegisteredServer{
-		{RemotePort: 20000, SSHPubkey: "ssh-ed25519 AAAAkey1 s1@tw"},
+		{RemotePort: 20000, SSHPubkey: genPubKey(t)},
 	}
-	out := renderRelayAuthorizedKeys("ssh-ed25519 AAAAadmin admin@tw", servers, true)
+	out := renderRelayAuthorizedKeys(admin, servers, true)
 	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
 	if len(lines) != 2 {
 		t.Fatalf("want 2 lines, got %d:\n%s", len(lines), out)
 	}
-	if lines[0] != "ssh-ed25519 AAAAadmin admin@tw" {
+	if lines[0] != admin {
 		t.Errorf("ssh-open admin line must be unpinned, got %q", lines[0])
 	}
 	if !strings.Contains(lines[1], `from="127.0.0.1"`) || !strings.Contains(lines[1], "restrict") {
@@ -103,7 +143,7 @@ func TestRelayTenantStateSeedsAdminFirst(t *testing.T) {
 	}
 	o.cfg.Xray.UUID = "a1b2c3d4-aaaa-bbbb-cccc-ddddeeeeffff"
 	o.cfg.Server.RemotePort = 2222
-	if err := os.WriteFile(config.CACertPath(), []byte(testCAPEM(t)), 0o600); err != nil {
+	if err := os.WriteFile(config.CACertPath(), []byte(testCAPEM(t, "admin")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	host, _ := os.Hostname()
@@ -146,8 +186,8 @@ func TestRelayTenantStateSeedsAdminFirst(t *testing.T) {
 }
 
 func TestRenderRelayAuthorizedKeysEnrollListen(t *testing.T) {
-	out := renderRelayAuthorizedKeys("ssh-ed25519 AAAA admin",
-		[]RegisteredServer{{ServerID: "s1", RemotePort: 20000, SSHPubkey: "ssh-ed25519 BBBB s1"}}, false)
+	out := renderRelayAuthorizedKeys(genPubKey(t),
+		[]RegisteredServer{{ServerID: "s1", RemotePort: 20000, SSHPubkey: genPubKey(t)}}, false)
 	if !strings.Contains(out, `permitlisten="127.0.0.1:20000"`) ||
 		!strings.Contains(out, `permitlisten="127.0.0.1:40000"`) {
 		t.Fatalf("tenant line must permit both the tunnel and enroll listens:\n%s", out)

@@ -77,9 +77,15 @@ func (o *Ops) AddServer(req *JoinRequest) (RegisteredServer, error) {
 	if err != nil {
 		return RegisteredServer{}, err
 	}
+	// Store only the canonical single-line key, so a poisoned key can never
+	// reach renderRelayAuthorizedKeys through the registry.
+	pubKey, err := canonicalAuthorizedKey(req.SSHPubkey)
+	if err != nil {
+		return RegisteredServer{}, fmt.Errorf("server %q has an invalid ssh_pubkey: %w", req.ServerID, err)
+	}
 	s := RegisteredServer{
 		ServerID: req.ServerID, UUID: req.UUID, Hostname: req.Hostname,
-		RemotePort: port, CACertPEM: req.CACertPEM, SSHPubkey: req.SSHPubkey,
+		RemotePort: port, CACertPEM: req.CACertPEM, SSHPubkey: pubKey,
 		EnrolledAt: time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := os.MkdirAll(RegistryDir(), 0o755); err != nil {

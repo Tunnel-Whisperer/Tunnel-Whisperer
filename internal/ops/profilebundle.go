@@ -25,6 +25,7 @@ func clearLiveProfile() error {
 		config.FilePath(), config.CACertPath(), config.CAKeyPath(),
 		config.ClientCertPath(), config.ClientKeyPath(),
 		filepath.Join(dir, "id_ed25519"), filepath.Join(dir, "id_ed25519.pub"),
+		filepath.Join(dir, "relay_host_ed25519"), filepath.Join(dir, "relay_host_ed25519.pub"),
 	}
 	for _, f := range flat {
 		if err := os.Remove(f); err != nil && !os.IsNotExist(err) {
@@ -49,6 +50,10 @@ func profileFiles() ([]string, error) {
 		config.FilePath(), config.CACertPath(), config.CAKeyPath(),
 		config.ClientCertPath(), config.ClientKeyPath(),
 		filepath.Join(dir, "id_ed25519"), filepath.Join(dir, "id_ed25519.pub"),
+		// The relay host keypair: the .pub is the pin a second-machine admin
+		// needs to verify the relay on the direct port-22 channel (SP-7); the
+		// private half lets that machine re-provision the same relay identity.
+		filepath.Join(dir, "relay_host_ed25519"), filepath.Join(dir, "relay_host_ed25519.pub"),
 	}
 	for _, f := range flat {
 		if _, err := os.Stat(f); err == nil {
@@ -176,8 +181,14 @@ func unsealProfile(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("reading profile entry %q: %w", zf.Name, err)
 		}
+		// Secrets unpack 0600: private keys, the SSH identity, config.yaml
+		// (proxy creds + VLESS UUID), and any token file. Public material
+		// (.crt/.pub) stays 0644 (finding #12/SP-12).
 		mode := os.FileMode(0o644)
-		if strings.HasSuffix(clean, ".key") || filepath.Base(clean) == "id_ed25519" {
+		base := filepath.Base(clean)
+		if strings.HasSuffix(clean, ".key") || base == "id_ed25519" ||
+			base == "relay_host_ed25519" || base == "config.yaml" ||
+			strings.HasSuffix(clean, ".token") {
 			mode = 0o600
 		}
 		writes = append(writes, pending{rel: clean, content: content, mode: mode})

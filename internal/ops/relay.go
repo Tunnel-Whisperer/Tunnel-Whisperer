@@ -201,6 +201,23 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 	if req.Name == "" {
 		req.Name = "relay-" + randomSuffix(4)
 	}
+	// req.Name is rendered raw into the provider .tf files; validate it before
+	// it can reach the HCL template (finding #3).
+	if err := validateRelayName(req.Name); err != nil {
+		return err
+	}
+	if req.Domain != "" {
+		if err := validateHostname(req.Domain); err != nil {
+			return err
+		}
+	}
+	// The ssh user is rendered into a root-run install script and a
+	// /etc/sudoers.d filename (finding #6).
+	if u := o.Config().Server.RelaySSHUser; u != "" {
+		if err := validateSSHUser(u); err != nil {
+			return err
+		}
+	}
 
 	relayDir := config.RelayDir()
 
@@ -294,12 +311,18 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 		return err
 	}
 
+	hostKeyPriv, hostKeyPub, err := ensureRelayHostKey()
+	if err != nil {
+		return fmt.Errorf("ensuring relay host key: %w", err)
+	}
 	tfCfg := terraform.Config{
 		Domain:        cfg.Xray.RelayHost,
 		UUID:          cfg.Xray.UUID,
 		XrayPath:      cfg.Xray.Path,
 		SSHUser:       cfg.Server.RelaySSHUser,
 		PublicKey:     strings.TrimSpace(string(pubKeyBytes)),
+		HostKeyB64:    base64.StdEncoding.EncodeToString(hostKeyPriv),
+		HostKeyPub:    hostKeyPub,
 		Provider:      req.ProviderKey,
 		SSHOpen:       req.SSHOpen,
 		Name:          req.Name,
@@ -443,6 +466,17 @@ func (o *Ops) GenerateManualInstallScript(domain string, sshOpen bool) (string, 
 	}
 	o.mu.Unlock()
 
+	// Domain and ssh user are rendered raw into a root-run install script;
+	// validate them before templating (finding #6).
+	if err := validateHostname(cfg.Xray.RelayHost); err != nil {
+		return "", err
+	}
+	if cfg.Server.RelaySSHUser != "" {
+		if err := validateSSHUser(cfg.Server.RelaySSHUser); err != nil {
+			return "", err
+		}
+	}
+
 	pubKeyPath := filepath.Join(config.Dir(), "id_ed25519.pub")
 	pubKeyBytes, err := os.ReadFile(pubKeyPath)
 	if err != nil {
@@ -459,12 +493,18 @@ func (o *Ops) GenerateManualInstallScript(domain string, sshOpen bool) (string, 
 		return "", err
 	}
 
+	hostKeyPriv, hostKeyPub, err := ensureRelayHostKey()
+	if err != nil {
+		return "", fmt.Errorf("ensuring relay host key: %w", err)
+	}
 	tfCfg := terraform.Config{
 		Domain:        cfg.Xray.RelayHost,
 		UUID:          cfg.Xray.UUID,
 		XrayPath:      cfg.Xray.Path,
 		SSHUser:       cfg.Server.RelaySSHUser,
 		PublicKey:     strings.TrimSpace(string(pubKeyBytes)),
+		HostKeyB64:    base64.StdEncoding.EncodeToString(hostKeyPriv),
+		HostKeyPub:    hostKeyPub,
 		SSHOpen:       sshOpen,
 		ServerID:      serverID,
 		CACertB64:     base64.StdEncoding.EncodeToString(caCertPEM),
@@ -795,11 +835,32 @@ func (o *Ops) DirectRelaySSH(fn func(client *gossh.Client) error) error {
 		return fmt.Errorf("parsing server key: %w", err)
 	}
 
+	// Pin the relay's SSH host key on this plain port-22 channel so an on-path
+	// attacker cannot impersonate the relay's sshd and harvest the admin's
+	// hardening commands (finding SP-7). The relay was provisioned to present a
+	// tw-generated key; if it is missing (a relay provisioned before pinning)
+	// we fall back to trust-on-connect with a loud warning.
+	// Pin fail-CLOSED: if no host key is pinned we refuse the plain port-22
+	// connection rather than silently trusting whatever key is presented (which
+	// an on-path attacker could substitute — the SP-7 scenario). Every relay
+	// provisioned by current tw installs a tw-generated host key and records the
+	// pin, so this only trips on a legacy relay or a context imported without
+	// the pin; callers (CloseRelaySSH, the dashboard terminal) fall back to the
+	// mTLS-authenticated tunnel, which needs no direct-channel trust.
+	pinned, err := loadPinnedRelayHostKey()
+	if err != nil {
+		return fmt.Errorf("loading pinned relay host key: %w", err)
+	}
+	if pinned == nil {
+		return fmt.Errorf("refusing direct SSH to the relay on port 22: no pinned host key (reprovision the relay, or import a context bundle that carries relay_host_ed25519.pub, to enable host-key verification)")
+	}
+
 	sshCfg := &gossh.ClientConfig{
-		User:            cfg.Server.RelaySSHUser,
-		Auth:            []gossh.AuthMethod{gossh.PublicKeys(signer)},
-		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
-		Timeout:         15 * time.Second,
+		User:              cfg.Server.RelaySSHUser,
+		Auth:              []gossh.AuthMethod{gossh.PublicKeys(signer)},
+		HostKeyCallback:   gossh.FixedHostKey(pinned),
+		HostKeyAlgorithms: []string{pinned.Type()}, // force the pinned algorithm (ed25519)
+		Timeout:           15 * time.Second,
 	}
 
 	addr := fmt.Sprintf("%s:22", status.IP)

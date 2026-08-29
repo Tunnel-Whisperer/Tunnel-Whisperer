@@ -1,8 +1,11 @@
 // Package xray renders the relay's Xray config.json from a tenant list. Each
 // tenant gets its own vless-in (own xhttp path + loopback port) and a routing
-// destination-port allow-list ({22, RemotePort} -> freedom, else blackhole), so a
-// tenant can reach only the relay sshd and its own rendezvous port — the
-// transport-layer half of cross-tenant isolation.
+// destination-port allow-list ({22, RemotePort} -> freedom, else blackhole).
+// The freedom outbound is itself loopback-only (finalRules allow 127.0.0.1/32,
+// then block everything else), so a tenant can reach only the relay's own
+// loopback rendezvous port and never an arbitrary public host — the freedom
+// outbound is not an open proxy. Together this is the transport-layer half of
+// cross-tenant isolation.
 package xray
 
 import (

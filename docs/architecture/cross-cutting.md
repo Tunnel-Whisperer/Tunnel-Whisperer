@@ -412,9 +412,9 @@ Validity: CA 10 years, client certificate 5 years (ECDSA P-256). Full detail on
 | Dependency | Version | Purpose |
 | ---------- | ------- | ------- |
 | `github.com/xtls/xray-core` | pinned upstream mtls commit (`v1.260327.1-0.20260617150841-…`) | In-process VLESS + XHTTP + mTLS transport |
-| `golang.org/x/crypto` | v0.51.0 | Embedded SSH server + client tunnels |
+| `golang.org/x/crypto` | v0.55.0 | Embedded SSH server + client tunnels |
 | `github.com/spf13/cobra` | v1.8.1 | CLI framework |
 | `github.com/google/uuid` | v1.6.0 | UUID generation for Xray clients |
 | `github.com/gorilla/websocket` | v1.5.3 | WebSocket for dashboard SSH terminal |
-| `google.golang.org/grpc` | v1.81.1 | gRPC API server + relay live-add/stats queries |
+| `google.golang.org/grpc` | v1.82.1 | gRPC API server + relay live-add/stats queries |
 | `gopkg.in/yaml.v3` | v3.0.1 | Configuration file handling |

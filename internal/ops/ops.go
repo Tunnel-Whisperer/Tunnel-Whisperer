@@ -169,6 +169,13 @@ func (o *Ops) SetLogLevel(level string) error {
 // SetServerSettings updates server config fields and persists to disk.
 // Only non-zero values are applied. Takes effect on next restart.
 func (o *Ops) SetServerSettings(s config.ServerConfig) error {
+	// The relay ssh user is later rendered into a root-run install script and a
+	// sudoers filename; reject an unsafe value at the entry point (finding #6).
+	if s.RelaySSHUser != "" {
+		if err := validateSSHUser(s.RelaySSHUser); err != nil {
+			return err
+		}
+	}
 	o.mu.Lock()
 	if s.SSHPort > 0 {
 		o.cfg.Server.SSHPort = s.SSHPort

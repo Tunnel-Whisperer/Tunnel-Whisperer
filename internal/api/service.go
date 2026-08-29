@@ -1,8 +1,11 @@
 // Package api implements the Tunnel Whisperer control API served by `tw server start`
-// on :50051. It uses the gRPC server machinery, but the proto in
-// proto/api/v1/service.proto is documentation only: a JSON codec (codec.go) is
-// registered so the hand-written Go structs in this package are the wire
-// messages and no protoc-generated code is involved.
+// on 127.0.0.1:50051 (loopback only). Loopback is not treated as an auth
+// boundary: every RPC requires a per-daemon bearer token (auth.go), held in a
+// 0600 file that only the operator's uid can read, so a local process cannot
+// invoke privileged RPCs or read secrets. It uses the gRPC server machinery,
+// but the proto in proto/api/v1/service.proto is documentation only: a JSON
+// codec (codec.go) is registered so the hand-written Go structs in this package
+// are the wire messages and no protoc-generated code is involved.
 package api
 
 // This file contains the gRPC service definitions.

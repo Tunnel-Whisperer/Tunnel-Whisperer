@@ -48,4 +48,5 @@ commands:
   "proxy set":               [TestE2E/ProxyRoute]
   "proxy clear":             [TestE2E/ProxyRoute]
   "dashboard":               [TestE2E/Dashboard, TestE2E/PortOverride]
+  "dashboard token":         [TestE2E/Dashboard]
   "completion":              {exempt: "shell completion generation; no runtime behavior"}

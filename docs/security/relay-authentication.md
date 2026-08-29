@@ -8,11 +8,22 @@ handshake is rejected outright. A connection that presents **no** certificate
 at all still completes the handshake — that's deliberate, so a
 not-yet-enrolled invitee can reach the enrollment endpoint — but every
 **tunnel** route additionally requires a verified certificate whose subject CN
-matches that tenant; anything else, certed or not, falls through to a uniform
-404.
+**and issuing CA** both match that tenant; anything else, certed or not, falls
+through to a uniform 404.
 
 This is the relay's primary admission control. The older VLESS UUID check is
 kept as harmless defense-in-depth and is no longer the security boundary.
+
+!!! note "Cross-tenant isolation in a shared trust pool"
+    On a multi-tenant relay, Caddy admits any certificate that chains to **any**
+    enrolled CA in its trust pool, then each tenant route matches on the
+    certificate. Matching the subject CN alone would let one tenant mint a
+    certificate carrying another tenant's CN off its **own** (pool-trusted) CA
+    and reach the victim's upstream. Two checks close that: each route requires
+    the certificate's **issuer** to be that tenant's CA (`CN=<server-id>`, since
+    every per-server CA's subject is its own server-id), and enrollment refuses
+    a joining server whose submitted CA subject does not equal its server-id —
+    so no tenant can register a CA that impersonates another's identity.
 
 ---
 

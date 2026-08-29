@@ -10,7 +10,7 @@ Tunnel Whisperer implements **defense-in-depth** with three independent security
 
 All traffic between clients, the relay, and servers is encrypted with **TLS 1.3** on port 443 (the relay's Caddyfile pins `protocols tls1.3`). Caddy handles TLS termination on the relay with automatic certificate provisioning via **Let's Encrypt** (ACME). To any firewall, proxy, or DPI system, Tunnel Whisperer traffic is indistinguishable from standard HTTPS.
 
-The handshake is **mutual**: the relay is configured with `client_auth verify_if_given`, so a presented certificate must be signed by an enrolled server's own certificate authority (ECDSA P-256, CN = the server-id) or the handshake is rejected — but a bare handshake with no certificate at all is allowed, so that not-yet-enrolled invitees can reach the enrollment endpoint. This is the relay's primary admission control: every **tunnel** route additionally requires the certificate subject to match that tenant's CN, so a connection without a trusted, matching certificate never reaches a server's upstream — it falls through to a uniform 404, same as any unmatched path. On a multi-tenant relay, the certificate subject also routes the connection: each server's traffic only reaches that server's own upstream. See [Relay Authentication](relay-authentication.md).
+The handshake is **mutual**: the relay is configured with `client_auth verify_if_given`, so a presented certificate must be signed by an enrolled server's own certificate authority (ECDSA P-256, CN = the server-id) or the handshake is rejected — but a bare handshake with no certificate at all is allowed, so that not-yet-enrolled invitees can reach the enrollment endpoint. This is the relay's primary admission control: every **tunnel** route additionally requires the certificate's subject **and issuing CA** to match that tenant, so a connection without a trusted, matching certificate never reaches a server's upstream — it falls through to a uniform 404, same as any unmatched path. On a multi-tenant relay this also keeps one tenant from impersonating another through the shared trust pool. See [Relay Authentication](relay-authentication.md).
 
 ### 2. Protocol Layer — Xray VLESS + XHTTP
 
@@ -19,6 +19,8 @@ Inside the TLS envelope, the **VLESS protocol** tags each user with a **UUID** a
 ### 3. Session Layer — Ed25519 SSH
 
 The innermost layer is a full **SSH session** using **Ed25519 public key authentication** (256-bit elliptic curve). SSH handles end-to-end encryption between client and server, and enforces per-user port restrictions via `permitopen` directives in the server's `authorized_keys`, which is re-read on every authentication attempt (live revocation). No passwords are used — there is no brute-force attack surface.
+
+The client also **pins the server's SSH host key** (delivered in the enrollment grant) and connects with `FixedHostKey`, failing closed if it is unpinned — so a compromised or malicious relay cannot terminate and man-in-the-middle the end-to-end SSH. Clients enrolled before host-key pinning was introduced must **re-enroll** to receive the pin. On the management side, the admin likewise pins the relay's own SSH host key (installed at provision time) on the direct port-22 channel.
 
 ---
 

@@ -19,6 +19,7 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/enroll"
 	"github.com/tunnelwhisperer/tw/internal/ops/modeauth"
 	"github.com/tunnelwhisperer/tw/internal/pki"
+	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
 )
 
 // InviteUI carries the human-in-the-loop callbacks of an invite flow.
@@ -35,7 +36,10 @@ func serveInvite(client *gossh.Client, port int, h *enroll.Handler, run func() e
 	if err != nil {
 		return fmt.Errorf("opening enroll listener on relay port %d: %w", port, err)
 	}
-	srv := &http.Server{Handler: h}
+	// ReadHeaderTimeout bounds slow-header attacks on the enrollment endpoint
+	// (finding SP-19); the PAKE exchange itself is short, so a modest read
+	// timeout is also safe here.
+	srv := &http.Server{Handler: h, ReadHeaderTimeout: 15 * time.Second, ReadTimeout: 60 * time.Second}
 	go srv.Serve(ln) //nolint:errcheck — closed via srv.Close below
 	defer srv.Close()
 	defer ln.Close()
@@ -239,10 +243,16 @@ func (o *Ops) InviteUser(req CreateUserRequest, ttl time.Duration, ui InviteUI, 
 				h.Deny()
 				return fmt.Errorf("offer does not match invite (user %q)", req.Name)
 			}
-			if _, _, _, _, err := gossh.ParseAuthorizedKey([]byte(off.SSHPubkey)); err != nil {
+			// Canonicalize the enrollee's key and reject any trailing data, then
+			// use the normalized value everywhere downstream (id_ed25519.pub,
+			// authorized_keys, the undo, and the mode signature) so a newline
+			// can't inject an unrestricted authorized_keys line on the server.
+			canonKey, err := canonicalAuthorizedKey(off.SSHPubkey)
+			if err != nil {
 				h.Deny()
 				return fmt.Errorf("offer ssh_pubkey invalid: %w", err)
 			}
+			off.SSHPubkey = canonKey
 			if !ui.ConfirmSAS(h.SAS()) {
 				h.Deny()
 				return fmt.Errorf("enrollment denied: SAS read-back did not match")
@@ -299,6 +309,14 @@ func (o *Ops) grantClient(cfg config.Config, req CreateUserRequest, off *enroll.
 	}
 	undo = append(undo, func() { _ = removeUUIDFromRelay(&cfg, off.UUID) })
 
+	// The client pins this to verify the end-to-end SSH session against a
+	// relay MITM. Best-effort: an empty pin makes the client fail closed at
+	// connect time rather than silently accept any host key.
+	serverHostKey, herr := twssh.EnsureHostPublicKey(config.HostKeyDir())
+	if herr != nil {
+		slog.Warn("could not read server SSH host key for pinning; client must re-enroll once it is available", "error", herr)
+	}
+
 	userDir := filepath.Join(config.UsersDir(), req.Name)
 	if err = os.MkdirAll(userDir, 0700); err != nil {
 		return nil, fmt.Errorf("creating user directory: %w", err)
@@ -323,7 +341,7 @@ func (o *Ops) grantClient(cfg config.Config, req CreateUserRequest, off *enroll.
 		Client config.ClientConfig `yaml:"client"`
 	}{
 		Xray:   config.XrayConfig{UUID: off.UUID, RelayHost: cfg.Xray.RelayHost, RelayPort: cfg.Xray.RelayPort, Path: cfg.Xray.Path},
-		Client: config.ClientConfig{SSHUser: req.Name, ServerSSHPort: cfg.Server.RemotePort, Tunnels: cfgTunnels},
+		Client: config.ClientConfig{SSHUser: req.Name, ServerSSHPort: cfg.Server.RemotePort, ServerHostKey: serverHostKey, Tunnels: cfgTunnels},
 	}
 	ucData, err := yaml.Marshal(uc)
 	if err != nil {
@@ -345,7 +363,7 @@ func (o *Ops) grantClient(cfg config.Config, req CreateUserRequest, off *enroll.
 
 	g := enroll.ClientGrant{
 		RelayHost: cfg.Xray.RelayHost, RelayPort: cfg.Xray.RelayPort, Path: cfg.Xray.Path,
-		SSHUser: req.Name, ServerSSHPort: cfg.Server.RemotePort,
+		SSHUser: req.Name, ServerSSHPort: cfg.Server.RemotePort, ServerHostKey: serverHostKey,
 		Tunnels: tunnels, ClientCertPEM: string(certPEM),
 	}
 	// Sign the client's mode against ITS pubkey. Best-effort: an unsigned

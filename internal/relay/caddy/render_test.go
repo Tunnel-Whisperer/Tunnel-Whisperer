@@ -75,6 +75,10 @@ func TestRenderCaddyfileIsolation(t *testing.T) {
 		"path /tw/web-01-a1b2c3d4*",
 		`expression {http.request.tls.client.subject} == "CN=web-01-a1b2c3d4"`,
 		`expression {http.request.tls.client.subject} == "CN=db-02-99887766"`,
+		// #10: the route must also pin the issuing CA (CN==id), not just the CN,
+		// so a tenant cannot present a victim-CN cert off its own trusted CA.
+		`{http.request.tls.client.subject} == "CN=web-01-a1b2c3d4" && {http.request.tls.client.issuer} == "CN=web-01-a1b2c3d4"`,
+		`{http.request.tls.client.issuer} == "CN=db-02-99887766"`,
 		"reverse_proxy h2c://127.0.0.1:30000",
 		"reverse_proxy h2c://127.0.0.1:30001",
 		"handle {\n        respond 404\n    }",

@@ -48,14 +48,26 @@ func (o *Ops) UploadClientConfig(zipData []byte) error {
 			return fmt.Errorf("opening %s in zip: %w", name, err)
 		}
 
-		data, err := io.ReadAll(rc)
+		// Cap each entry so a decompression bomb cannot exhaust memory (finding
+		// SP-18). A config bundle's files (config.yaml + keys) are a few KB;
+		// 1 MiB is a generous ceiling. LimitReader guards against a lying
+		// uncompressed-size header.
+		const maxEntry = 1 << 20
+		data, err := io.ReadAll(io.LimitReader(rc, maxEntry+1))
 		rc.Close()
 		if err != nil {
 			return fmt.Errorf("reading %s from zip: %w", name, err)
 		}
+		if len(data) > maxEntry {
+			return fmt.Errorf("%s exceeds the %d-byte limit for a config bundle entry", name, maxEntry)
+		}
 
+		// Secrets unpack 0600: config.yaml carries the VLESS UUID + proxy
+		// credentials, alongside the private keys and any token file (finding
+		// #12 — this import path is a sibling of config.Save/profilebundle).
 		perm := os.FileMode(0644)
-		if name == "id_ed25519" || name == "client.key" {
+		if name == "id_ed25519" || strings.HasSuffix(name, ".key") ||
+			name == "config.yaml" || strings.HasSuffix(name, ".token") {
 			perm = 0600
 		}
 

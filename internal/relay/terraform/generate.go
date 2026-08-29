@@ -48,6 +48,8 @@ type Config struct {
 	CACertB64     string // base64 of the server's CA certificate PEM (written to /etc/caddy/ca)
 	CaddyfileB64  string // base64 of the fully-rendered relay Caddyfile
 	XrayConfigB64 string // base64 of the fully-rendered relay Xray config.json
+	HostKeyB64    string // base64 of the relay's ed25519 SSH host PRIVATE key (OpenSSH PEM); the admin pins the matching public key on the direct port-22 channel
+	HostKeyPub    string // the relay's ed25519 SSH host public key (authorized-key line)
 }
 
 var providerTemplates = map[string]string{
@@ -59,7 +61,11 @@ var providerTemplates = map[string]string{
 // Generate renders cloud-init.yaml and the selected provider's main.tf into dir.
 func Generate(dir string, cfg Config) error {
 	cfg.XrayVersion = XrayVersion
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	// 0700 dir + 0600 files: the rendered cloud-init carries the relay's SSH
+	// host private key and the VLESS UUID, and terraform will drop its state
+	// (also secret-bearing) here — none of it should be world-readable on the
+	// operator's machine (finding SP-14).
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating relay directory: %w", err)
 	}
 
@@ -68,7 +74,7 @@ func Generate(dir string, cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("rendering cloud-init.yaml: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "cloud-init.yaml"), []byte(content), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "cloud-init.yaml"), []byte(content), 0o600); err != nil {
 		return fmt.Errorf("writing cloud-init.yaml: %w", err)
 	}
 
@@ -81,7 +87,7 @@ func Generate(dir string, cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("rendering main.tf: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "main.tf"), []byte(mainTf), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "main.tf"), []byte(mainTf), 0o600); err != nil {
 		return fmt.Errorf("writing main.tf: %w", err)
 	}
 

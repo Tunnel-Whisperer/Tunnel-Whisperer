@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
+	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
 	twxray "github.com/tunnelwhisperer/tw/internal/xray"
 	proxymanCmd "github.com/xtls/xray-core/app/proxyman/command"
 	statsCmd "github.com/xtls/xray-core/app/stats/command"
@@ -518,6 +519,11 @@ func syncUserConfig(userDir string, cfg *config.Config) error {
 	clientCfg.Xray.RelayPort = cfg.Xray.RelayPort
 	clientCfg.Xray.Path = cfg.Xray.Path
 	clientCfg.Client.ServerSSHPort = cfg.Server.RemotePort
+	if hostKey, err := twssh.EnsureHostPublicKey(config.HostKeyDir()); err == nil {
+		clientCfg.Client.ServerHostKey = hostKey
+	} else {
+		slog.Warn("could not read server SSH host key while syncing user config", "error", err)
+	}
 
 	updated, err := yaml.Marshal(clientCfg)
 	if err != nil {
@@ -612,7 +618,15 @@ func appendAuthorizedKey(pubKey []byte, comment string, ports []int, singleSessi
 		options = append(options, fmt.Sprintf(`permitopen="127.0.0.1:%d"`, port))
 	}
 
-	keyLine := strings.TrimSpace(string(pubKey))
+	// Canonicalize the caller-supplied key to a single, option-free line. This
+	// is the sink chokepoint for BOTH the invite path (grantClient) and the
+	// CreateUser/refresh path: without it, a newline embedded in the key would
+	// inject a second, permitopen-free authorized_keys line and escape the
+	// per-user port restrictions.
+	keyLine, err := canonicalAuthorizedKey(string(pubKey))
+	if err != nil {
+		return fmt.Errorf("refusing to write invalid ssh public key to authorized_keys: %w", err)
+	}
 	line := fmt.Sprintf("%s %s %s@tw\n", strings.Join(options, ","), keyLine, comment)
 
 	existing, err := os.ReadFile(akPath)

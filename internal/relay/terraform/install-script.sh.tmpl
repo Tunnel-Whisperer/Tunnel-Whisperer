@@ -21,7 +21,8 @@ echo ""
 # certs (an old server-id .crt left in the trust dir), an old Caddyfile or
 # Xray config, a previous sshd drop-in, or leftover firewall rules (e.g. an
 # "allow 22" from an earlier --ssh-open run when SSH is now tunnel-only).
-# Host SSH keys and the OS are left untouched.
+# The OS is left untouched; the ed25519 host key is replaced below with the
+# tw-managed one (when provided) so the admin can pin it.
 echo "[*] Cleaning previous installation..."
 systemctl stop caddy 2>/dev/null || true
 systemctl stop xray 2>/dev/null || true
@@ -79,10 +80,9 @@ echo '{{.CACertB64}}' | base64 -d > /etc/caddy/ca/{{.ServerID}}.crt
 echo '{{.CaddyfileB64}}' | base64 -d > /etc/caddy/Caddyfile
 
 # ── Install Xray (pinned version for reproducibility) ──────
-# Download to a file, never inline into argv: `bash -c "$(curl ...)"` breaks
-# past the 128 KiB per-argument limit and would happily execute whatever HTML
-# an error/rate-limit page returns. -f fails on HTTP errors; --retry rides
-# out transient 429s from raw.githubusercontent.com.
+# Download to a file, never pipe the fetch straight into a root shell: that
+# form runs whatever HTML an error/rate-limit page returns. -f fails on HTTP
+# errors; --retry rides out transient 429s from raw.githubusercontent.com.
 echo "[4/7] Installing Xray {{.XrayVersion}}..."
 curl -fsSL --retry 3 --retry-delay 10 -o /tmp/xray-install-release.sh \
   https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh \
@@ -108,6 +108,13 @@ PasswordAuthentication no
 ClientAliveInterval 60
 ClientAliveCountMax 5
 SSHEOF
+{{end}}{{if .HostKeyB64}}# tw-managed SSH host key: the relay presents a key the admin already holds,
+# so the direct (port-22) channel can be host-key-pinned instead of trusting on
+# first use. Loaded by the sshd restart in [7/7].
+echo '{{.HostKeyB64}}' | base64 -d > /etc/ssh/ssh_host_ed25519_key
+chmod 600 /etc/ssh/ssh_host_ed25519_key
+echo '{{.HostKeyPub}}' > /etc/ssh/ssh_host_ed25519_key.pub
+chmod 644 /etc/ssh/ssh_host_ed25519_key.pub
 {{end}}
 # ── Firewall ─────────────────────────────────────────────────
 echo "[6/7] Configuring firewall..."

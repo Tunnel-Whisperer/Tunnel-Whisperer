@@ -21,6 +21,19 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 )
 
+const (
+	// handshakeTimeout bounds the pre-auth SSH handshake so a client that opens
+	// a connection and then stalls cannot pin a goroutine/fd indefinitely
+	// (Slowloris). Cleared once the handshake completes — an authenticated
+	// tunnel is long-lived.
+	handshakeTimeout = 30 * time.Second
+	// maxConcurrentHandshakes caps in-flight (pre-auth) handshakes. Beyond this,
+	// new connections are dropped immediately rather than piling up goroutines,
+	// blunting a connection flood. Legitimate handshakes are brief, so this is
+	// far above real concurrency; the slot is released as soon as auth settles.
+	maxConcurrentHandshakes = 64
+)
+
 // Server is an embedded SSH server used for relay-to-server connectivity.
 type Server struct {
 	Port           int
@@ -31,6 +44,7 @@ type Server struct {
 	Stats          *stats.Collector  // nil = disabled, no overhead
 	config         *gossh.ServerConfig
 	listener       net.Listener
+	handshakeSem   chan struct{} // bounds concurrent pre-auth handshakes
 
 	connMu       sync.Mutex
 	connectedMap map[string]int // tw_user → active session count
@@ -43,6 +57,7 @@ func NewServer(port int, hostKeyDir, authorizedKeys string) (*Server, error) {
 		AuthorizedKeys: authorizedKeys,
 		config:         &gossh.ServerConfig{},
 		connectedMap:   make(map[string]int),
+		handshakeSem:   make(chan struct{}, maxConcurrentHandshakes),
 	}
 
 	if err := s.loadAuthorizedKeys(); err != nil {
@@ -126,8 +141,15 @@ func (s *Server) checkAuthorizedKey(conn gossh.ConnMetadata, key gossh.PublicKey
 		if len(permitOpens) > 0 {
 			perms.Extensions["permitopen"] = strings.Join(permitOpens, ",")
 		}
+		if singleSession && twUser != "" {
+			perms.Extensions["single-session"] = "1"
+		}
 
-		// Enforce single-session: reject if user already has an active connection.
+		// Fast-path reject if the user already has an active session. This is a
+		// best-effort early check; the AUTHORITATIVE, race-free enforcement is
+		// the atomic check-and-increment under connMu in handleConnection
+		// (finding #8 — the count is only incremented after the handshake, so a
+		// check here alone is a TOCTOU).
 		if singleSession && twUser != "" {
 			s.connMu.Lock()
 			count := s.connectedMap[twUser]
@@ -145,42 +167,68 @@ func (s *Server) checkAuthorizedKey(conn gossh.ConnMetadata, key gossh.PublicKey
 }
 
 func (s *Server) loadOrGenerateHostKey() error {
-	keyPath := filepath.Join(s.HostKeyDir, "ssh_host_ed25519_key")
+	signer, err := loadOrGenerateHostSigner(s.HostKeyDir)
+	if err != nil {
+		return err
+	}
+	s.config.AddHostKey(signer)
+	return nil
+}
+
+// loadOrGenerateHostSigner loads the server's SSH host key from dir, generating
+// and persisting a new one if none exists. It is shared by the running SSH
+// server and by enrollment, so both agree on the same host identity.
+func loadOrGenerateHostSigner(dir string) (gossh.Signer, error) {
+	keyPath := filepath.Join(dir, "ssh_host_ed25519_key")
 
 	keyData, err := os.ReadFile(keyPath)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			return fmt.Errorf("reading host key: %w", err)
+			return nil, fmt.Errorf("reading host key: %w", err)
 		}
 
 		slog.Info("generating SSH host key", "path", keyPath)
-		if err := os.MkdirAll(s.HostKeyDir, 0700); err != nil {
-			return fmt.Errorf("creating host key directory: %w", err)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			return nil, fmt.Errorf("creating host key directory: %w", err)
 		}
 
 		privPEM, _, err := GenerateKeyPair()
 		if err != nil {
-			return fmt.Errorf("generating host key: %w", err)
+			return nil, fmt.Errorf("generating host key: %w", err)
 		}
 		if err := os.WriteFile(keyPath, privPEM, 0600); err != nil {
-			return fmt.Errorf("writing host key: %w", err)
+			return nil, fmt.Errorf("writing host key: %w", err)
 		}
 		keyData = privPEM
 	}
 
 	signer, err := gossh.ParsePrivateKey(keyData)
 	if err != nil {
-		return fmt.Errorf("parsing host key: %w", err)
+		return nil, fmt.Errorf("parsing host key: %w", err)
 	}
+	return signer, nil
+}
 
-	s.config.AddHostKey(signer)
-	return nil
+// EnsureHostPublicKey returns the server's SSH host public key in
+// authorized_keys format, generating the host key if it does not yet exist.
+// Clients pin this value (via FixedHostKey) so a compromised or malicious relay
+// cannot terminate and MITM the end-to-end SSH session.
+func EnsureHostPublicKey(dir string) (string, error) {
+	signer, err := loadOrGenerateHostSigner(dir)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(gossh.MarshalAuthorizedKey(signer.PublicKey()))), nil
 }
 
 // Run starts the SSH server (blocking). It survives transient accept errors
 // and individual connection failures without stopping.
 func (s *Server) Run() error {
-	addr := fmt.Sprintf(":%d", s.Port)
+	// Bind loopback only. The sole legitimate consumer is the reverse tunnel,
+	// which dials 127.0.0.1:<port> from this same host and republishes the port
+	// on the relay; binding all interfaces needlessly exposed the pre-auth
+	// handshake surface to the LAN (finding SP-11).
+	addr := fmt.Sprintf("127.0.0.1:%d", s.Port)
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("ssh-server: listen %s: %w", addr, err)
@@ -221,7 +269,22 @@ func (s *Server) handleConnection(conn net.Conn) {
 		}
 	}()
 
+	// Bound concurrent pre-auth handshakes: drop new connections when too many
+	// are already mid-handshake rather than piling up goroutines (SP-10). The
+	// slot is held only for the handshake, not the authenticated session.
+	select {
+	case s.handshakeSem <- struct{}{}:
+	default:
+		slog.Warn("SSH server: too many concurrent handshakes, dropping connection", "remote", conn.RemoteAddr().String())
+		return
+	}
+
+	// Deadline the handshake so a stalled client cannot pin the connection
+	// (Slowloris); clear it afterwards — an authenticated tunnel is long-lived.
+	_ = conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	sshConn, chans, reqs, err := gossh.NewServerConn(conn, s.config)
+	_ = conn.SetDeadline(time.Time{})
+	<-s.handshakeSem // release the pre-auth slot once the handshake settles
 	if err != nil {
 		slog.Warn("SSH handshake failed", "error", err)
 		return
@@ -242,7 +305,16 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 	// Track active sessions per TW user.
 	if twUser != "" {
+		singleSession := sshConn.Permissions != nil && sshConn.Permissions.Extensions["single-session"] == "1"
 		s.connMu.Lock()
+		// Atomic check-and-increment closes the single-session TOCTOU (#8): the
+		// auth-time check and this increment now happen under the same lock, so
+		// two connections racing in cannot both observe a zero count.
+		if singleSession && s.connectedMap[twUser] > 0 {
+			s.connMu.Unlock()
+			slog.Warn("single-session: rejecting duplicate connection", "tw_user", twUser, "remote", sshConn.RemoteAddr().String())
+			return
+		}
 		s.connectedMap[twUser]++
 		count := s.connectedMap[twUser]
 		s.connMu.Unlock()
@@ -292,29 +364,45 @@ type directTCPIPData struct {
 }
 
 func parseDirectTCPIP(data []byte) (directTCPIPData, error) {
+	// All length/offset math is done in int/uint64 and compared against the
+	// real buffer length, so an attacker-supplied 32-bit length near 2^32 can
+	// never wrap a uint32 sum and slip a slice past the end of the buffer
+	// (finding SP-13). off is a plain int into a real (small) []byte.
 	var d directTCPIPData
-	if len(data) < 4 {
-		return d, fmt.Errorf("data too short")
+	off := 0
+	readStr := func() (string, error) {
+		if off+4 > len(data) {
+			return "", fmt.Errorf("truncated length prefix")
+		}
+		n := binary.BigEndian.Uint32(data[off : off+4])
+		start := off + 4
+		if uint64(start)+uint64(n) > uint64(len(data)) {
+			return "", fmt.Errorf("string length %d exceeds %d remaining bytes", n, len(data)-start)
+		}
+		off = start + int(n)
+		return string(data[start:off]), nil
 	}
-
-	hostLen := binary.BigEndian.Uint32(data[0:4])
-	if uint32(len(data)) < 4+hostLen+4+4+4 {
-		return d, fmt.Errorf("data too short for dest host")
+	readU32 := func() (uint32, error) {
+		if off+4 > len(data) {
+			return 0, fmt.Errorf("truncated uint32")
+		}
+		v := binary.BigEndian.Uint32(data[off : off+4])
+		off += 4
+		return v, nil
 	}
-	d.DestHost = string(data[4 : 4+hostLen])
-	offset := 4 + hostLen
-	d.DestPort = binary.BigEndian.Uint32(data[offset : offset+4])
-	offset += 4
-
-	origHostLen := binary.BigEndian.Uint32(data[offset : offset+4])
-	offset += 4
-	if uint32(len(data)) < offset+origHostLen+4 {
-		return d, fmt.Errorf("data too short for origin host")
+	var err error
+	if d.DestHost, err = readStr(); err != nil {
+		return d, err
 	}
-	d.OriginHost = string(data[offset : offset+origHostLen])
-	offset += origHostLen
-	d.OriginPort = binary.BigEndian.Uint32(data[offset : offset+4])
-
+	if d.DestPort, err = readU32(); err != nil {
+		return d, err
+	}
+	if d.OriginHost, err = readStr(); err != nil {
+		return d, err
+	}
+	if d.OriginPort, err = readU32(); err != nil {
+		return d, err
+	}
 	return d, nil
 }
 
@@ -402,12 +490,16 @@ func (s *Server) handleDirectTCPIP(newChan gossh.NewChannel, perms *gossh.Permis
 // by the authorized_keys entry's permitopen options.
 // If no permitopen options are set, all destinations are allowed.
 func isPortAllowed(perms *gossh.Permissions, host string, port uint32) bool {
+	// Fail CLOSED: a key with no permitopen extension forwards nowhere, rather
+	// than everywhere (finding SP-20). Every enrolled user key carries at least
+	// one permitopen (appendAuthorizedKey), so this only denies a key that was
+	// created with no port mappings — which should reach nothing.
 	if perms == nil || perms.Extensions == nil {
-		return true
+		return false
 	}
 	permitted, ok := perms.Extensions["permitopen"]
-	if !ok {
-		return true // No restrictions — allow all.
+	if !ok || permitted == "" {
+		return false
 	}
 	target := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 	for _, allowed := range strings.Split(permitted, ",") {

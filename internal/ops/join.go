@@ -7,8 +7,6 @@ import (
 	"fmt"
 
 	"regexp"
-
-	"golang.org/x/crypto/ssh"
 )
 
 // joinServerIDRe is the server-id shape the relay renderers also enforce
@@ -70,9 +68,22 @@ func DecodeJoinRequest(b []byte) (*JoinRequest, error) {
 	if !crt.IsCA {
 		return nil, fmt.Errorf("join request ca_cert_pem is not a CA certificate")
 	}
-	if _, _, _, _, err := ssh.ParseAuthorizedKey([]byte(r.SSHPubkey)); err != nil {
+	// The relay admits every tenant CA through one shared trust pool and tells
+	// them apart only by the client-cert CN. Bind the CA's own subject to this
+	// server's id so a tenant cannot enroll a CA whose subject impersonates
+	// another tenant's id — which, combined with the per-route issuer check in
+	// the Caddyfile, is what stops cross-tenant impersonation (finding #10).
+	if crt.Subject.CommonName != r.ServerID {
+		return nil, fmt.Errorf("join request ca_cert_pem subject CN %q must equal server_id %q", crt.Subject.CommonName, r.ServerID)
+	}
+	// Canonicalize and reject anything but a single key on one line, and store
+	// the normalized form so the downstream registry/render never sees the raw
+	// (potentially multi-line) input.
+	canon, err := canonicalAuthorizedKey(r.SSHPubkey)
+	if err != nil {
 		return nil, fmt.Errorf("join request ssh_pubkey invalid: %w", err)
 	}
+	r.SSHPubkey = canon
 	return &r, nil
 }
 

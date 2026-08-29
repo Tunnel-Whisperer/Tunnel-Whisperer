@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign in — Tunnel Whisperer</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .login-wrap { max-width: 26rem; margin: 12vh auto; padding: 2rem; }
+    .login-wrap h1 { margin-top: 0; }
+    .login-wrap p.hint { opacity: .8; font-size: .9rem; }
+    .login-wrap code { padding: .1rem .35rem; border-radius: 4px; background: rgba(127,127,127,.18); }
+    .login-form input[type=password] { width: 100%; box-sizing: border-box; padding: .6rem; margin: .5rem 0 1rem; }
+    .login-form button { width: 100%; padding: .6rem; }
+    .login-error { color: #c0392b; margin: .5rem 0; }
+  </style>
+</head>
+<body>
+  <main class="container login-wrap">
+    <h1>Tunnel Whisperer</h1>
+    <p class="hint">Enter your dashboard token to sign in. Get it from the CLI with <code>tw dashboard token</code>.</p>
+    {{if .Error}}<p class="login-error">{{.Error}}</p>{{end}}
+    <form class="login-form" method="POST" action="/login">
+      <input type="hidden" name="next" value="{{.Next}}">
+      <label for="token">Dashboard token</label>
+      <input id="token" name="token" type="password" autocomplete="off" autofocus required>
+      <button type="submit">Sign in</button>
+    </form>
+  </main>
+</body>
+</html>

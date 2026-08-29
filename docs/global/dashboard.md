@@ -10,16 +10,37 @@ tw dashboard [--port PORT] [--listen ADDR]
 
 Default port is `8080`. The dashboard is also served by the running server daemon (`tw server start`) when `server.dashboard_port` is configured, and by the [system service](status-service.md#tw-service-run-as-a-system-service). On launch it auto-starts the server (if the relay is provisioned) or auto-connects the client (if a relay is configured).
 
-The dashboard binds `127.0.0.1` by default — it is only reachable from the machine it runs on. To expose it (e.g. from a container or another machine on a trusted network), override the listen interface:
+The dashboard binds `127.0.0.1` by default — it is only reachable from the machine it runs on, and the recommended way to use it remotely is an SSH port-forward (`ssh -L 8080:127.0.0.1:8080 <host>`), which keeps it on loopback and adds SSH's transport encryption.
+
+## Signing in
+
+The dashboard requires a **token** — there is no anonymous access. Fetch the current token from the same machine and paste it into the login page:
 
 ```bash
-tw dashboard --listen 0.0.0.0          # all interfaces
+tw dashboard token            # prints the token
+tw dashboard token --rotate   # generates a new token and invalidates all active sessions
 ```
 
-or set `server.dashboard_listen` in `config.yaml`.
+The token lives in a `0600` file in the config directory (`dashboard.token`), readable only by the operator. A successful login sets a `SameSite=Strict`, `HttpOnly` session cookie (12-hour lifetime); rotating the token logs every session out. Automation can skip the login page by sending the token directly:
 
-!!! warning "The dashboard is unauthenticated"
-    Anyone who can reach the port has full control of this node. Keep the default loopback bind unless the network is trusted.
+```bash
+curl -H "Authorization: Bearer $(tw dashboard token)" http://127.0.0.1:8080/api/status
+```
+
+The same token also gates `/metrics` (Prometheus) so scrape jobs must present it.
+
+### Exposing it off-loopback
+
+Binding to a non-loopback interface serves the login token and session cookie over **cleartext HTTP**, so the dashboard **refuses** an off-loopback bind unless you explicitly acknowledge the risk:
+
+```bash
+tw dashboard --listen 0.0.0.0          # refused unless dashboard_allow_lan is set
+```
+
+To allow it, set `server.dashboard_allow_lan: true` in `config.yaml` (alongside `server.dashboard_listen`). Even then the dashboard prints a prominent warning: put a **TLS terminator** in front of it and restrict access to a trusted network. When it is reached over TLS (directly or via a terminating proxy that sets `X-Forwarded-Proto: https`), the session cookie is additionally marked `Secure`.
+
+!!! warning "Cleartext off-loopback exposes the token"
+    Over plain HTTP on a shared network, a passive observer can capture the bearer token or session cookie and take over the node. Prefer the loopback default with an SSH port-forward; only bind off-loopback behind TLS on a network you trust.
 
 ## Role Selection
 

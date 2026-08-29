@@ -85,9 +85,16 @@ server:
   dashboard_port: 8080
 
   # Interface the web dashboard binds. Defaults to 127.0.0.1 (local only).
-  # Set to 0.0.0.0 to expose it — the dashboard is unauthenticated, so only
-  # on a trusted network. Also settable per run with `tw dashboard --listen`.
+  # The dashboard requires a login token (see `tw dashboard token`), but it is
+  # served over cleartext HTTP, so an off-loopback bind is REFUSED unless
+  # dashboard_allow_lan is also set. Also settable per run with
+  # `tw dashboard --listen`.
   dashboard_listen: 127.0.0.1
+
+  # Explicit opt-in to bind the dashboard off-loopback over cleartext. Only set
+  # this behind a TLS terminator on a trusted network — the bearer token and
+  # session cookie travel unencrypted otherwise.
+  dashboard_allow_lan: false
 
   # SSH port on the relay server (for the reverse tunnel).
   relay_ssh_port: 22
@@ -185,9 +192,10 @@ mode_auth:
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `ssh_port` | int | `2222` | Local SSH server listen port. |
-| `api_port` | int | `50051` | gRPC API listen port. Read in every mode to locate a running daemon. |
+| `api_port` | int | `50051` | gRPC API listen port (loopback only). Read in every mode to locate a running daemon. Every RPC requires the daemon's bearer token (`api.token`); the CLI attaches it automatically. |
 | `dashboard_port` | int | `8080` | Web dashboard listen port. Setting it to `0` (by editing the file — the CLI and API ignore a `0`) disables the dashboard for `tw server start`; `tw dashboard` always needs a real port. |
-| `dashboard_listen` | string | `127.0.0.1` | Interface the web dashboard binds to. Default `127.0.0.1` (loopback only). Set to `0.0.0.0` to expose on all interfaces — the dashboard is unauthenticated, so only on a trusted network. Also settable per run with `tw dashboard --listen`. |
+| `dashboard_listen` | string | `127.0.0.1` | Interface the web dashboard binds to. Default `127.0.0.1` (loopback only). An off-loopback value is **refused** unless `dashboard_allow_lan` is also set, because the dashboard serves its login token and cookie over cleartext HTTP. Also settable per run with `tw dashboard --listen`. |
+| `dashboard_allow_lan` | bool | `false` | Explicit opt-in required to bind the dashboard off-loopback over cleartext HTTP. Only enable behind a TLS terminator on a trusted network — otherwise the bearer token/session cookie are exposed. |
 | `relay_ssh_port` | int | `22` | SSH port on the relay for the reverse tunnel. |
 | `relay_ssh_user` | string | `ubuntu` | SSH user on the relay server. |
 | `remote_port` | int | `2222` | Remote port on the relay forwarded back to local SSH. Enrolled servers get their port assigned by the relay admin (starting at 20000). |

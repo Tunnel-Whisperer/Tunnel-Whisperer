@@ -93,6 +93,23 @@ func vlessOutbound(cfg config.XrayConfig, proxyURL string) map[string]interface{
 	return out
 }
 
+// redactProxyURL strips any userinfo (username:password) from a proxy URL so
+// credentials never reach the logs or the dashboard log console (finding #11).
+// An unparseable value is not echoed back — it might itself contain a secret.
+func redactProxyURL(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "<proxy set>"
+	}
+	if u.User != nil {
+		u.User = url.User("redacted")
+	}
+	return u.String()
+}
+
 // proxyOutbound parses a proxy URL and returns an Xray outbound config block.
 // Supported schemes: socks5 (→ "socks" protocol), http (→ "http" protocol).
 func proxyOutbound(proxyURL string) (map[string]interface{}, error) {
@@ -239,7 +256,7 @@ func (x *Instance) Start(listenPort, relaySSHPort int, proxyURL string) error {
 		return fmt.Errorf("xray: building config: %w", err)
 	}
 
-	slog.Info("Xray starting", "relay", fmt.Sprintf("%s:%d", x.cfg.RelayHost, x.cfg.RelayPort), "path", x.cfg.Path, "proxy", proxyURL, "xray_log_level", logging.XrayLevel)
+	slog.Info("Xray starting", "relay", fmt.Sprintf("%s:%d", x.cfg.RelayHost, x.cfg.RelayPort), "path", x.cfg.Path, "proxy", redactProxyURL(proxyURL), "xray_log_level", logging.XrayLevel)
 
 	instance, err := core.StartInstance("json", configBytes)
 	if err != nil {
@@ -271,7 +288,7 @@ func (x *Instance) StartClient(clientCfg config.ClientConfig, listenPort int, pr
 		return fmt.Errorf("xray: building client config: %w", err)
 	}
 
-	slog.Info("Xray client starting", "relay", fmt.Sprintf("%s:%d", x.cfg.RelayHost, x.cfg.RelayPort), "path", x.cfg.Path, "proxy", proxyURL, "xray_log_level", logging.XrayLevel)
+	slog.Info("Xray client starting", "relay", fmt.Sprintf("%s:%d", x.cfg.RelayHost, x.cfg.RelayPort), "path", x.cfg.Path, "proxy", redactProxyURL(proxyURL), "xray_log_level", logging.XrayLevel)
 
 	instance, err := core.StartInstance("json", configBytes)
 	if err != nil {

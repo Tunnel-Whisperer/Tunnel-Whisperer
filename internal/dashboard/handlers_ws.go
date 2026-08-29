@@ -5,6 +5,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -12,7 +14,26 @@ import (
 )
 
 var wsUpgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: checkSameOrigin,
+}
+
+// checkSameOrigin permits a WebSocket upgrade only when the browser-supplied
+// Origin matches the request Host. Without this, the relay SSH terminal (which
+// yields a privileged shell on the relay) is open to cross-site WebSocket
+// hijacking: any page in the operator's browser could connect and drive it,
+// since WebSockets are not bound by the same-origin policy. Browsers always
+// send Origin on a WebSocket handshake and cannot forge it cross-site; a
+// missing Origin means a non-browser client, which is not the threat here.
+func checkSameOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(u.Host, r.Host)
 }
 
 // wsControl is a JSON control message sent from the browser.

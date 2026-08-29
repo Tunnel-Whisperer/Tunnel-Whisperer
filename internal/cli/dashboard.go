@@ -22,6 +22,7 @@ var (
 	dashboardPort   int
 	dashboardListen string
 	runAsService    bool
+	tokenRotate     bool
 )
 
 var dashboardCmd = &cobra.Command{
@@ -30,12 +31,41 @@ var dashboardCmd = &cobra.Command{
 	RunE:  runDashboard,
 }
 
+var dashboardTokenCmd = &cobra.Command{
+	Use:   "token",
+	Short: "Print the dashboard login token (creates one if absent)",
+	Long: "Print the token required to sign in to the web dashboard.\n" +
+		"Paste it into the dashboard login page. Use --rotate to invalidate the old token.",
+	RunE: runDashboardToken,
+}
+
 func init() {
 	dashboardCmd.Flags().IntVar(&dashboardPort, "port", 0, "dashboard listen port (overrides config)")
 	dashboardCmd.Flags().StringVar(&dashboardListen, "listen", "", "dashboard listen interface (default 127.0.0.1; 0.0.0.0 exposes it on all interfaces)")
 	dashboardCmd.Flags().BoolVar(&runAsService, "run-as-service", false, "run under the system service manager")
 	_ = dashboardCmd.Flags().MarkHidden("run-as-service")
+
+	dashboardTokenCmd.Flags().BoolVar(&tokenRotate, "rotate", false, "generate a new token, invalidating the old one")
+	dashboardCmd.AddCommand(dashboardTokenCmd)
+
 	rootCmd.AddCommand(dashboardCmd)
+}
+
+func runDashboardToken(cmd *cobra.Command, args []string) error {
+	var (
+		tok string
+		err error
+	)
+	if tokenRotate {
+		tok, err = dashboard.RotateDashboardToken()
+	} else {
+		tok, err = dashboard.EnsureDashboardToken()
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Println(tok)
+	return nil
 }
 
 // slogProgress logs ProgressEvents via slog so they appear in the dashboard console.
@@ -48,6 +78,15 @@ func slogProgress(e ops.ProgressEvent) {
 	case "failed":
 		slog.Error(e.Label, "step", fmt.Sprintf("%d/%d", e.Step, e.Total), "error", e.Error)
 	}
+}
+
+// apiListenAddr is the gRPC control-plane bind address. It is ALWAYS loopback:
+// the API is dialed only by the local CLI (localhost:api_port) and is gated by a
+// per-daemon bearer token (see internal/api/auth.go), so it must never listen on
+// other interfaces — loopback is defence-in-depth on top of the token, not the
+// only control.
+func apiListenAddr(port int) string {
+	return net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
 }
 
 // resolveDashboardAddr picks the dashboard bind address: --listen flag,
@@ -84,7 +123,7 @@ func runDashboard(cmd *cobra.Command, args []string) error {
 	}
 
 	// Start gRPC API so CLI commands can talk to this daemon.
-	apiAddr := fmt.Sprintf(":%d", cfg.Server.APIPort)
+	apiAddr := apiListenAddr(cfg.Server.APIPort)
 	apiSrv := api.NewServer(o, apiAddr)
 	go func() {
 		slog.Info("gRPC API listening", "addr", apiAddr)
@@ -155,6 +194,7 @@ func runDashboard(cmd *cobra.Command, args []string) error {
 	}()
 
 	fmt.Printf("Starting dashboard on http://%s\n", addr)
+	fmt.Println("Sign-in required — get your token with: tw dashboard token")
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)

@@ -15,12 +15,20 @@ type Client struct {
 
 // Dial connects to the gRPC API server at the given address.
 // Returns an error if the server is not reachable within 2 seconds.
+//
+// The daemon requires a per-instance bearer token on every RPC; the token is
+// read from the shared config dir (same machine, same TW_CONFIG_DIR). A missing
+// token is not fatal here — the call proceeds and the server rejects it with a
+// clear Unauthenticated error rather than the client failing opaquely.
 func Dial(addr string) (*Client, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
+	token, _ := readAPIToken()
+
 	conn, err := grpc.DialContext(ctx, addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithPerRPCCredentials(tokenCreds{token: token}),
 		grpc.WithDefaultCallOptions(grpc.CallContentSubtype("json")),
 		grpc.WithBlock(),
 	)

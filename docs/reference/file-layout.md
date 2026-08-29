@@ -18,6 +18,8 @@ state under a single platform-specific directory.
 |---|---|
 | `config.yaml` | Main configuration file (see [Configuration](configuration.md)) |
 | `id_ed25519` / `id_ed25519.pub` | The profile's ed25519 SSH identity key pair, generated on first initialization. Server: authenticates the reverse tunnel to the relay. Relay: the admin management key. Client: the per-user key received in the bundle. Also the signing/identity key for `mode_auth`. |
+| `dashboard.token` | The web dashboard's login token (`0600`). Fetch with `tw dashboard token`; `--rotate` replaces it and invalidates active sessions. |
+| `api.token` | The gRPC control-plane bearer token (`0600`). Required on every RPC; the CLI reads it automatically. |
 | `contexts.yaml` | Plaintext context index: the active context name plus non-secret metadata (role, relay, user, short ID, created) per stored context |
 | `contexts/<name>.twctx` | Sealed bundle of each **non-active** stored context (the active context lives unpacked in the config dir itself and is sealed on switch-away) |
 | `tw.log` | Plain-text log file, written when running as a Windows service (elsewhere logs go to the console) |
@@ -66,6 +68,7 @@ relay infrastructure state:
 ├── config.yaml              # mode: relay
 ├── contexts.yaml / contexts/
 ├── id_ed25519(.pub)         # Admin management key (authorized on the relay VM)
+├── relay_host_ed25519(.pub) # tw-managed SSH host key installed on the relay VM; the admin pins it on the direct port-22 channel
 ├── ca.crt / ca.key          # The relay profile's own tenant CA (the admin is also a tenant)
 ├── client.crt / client.key  # ...and its mTLS client certificate
 ├── servers/                 # Enrolled-server registry: one JSON file per tenant

@@ -14,7 +14,13 @@
 {{range .Servers}}
     @{{.ID}} {
         path {{.Path}}*
-        expression {http.request.tls.client.subject} == "CN={{.ID}}"
+        # Bind the route to BOTH the client-cert CN and its issuing CA. The
+        # trust pool is the union of every tenant's CA, so a CN match alone lets
+        # a tenant issue a cert with a victim's CN off its own (pool-trusted) CA
+        # and reach the victim's upstream. Each tenant's CA subject is its own
+        # id (pki.GenerateCA(id)), enforced at enrollment, so requiring the
+        # issuer CN to equal this id closes that impersonation (finding #10).
+        expression {http.request.tls.client.subject} == "CN={{.ID}}" && {http.request.tls.client.issuer} == "CN={{.ID}}"
     }
     handle @{{.ID}} {
         reverse_proxy {{.Upstream}} {

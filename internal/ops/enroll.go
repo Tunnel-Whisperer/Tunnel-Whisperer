@@ -45,15 +45,33 @@ func (o *Ops) signServerMode(req *JoinRequest) (sig, issuer string, err error) {
 // source, which made the deliberately-open port 22 unusable with tw's own
 // key. Tenant lines stay pinned regardless.
 func renderRelayAuthorizedKeys(adminPubKey string, servers []RegisteredServer, sshOpen bool) string {
-	adminLine := strings.TrimSpace(adminPubKey)
+	// The admin key is the operator's own, locally-generated material; if it
+	// somehow fails to canonicalize we fall back to a trim rather than lock the
+	// operator out of their own relay.
+	adminLine, err := canonicalAuthorizedKey(adminPubKey)
+	if err != nil {
+		slog.Warn("admin ssh key did not canonicalize; using trimmed form", "error", err)
+		adminLine = strings.TrimSpace(adminPubKey)
+	}
 	if !sshOpen {
 		adminLine = `from="127.0.0.1" ` + adminLine
 	}
 	lines := []string{adminLine}
 	for _, s := range servers {
+		// A tenant key is attacker-supplied. Canonicalize it to a single,
+		// option-free line so it cannot break out of its restriction prefix;
+		// fail closed (drop the entry) if it is malformed rather than emit it
+		// raw. Registry entries written by AddServer are already canonical, so
+		// this only ever trips on pre-existing/corrupted state.
+		keyLine, err := canonicalAuthorizedKey(s.SSHPubkey)
+		if err != nil {
+			slog.Warn("skipping tenant with invalid ssh key in relay authorized_keys",
+				"server_id", s.ServerID, "error", err)
+			continue
+		}
 		lines = append(lines, fmt.Sprintf(
 			`from="127.0.0.1",restrict,port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:%d",permitlisten="127.0.0.1:%d" %s`,
-			s.RemotePort, enrollPort(s.RemotePort), strings.TrimSpace(s.SSHPubkey)))
+			s.RemotePort, enrollPort(s.RemotePort), keyLine))
 	}
 	return strings.Join(lines, "\n") + "\n"
 }
