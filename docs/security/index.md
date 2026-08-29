@@ -2,6 +2,8 @@
 
 Tunnel Whisperer implements **defense-in-depth** with three independent security layers. Compromise of any single layer does not expose user data or grant unauthorized access. Every connection is outbound-only, encrypted end-to-end, and scoped to the minimum required ports per user.
 
+Two properties underpin the whole model and distinguish it from mesh VPNs: **user identity lives solely on your on-prem server** (in `authorized_keys` — never in a cloud or third-party control plane), and **access is granted per `host:port`, not per network** (no routable overlay, no lateral movement). See [Access Control](access-control.md).
+
 ---
 
 ## Three-Layer Security

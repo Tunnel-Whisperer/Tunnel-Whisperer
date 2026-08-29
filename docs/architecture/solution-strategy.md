@@ -89,7 +89,7 @@ graph LR
 | Adding a server must not disrupt others | Enrollment live-adds the tenant's inbound + rules over the Xray gRPC API (`:10085`, loopback, reached over the admin's SSH tunnel) — no Xray restart | `AddInbound` / `AddRule` via `internal/ops/enroll.go` |
 | Hand-edited role field | Config `mode` is ed25519-signed against the profile's own identity (tamper-evidence, not a security wall) | `internal/ops/modeauth` |
 | Multiple relays / identities per machine | kubectl-style contexts: sealed profile bundles switched with `tw config use-context` | `internal/ops/context.go` + `internal/cryptobox` |
-| Per-user access control | Public key auth with port restrictions | SSH `authorized_keys` + `permitopen` (+ optional `single-session`) |
+| Per-user access control | Identity and authorization live entirely on the on-prem server — no external control plane; each user key grants specific `host:port` targets only, never network/overlay reachability | SSH `authorized_keys` + `permitopen` (+ optional `single-session`) |
 | Infrastructure provisioning | Interactive wizard generates Terraform + cloud-init, or an install script for a bring-your-own VM | Terraform (Hetzner, DigitalOcean, AWS) / manual install script |
 | Cross-platform operation | Single binary for all three roles | Go (Linux + Windows + macOS) |
 | Dynamic user management | Re-read authorized_keys on every auth attempt | No server restart needed |

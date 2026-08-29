@@ -2,6 +2,10 @@
 
 Tunnel Whisperer enforces access control at three scopes. **Relay admission** is per-server, decided at the TLS handshake by a mutual-TLS client certificate. **User authorization** is per-user, decided on the server by the SSH public key and its port restrictions. **Relay SSH** is a separate, tightly restricted management surface. A connection must clear the certificate gate to reach the relay at all, and then clear the SSH key check to do anything on the server.
 
+!!! abstract "Two guarantees that set this apart from mesh VPNs (Tailscale, NetBird, ZeroTier, Twingate, Cloudflare Access, …)"
+    - **Identity is on your server, not in a control plane.** Every tunnel user's authorization is an entry in the on-prem server's `authorized_keys` — an SSH public key plus its `permitopen` port rules, re-read on every connection attempt. There is no cloud or third-party coordination/management plane that brokers or stores who your users are. The relay holds only public CA certs and forwarding-only public keys; it has no user directory, no signing keys, and never sees plaintext.
+    - **You grant ports, not networks.** A user is authorized for exactly the `host:port` targets you list — never a subnet, an overlay IP, or the server's network. There is no routable virtual network to move laterally on: a granted user can reach only the services you opened. Compare mesh VPNs, whose default unit is a device/network on an overlay (narrowable to ports via control-plane ACLs, but network-first by design).
+
 ---
 
 ## Relay Admission — Mutual TLS (per server)

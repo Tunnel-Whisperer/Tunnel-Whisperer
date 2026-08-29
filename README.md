@@ -34,6 +34,8 @@ Two design choices set Tunnel Whisperer apart from mesh VPNs like **Tailscale**,
 | **Relay/infra holds keys or sees traffic?** | **No** — no creds, no CA signing keys, end-to-end SSH | Coordination plane holds node keys + ACLs; DERP relays carry encrypted WG | Management/signal plane holds config |
 | **Transport** | HTTPS (TLS 1.3 + VLESS/XHTTP) — survives DPI on `:443` | WireGuard (UDP; TCP fallback via DERP) | WireGuard (UDP; relays) |
 
+The same holds against the rest of the category — **ZeroTier**, **Netmaker**, **Twingate**, **Cloudflare Access / Tunnel**, **OpenVPN Cloud**: all of them broker identity and policy through a control plane (cloud, or self-hosted at best), and most hand out overlay/subnet reachability. Even the app-scoped zero-trust ones route your users' identity and traffic through their edge. Tunnel Whisperer keeps **identity on your server** and gives out **nothing but the exact port** — no control plane, no overlay.
+
 Mesh VPNs are excellent at building a private network you join. Tunnel Whisperer is for the opposite need: exposing **one service on one port to one person**, across hostile networks — without a network overlay, and **without handing your user directory to anyone**.
 
 ---
