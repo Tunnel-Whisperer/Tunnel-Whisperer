@@ -212,3 +212,20 @@ Structured by role — with dynamic tab completion for contexts, users, and serv
 | **Deployment Target** | Gateway / sidecar (connects *other* devices) | Host-based (connects *this* device) | Dev/test (temporary exposure) |
 | **Infrastructure** | Self-hosted (you own data/keys) | SaaS / hybrid | SaaS |
 | **Primary Goal** | Production reliability in strict networks | Mesh networking | Public access |
+
+## Performance
+
+Measured with `make bench` on the e2e topology (real relay, real server, real client tunnel) — medians of 3 runs, server → client. The WAN column applies 30 ms RTT and 0.1 % loss split across client and server egress; tw's relay is modelled mid-path, not as an extra hop. At 1 stream all three transports are loss-bound to the same ≈0.03 Gbit/s (indistinguishable at three runs); the 4-stream column below is where a real difference shows up. Full tables, environment and the offload/loss caveats behind these numbers: [Performance](https://tunnel-whisperer.github.io/Tunnel-Whisperer/reference/performance/).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/bench-chart-dark.svg">
+  <img alt="Benchmark: pure SSH vs SSH over WireGuard vs SSH over Tunnel Whisperer — LAN throughput, file copy, latency, lossy-WAN parallel streams, CPU per copy" src="docs/assets/bench-chart.svg" width="100%">
+</picture>
+
+| Transport | iperf3 1 stream, LAN | iperf3 4 streams, WAN 30 ms / 0.1 % | TCP_RR p99, LAN | scp 5 GiB, LAN | Wire overhead, LAN | Gbit/s per busy core, LAN | Peak RSS (client / server / relay) |
+|---|---|---|---|---|---|---|---|
+| Pure SSH | 3.64 Gbit/s | 0.10 Gbit/s | 75 µs | 359 MB/s | 4.7 % | 1.37 | — / 4.6 MiB (idle sshd) / — |
+| SSH over WireGuard (direct peer) | 1.20 Gbit/s | 0.10 Gbit/s | 336 µs | 149 MB/s | 9.4 % | 0.29 | 0 (kernel) |
+| **SSH over Tunnel Whisperer** (via relay) | 0.97 Gbit/s | 0.03 Gbit/s | 1162 µs | 122 MB/s | 6.0 % | 0.12 | 55.6 / 45.8 / 109.8 MiB (caddy + xray) |
+
+tw crosses a relay and wraps traffic in TLS so it passes firewalls that block WireGuard outright; the table shows what that costs. At 4 streams under WAN loss, tw stays flat at its single-stream number because every stream is multiplexed over one outer TCP connection to the relay — a property of the design, not a bug.

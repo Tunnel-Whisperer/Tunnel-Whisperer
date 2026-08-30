@@ -1,0 +1,1209 @@
+{
+  "env": {
+    "generated": "2026-08-29T22:51:27Z",
+    "cpu_model": "Intel(R) Core(TM) i9-14900K",
+    "cores": 32,
+    "kernel": "6.6.123.2-microsoft-standard-WSL2",
+    "docker": "29.7.2",
+    "tw": "tw version v3.0.0-2-gc8b8195-dirty",
+    "openssh": "OpenSSH_9.2p1 Debian-2+deb12u10, OpenSSL 3.0.20 7 Apr 2026",
+    "iperf3": "iperf 3.12 (cJSON 1.7.15)",
+    "netperf": "Netperf version 2.7.0",
+    "wireguard": "kernel module 1.0.0",
+    "image": "debian:bookworm-slim (e2e/images/tw)",
+    "wan": "30ms:0.1%",
+    "offloads": "tso/gso/gro off + gso_max_segs 1 on client, server and relay eth0 for the whole run (TCP always builds GSO skbs unless gso_max_segs caps it; netem drops per skb, so this makes loss per 1500-byte packet for every transport; LAN ceilings are therefore software-segmentation ceilings)",
+    "scp_form": "scp",
+    "scp_options": "-c aes128-gcm@openssh.com -o Compression=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i /bench/id_ed25519",
+    "runs": 3,
+    "size_gb": 5
+  },
+  "conditions": [
+    {
+      "name": "lan",
+      "label": "LAN (0 ms RTT, no loss)",
+      "scp_payload_bytes": 5368709120
+    },
+    {
+      "name": "wan",
+      "label": "WAN (30 ms RTT, 0.1 % loss)",
+      "scp_payload_bytes": 268435456
+    }
+  ],
+  "samples": [
+    {
+      "transport": "ssh",
+      "condition": "lan",
+      "instrument": "iperf3-1",
+      "run": 1,
+      "wall_sec": 10.003713846206665,
+      "value": 3.6473056836860214,
+      "host_cpu_sec": 26.61,
+      "container_cpu_sec": {
+        "client": 6.372436,
+        "relay": 0.008639,
+        "server": 9.883549
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "lan",
+      "instrument": "iperf3-4",
+      "run": 1,
+      "wall_sec": 10.005817651748657,
+      "value": 3.6480656639212032,
+      "host_cpu_sec": 24.42,
+      "container_cpu_sec": {
+        "client": 6.552871,
+        "relay": 0.004052,
+        "server": 9.866873
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "lan",
+      "instrument": "tcp_rr",
+      "run": 1,
+      "wall_sec": 10.002203226089478,
+      "value": 30510.75,
+      "mean_us": 32.72,
+      "p50_us": 29,
+      "p99_us": 75,
+      "host_cpu_sec": 15.7,
+      "container_cpu_sec": {
+        "client": 4.417374,
+        "relay": 0.005665,
+        "server": 4.350941
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "lan",
+      "instrument": "scp",
+      "run": 1,
+      "wall_sec": 14.943928003311157,
+      "value": 359.25689141505796,
+      "payload_bytes": 5368709120,
+      "wire_bytes": 5623712979,
+      "host_cpu_sec": 42.7,
+      "container_cpu_sec": {
+        "client": 12.949902,
+        "relay": 0.004823,
+        "server": 17.07205
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "lan",
+      "instrument": "iperf3-1",
+      "run": 2,
+      "wall_sec": 10.003625869750977,
+      "value": 3.641889498532602,
+      "host_cpu_sec": 24.43,
+      "container_cpu_sec": {
+        "client": 6.243843,
+        "relay": 0.004081,
+        "server": 9.836466
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "lan",
+      "instrument": "iperf3-4",
+      "run": 2,
+      "wall_sec": 10.007381916046143,
+      "value": 3.682445068332398,
+      "host_cpu_sec": 25.57,
+      "container_cpu_sec": {
+        "client": 6.574092,
+        "relay": 0.00359,
+        "server": 9.880602
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "lan",
+      "instrument": "tcp_rr",
+      "run": 2,
+      "wall_sec": 10.002026557922363,
+      "value": 31055.62,
+      "mean_us": 32.15,
+      "p50_us": 29,
+      "p99_us": 70,
+      "host_cpu_sec": 17.18,
+      "container_cpu_sec": {
+        "client": 4.426302,
+        "relay": 0.00378,
+        "server": 4.375027
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "lan",
+      "instrument": "scp",
+      "run": 2,
+      "wall_sec": 14.878405809402466,
+      "value": 360.8390031012075,
+      "payload_bytes": 5368709120,
+      "wire_bytes": 5627293951,
+      "host_cpu_sec": 42.69,
+      "container_cpu_sec": {
+        "client": 12.746845,
+        "relay": 0.005507,
+        "server": 16.684522
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "lan",
+      "instrument": "iperf3-1",
+      "run": 3,
+      "wall_sec": 10.003976345062256,
+      "value": 3.629124773013022,
+      "host_cpu_sec": 33.83,
+      "container_cpu_sec": {
+        "client": 6.269195,
+        "relay": 0.004228,
+        "server": 9.868676
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "lan",
+      "instrument": "iperf3-4",
+      "run": 3,
+      "wall_sec": 10.0059814453125,
+      "value": 3.7269451451426225,
+      "host_cpu_sec": 24.33,
+      "container_cpu_sec": {
+        "client": 6.553842,
+        "relay": 0.016552,
+        "server": 9.886559
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "lan",
+      "instrument": "tcp_rr",
+      "run": 3,
+      "wall_sec": 10.002436637878418,
+      "value": 23558.23,
+      "mean_us": 42.37,
+      "p50_us": 35,
+      "p99_us": 111,
+      "host_cpu_sec": 44.4,
+      "container_cpu_sec": {
+        "client": 4.573732,
+        "relay": 0.004173,
+        "server": 4.50915
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "lan",
+      "instrument": "scp",
+      "run": 3,
+      "wall_sec": 15.709155559539795,
+      "value": 341.7566972108638,
+      "payload_bytes": 5368709120,
+      "wire_bytes": 5623638339,
+      "host_cpu_sec": 79.14,
+      "container_cpu_sec": {
+        "client": 13.990186,
+        "relay": 0.004928,
+        "server": 17.688523
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "wan",
+      "instrument": "iperf3-1",
+      "run": 1,
+      "wall_sec": 10.237168788909912,
+      "value": 0.033278193935351544,
+      "host_cpu_sec": 7.74,
+      "container_cpu_sec": {
+        "client": 0.08396,
+        "relay": 0.004703,
+        "server": 0.031295
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "wan",
+      "instrument": "iperf3-4",
+      "run": 1,
+      "wall_sec": 10.391125917434692,
+      "value": 0.09987528342267592,
+      "host_cpu_sec": 6.48,
+      "container_cpu_sec": {
+        "client": 0.150099,
+        "relay": 0.0032,
+        "server": 0.154966
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "wan",
+      "instrument": "tcp_rr",
+      "run": 1,
+      "wall_sec": 10.122928619384766,
+      "value": 32.98,
+      "mean_us": 30232.5,
+      "p50_us": 30501,
+      "p99_us": 30990,
+      "host_cpu_sec": 6.24,
+      "container_cpu_sec": {
+        "client": 0.055894,
+        "relay": 0.004434,
+        "server": 0.023779
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "wan",
+      "instrument": "scp",
+      "run": 1,
+      "wall_sec": 151.85461115837097,
+      "value": 1.7677135646545858,
+      "payload_bytes": 268435456,
+      "wire_bytes": 281028654,
+      "host_cpu_sec": 99.76,
+      "container_cpu_sec": {
+        "client": 0.951249,
+        "relay": 0.031306,
+        "server": 0.871533
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "wan",
+      "instrument": "iperf3-1",
+      "run": 2,
+      "wall_sec": 10.227344512939453,
+      "value": 0.02867473251530859,
+      "host_cpu_sec": 6.62,
+      "container_cpu_sec": {
+        "client": 0.075203,
+        "relay": 0.008055,
+        "server": 0.028632
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "wan",
+      "instrument": "iperf3-4",
+      "run": 2,
+      "wall_sec": 10.32547116279602,
+      "value": 0.06708935768513852,
+      "host_cpu_sec": 7.07,
+      "container_cpu_sec": {
+        "client": 0.12248,
+        "relay": 0.007655,
+        "server": 0.14641
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "wan",
+      "instrument": "tcp_rr",
+      "run": 2,
+      "wall_sec": 10.122414588928223,
+      "value": 31.45,
+      "mean_us": 31704.05,
+      "p50_us": 30503,
+      "p99_us": 30996,
+      "host_cpu_sec": 6.86,
+      "container_cpu_sec": {
+        "client": 0.056009,
+        "relay": 0.002972,
+        "server": 0.022765
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "wan",
+      "instrument": "scp",
+      "run": 2,
+      "wall_sec": 141.74386858940125,
+      "value": 1.8938064741099638,
+      "payload_bytes": 268435456,
+      "wire_bytes": 281032034,
+      "host_cpu_sec": 94.81,
+      "container_cpu_sec": {
+        "client": 0.900975,
+        "relay": 0.023747,
+        "server": 0.887358
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "wan",
+      "instrument": "iperf3-1",
+      "run": 3,
+      "wall_sec": 10.266940355300903,
+      "value": 0.0272152128276484,
+      "host_cpu_sec": 6.31,
+      "container_cpu_sec": {
+        "client": 0.077187,
+        "relay": 0.003871,
+        "server": 0.028281
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "wan",
+      "instrument": "iperf3-4",
+      "run": 3,
+      "wall_sec": 10.319990634918213,
+      "value": 0.10871893615827666,
+      "host_cpu_sec": 7.05,
+      "container_cpu_sec": {
+        "client": 0.159646,
+        "relay": 0.003045,
+        "server": 0.159743
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "wan",
+      "instrument": "tcp_rr",
+      "run": 3,
+      "wall_sec": 10.122514724731445,
+      "value": 32.2,
+      "mean_us": 30964.29,
+      "p50_us": 30503,
+      "p99_us": 30993,
+      "host_cpu_sec": 6.71,
+      "container_cpu_sec": {
+        "client": 0.055264,
+        "relay": 0.004059,
+        "server": 0.023973
+      }
+    },
+    {
+      "transport": "ssh",
+      "condition": "wan",
+      "instrument": "scp",
+      "run": 3,
+      "wall_sec": 143.3233289718628,
+      "value": 1.8729362339378763,
+      "payload_bytes": 268435456,
+      "wire_bytes": 281026961,
+      "host_cpu_sec": 96.83,
+      "container_cpu_sec": {
+        "client": 0.924771,
+        "relay": 0.023573,
+        "server": 0.852339
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "lan",
+      "instrument": "iperf3-1",
+      "run": 1,
+      "wall_sec": 10.009802341461182,
+      "value": 1.2212818096772857,
+      "host_cpu_sec": 40.69,
+      "container_cpu_sec": {
+        "client": 4.122593,
+        "relay": 0.004129,
+        "server": 0.209711
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "lan",
+      "instrument": "iperf3-4",
+      "run": 1,
+      "wall_sec": 10.013845920562744,
+      "value": 1.2135689754741268,
+      "host_cpu_sec": 41.35,
+      "container_cpu_sec": {
+        "client": 4.223761,
+        "relay": 0.007545,
+        "server": 0.254234
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "lan",
+      "instrument": "tcp_rr",
+      "run": 1,
+      "wall_sec": 10.002263307571411,
+      "value": 6586.14,
+      "mean_us": 151.74,
+      "p50_us": 135,
+      "p99_us": 336,
+      "host_cpu_sec": 13.63,
+      "container_cpu_sec": {
+        "client": 0.924475,
+        "relay": 0.00659,
+        "server": 0.882628
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "lan",
+      "instrument": "scp",
+      "run": 1,
+      "wall_sec": 35.96606421470642,
+      "value": 149.27152128602245,
+      "payload_bytes": 5368709120,
+      "wire_bytes": 5872386544,
+      "host_cpu_sec": 163.99,
+      "container_cpu_sec": {
+        "client": 21.981127,
+        "relay": 0.007151,
+        "server": 9.129207
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "lan",
+      "instrument": "iperf3-1",
+      "run": 2,
+      "wall_sec": 10.008315324783325,
+      "value": 1.2002585655725901,
+      "host_cpu_sec": 40.93,
+      "container_cpu_sec": {
+        "client": 4.291252,
+        "relay": 0.004214,
+        "server": 0.199426
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "lan",
+      "instrument": "iperf3-4",
+      "run": 2,
+      "wall_sec": 10.024496078491211,
+      "value": 1.2030597044462659,
+      "host_cpu_sec": 41.7,
+      "container_cpu_sec": {
+        "client": 4.422496,
+        "relay": 0.003359,
+        "server": 0.271566
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "lan",
+      "instrument": "tcp_rr",
+      "run": 2,
+      "wall_sec": 10.00217342376709,
+      "value": 6567.31,
+      "mean_us": 152.18,
+      "p50_us": 134,
+      "p99_us": 375,
+      "host_cpu_sec": 14.39,
+      "container_cpu_sec": {
+        "client": 0.924544,
+        "relay": 0.003652,
+        "server": 0.889604
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "lan",
+      "instrument": "scp",
+      "run": 2,
+      "wall_sec": 36.108752489089966,
+      "value": 148.68165610601258,
+      "payload_bytes": 5368709120,
+      "wire_bytes": 5872359392,
+      "host_cpu_sec": 185.49,
+      "container_cpu_sec": {
+        "client": 23.055264,
+        "relay": 0.012728,
+        "server": 9.044202
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "lan",
+      "instrument": "iperf3-1",
+      "run": 3,
+      "wall_sec": 10.012177228927612,
+      "value": 1.1428513426337916,
+      "host_cpu_sec": 67.79,
+      "container_cpu_sec": {
+        "client": 4.601504,
+        "relay": 0.003536,
+        "server": 0.247338
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "lan",
+      "instrument": "iperf3-4",
+      "run": 3,
+      "wall_sec": 10.02666711807251,
+      "value": 1.1840711676299283,
+      "host_cpu_sec": 45.64,
+      "container_cpu_sec": {
+        "client": 4.730417,
+        "relay": 0.006487,
+        "server": 0.279274
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "lan",
+      "instrument": "tcp_rr",
+      "run": 3,
+      "wall_sec": 10.00233268737793,
+      "value": 6539.43,
+      "mean_us": 152.83,
+      "p50_us": 136,
+      "p99_us": 327,
+      "host_cpu_sec": 13.47,
+      "container_cpu_sec": {
+        "client": 0.920723,
+        "relay": 0.017333,
+        "server": 0.876385
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "lan",
+      "instrument": "scp",
+      "run": 3,
+      "wall_sec": 36.45689797401428,
+      "value": 147.26181925370346,
+      "payload_bytes": 5368709120,
+      "wire_bytes": 5872558456,
+      "host_cpu_sec": 171.68,
+      "container_cpu_sec": {
+        "client": 23.276692,
+        "relay": 0.008463,
+        "server": 9.006775
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "wan",
+      "instrument": "iperf3-1",
+      "run": 1,
+      "wall_sec": 10.281480550765991,
+      "value": 0.028554939560483515,
+      "host_cpu_sec": 8.61,
+      "container_cpu_sec": {
+        "client": 0.154973,
+        "relay": 0.003601,
+        "server": 0.022203
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "wan",
+      "instrument": "iperf3-4",
+      "run": 1,
+      "wall_sec": 10.370654344558716,
+      "value": 0.08028319947600393,
+      "host_cpu_sec": 8.26,
+      "container_cpu_sec": {
+        "client": 0.338367,
+        "relay": 0.004463,
+        "server": 0.135362
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "wan",
+      "instrument": "tcp_rr",
+      "run": 1,
+      "wall_sec": 10.123352289199829,
+      "value": 32.71,
+      "mean_us": 30477.25,
+      "p50_us": 30510,
+      "p99_us": 32000,
+      "host_cpu_sec": 6.75,
+      "container_cpu_sec": {
+        "client": 0.059652,
+        "relay": 0.003986,
+        "server": 0.027838
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "wan",
+      "instrument": "scp",
+      "run": 1,
+      "wall_sec": 155.5439248085022,
+      "value": 1.725785538268268,
+      "payload_bytes": 268435456,
+      "wire_bytes": 293512483,
+      "host_cpu_sec": 112.29,
+      "container_cpu_sec": {
+        "client": 1.705773,
+        "relay": 0.036103,
+        "server": 0.926248
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "wan",
+      "instrument": "iperf3-1",
+      "run": 2,
+      "wall_sec": 10.268978357315063,
+      "value": 0.025691812403863246,
+      "host_cpu_sec": 7.72,
+      "container_cpu_sec": {
+        "client": 0.14074,
+        "relay": 0.005486,
+        "server": 0.02809
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "wan",
+      "instrument": "iperf3-4",
+      "run": 2,
+      "wall_sec": 10.337505578994751,
+      "value": 0.10344623951933175,
+      "host_cpu_sec": 9.47,
+      "container_cpu_sec": {
+        "client": 0.404168,
+        "relay": 0.003938,
+        "server": 0.132502
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "wan",
+      "instrument": "tcp_rr",
+      "run": 2,
+      "wall_sec": 10.122974395751953,
+      "value": 32.7,
+      "mean_us": 30484.11,
+      "p50_us": 30510,
+      "p99_us": 32666,
+      "host_cpu_sec": 7.02,
+      "container_cpu_sec": {
+        "client": 0.058091,
+        "relay": 0.002959,
+        "server": 0.026551
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "wan",
+      "instrument": "scp",
+      "run": 2,
+      "wall_sec": 144.89792490005493,
+      "value": 1.8525831628379532,
+      "payload_bytes": 268435456,
+      "wire_bytes": 293512380,
+      "host_cpu_sec": 102.42,
+      "container_cpu_sec": {
+        "client": 1.643492,
+        "relay": 0.024531,
+        "server": 0.919537
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "wan",
+      "instrument": "iperf3-1",
+      "run": 3,
+      "wall_sec": 10.254416704177856,
+      "value": 0.0330747147097538,
+      "host_cpu_sec": 8.48,
+      "container_cpu_sec": {
+        "client": 0.152334,
+        "relay": 0.004512,
+        "server": 0.024789
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "wan",
+      "instrument": "iperf3-4",
+      "run": 3,
+      "wall_sec": 10.310908794403076,
+      "value": 0.0959999392004195,
+      "host_cpu_sec": 9.42,
+      "container_cpu_sec": {
+        "client": 0.386624,
+        "relay": 0.003831,
+        "server": 0.129221
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "wan",
+      "instrument": "tcp_rr",
+      "run": 3,
+      "wall_sec": 10.12350606918335,
+      "value": 31.92,
+      "mean_us": 31233.66,
+      "p50_us": 30511,
+      "p99_us": 33000,
+      "host_cpu_sec": 6.47,
+      "container_cpu_sec": {
+        "client": 0.059422,
+        "relay": 0.003399,
+        "server": 0.026617
+      }
+    },
+    {
+      "transport": "wireguard",
+      "condition": "wan",
+      "instrument": "scp",
+      "run": 3,
+      "wall_sec": 143.52358722686768,
+      "value": 1.8703229287021943,
+      "payload_bytes": 268435456,
+      "wire_bytes": 293518926,
+      "host_cpu_sec": 101.35,
+      "container_cpu_sec": {
+        "client": 1.656476,
+        "relay": 0.028473,
+        "server": 0.875467
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "lan",
+      "instrument": "iperf3-1",
+      "run": 1,
+      "wall_sec": 10.035036087036133,
+      "value": 0.9862332256338718,
+      "host_cpu_sec": 82.09,
+      "container_cpu_sec": {
+        "client": 16.65715,
+        "relay": 47.162476,
+        "server": 14.764359
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "lan",
+      "instrument": "iperf3-4",
+      "run": 1,
+      "wall_sec": 10.164807081222534,
+      "value": 1.1380810154303533,
+      "host_cpu_sec": 92.88,
+      "container_cpu_sec": {
+        "client": 19.164543,
+        "relay": 53.995703,
+        "server": 16.886902
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "lan",
+      "instrument": "tcp_rr",
+      "run": 1,
+      "wall_sec": 10.00661826133728,
+      "value": 1339.51,
+      "mean_us": 746.31,
+      "p50_us": 675,
+      "p99_us": 1178,
+      "host_cpu_sec": 21.23,
+      "container_cpu_sec": {
+        "client": 2.410786,
+        "relay": 9.143751,
+        "server": 2.920933
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "lan",
+      "instrument": "scp",
+      "run": 1,
+      "wall_sec": 42.859753370285034,
+      "value": 125.26224949586768,
+      "payload_bytes": 5368709120,
+      "wire_bytes": 5690312858,
+      "host_cpu_sec": 413.28,
+      "container_cpu_sec": {
+        "client": 91.473681,
+        "relay": 223.720625,
+        "server": 85.068937
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "lan",
+      "instrument": "iperf3-1",
+      "run": 2,
+      "wall_sec": 10.035784244537354,
+      "value": 0.9622975772872013,
+      "host_cpu_sec": 82.3,
+      "container_cpu_sec": {
+        "client": 16.795856,
+        "relay": 47.680111,
+        "server": 14.848067
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "lan",
+      "instrument": "iperf3-4",
+      "run": 2,
+      "wall_sec": 10.170880556106567,
+      "value": 1.0936994708539687,
+      "host_cpu_sec": 93.77,
+      "container_cpu_sec": {
+        "client": 19.028346,
+        "relay": 54.09485,
+        "server": 16.875912
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "lan",
+      "instrument": "tcp_rr",
+      "run": 2,
+      "wall_sec": 10.006213426589966,
+      "value": 1338.82,
+      "mean_us": 746.71,
+      "p50_us": 683,
+      "p99_us": 1087,
+      "host_cpu_sec": 20.68,
+      "container_cpu_sec": {
+        "client": 2.421617,
+        "relay": 9.19278,
+        "server": 2.926802
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "lan",
+      "instrument": "scp",
+      "run": 2,
+      "wall_sec": 43.93306756019592,
+      "value": 122.20200905943882,
+      "payload_bytes": 5368709120,
+      "wire_bytes": 5689975829,
+      "host_cpu_sec": 422.19,
+      "container_cpu_sec": {
+        "client": 93.034789,
+        "relay": 227.783803,
+        "server": 86.605552
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "lan",
+      "instrument": "iperf3-1",
+      "run": 3,
+      "wall_sec": 10.071887969970703,
+      "value": 0.9726256857699254,
+      "host_cpu_sec": 82.19,
+      "container_cpu_sec": {
+        "client": 16.92159,
+        "relay": 48.184883,
+        "server": 15.018191
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "lan",
+      "instrument": "iperf3-4",
+      "run": 3,
+      "wall_sec": 10.133145332336426,
+      "value": 1.0927546667853323,
+      "host_cpu_sec": 93.73,
+      "container_cpu_sec": {
+        "client": 19.122269,
+        "relay": 54.362705,
+        "server": 16.96978
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "lan",
+      "instrument": "tcp_rr",
+      "run": 3,
+      "wall_sec": 10.005189895629883,
+      "value": 1332.86,
+      "mean_us": 750.05,
+      "p50_us": 682,
+      "p99_us": 1162,
+      "host_cpu_sec": 21.56,
+      "container_cpu_sec": {
+        "client": 2.418001,
+        "relay": 9.285552,
+        "server": 2.931805
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "lan",
+      "instrument": "scp",
+      "run": 3,
+      "wall_sec": 44.32646346092224,
+      "value": 121.11747026091986,
+      "payload_bytes": 5368709120,
+      "wire_bytes": 5689969571,
+      "host_cpu_sec": 427.4,
+      "container_cpu_sec": {
+        "client": 94.199755,
+        "relay": 230.793612,
+        "server": 87.732042
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "wan",
+      "instrument": "iperf3-1",
+      "run": 1,
+      "wall_sec": 11.491979122161865,
+      "value": 0.03071740623679077,
+      "host_cpu_sec": 10.02,
+      "container_cpu_sec": {
+        "client": 0.622311,
+        "relay": 1.952396,
+        "server": 0.44006
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "wan",
+      "instrument": "iperf3-4",
+      "run": 1,
+      "wall_sec": 14.15448784828186,
+      "value": 0.02894564012944298,
+      "host_cpu_sec": 13.2,
+      "container_cpu_sec": {
+        "client": 0.863885,
+        "relay": 2.361338,
+        "server": 0.547005
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "wan",
+      "instrument": "tcp_rr",
+      "run": 1,
+      "wall_sec": 11.64073395729065,
+      "value": 31.58,
+      "mean_us": 31561.46,
+      "p50_us": 31524,
+      "p99_us": 32785,
+      "host_cpu_sec": 9.29,
+      "container_cpu_sec": {
+        "client": 0.216308,
+        "relay": 0.670171,
+        "server": 0.17574
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "wan",
+      "instrument": "scp",
+      "run": 1,
+      "wall_sec": 76.84676504135132,
+      "value": 3.4931262995332935,
+      "payload_bytes": 268435456,
+      "wire_bytes": 284702778,
+      "host_cpu_sec": 69.05,
+      "container_cpu_sec": {
+        "client": 4.424626,
+        "relay": 12.890696,
+        "server": 3.683865
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "wan",
+      "instrument": "iperf3-1",
+      "run": 2,
+      "wall_sec": 10.943330526351929,
+      "value": 0.035854315921767396,
+      "host_cpu_sec": 9.71,
+      "container_cpu_sec": {
+        "client": 0.686052,
+        "relay": 2.141118,
+        "server": 0.478699
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "wan",
+      "instrument": "iperf3-4",
+      "run": 2,
+      "wall_sec": 14.791571617126465,
+      "value": 0.029178387655059992,
+      "host_cpu_sec": 13.04,
+      "container_cpu_sec": {
+        "client": 1.043039,
+        "relay": 2.38539,
+        "server": 0.562639
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "wan",
+      "instrument": "tcp_rr",
+      "run": 2,
+      "wall_sec": 11.976035594940186,
+      "value": 30.65,
+      "mean_us": 32437.29,
+      "p50_us": 31523,
+      "p99_us": 32909,
+      "host_cpu_sec": 8.39,
+      "container_cpu_sec": {
+        "client": 0.222176,
+        "relay": 0.686322,
+        "server": 0.176566
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "wan",
+      "instrument": "scp",
+      "run": 2,
+      "wall_sec": 76.67016434669495,
+      "value": 3.5011723046028864,
+      "payload_bytes": 268435456,
+      "wire_bytes": 284705609,
+      "host_cpu_sec": 90.95,
+      "container_cpu_sec": {
+        "client": 4.429979,
+        "relay": 12.929014,
+        "server": 3.669447
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "wan",
+      "instrument": "iperf3-1",
+      "run": 3,
+      "wall_sec": 11.391018390655518,
+      "value": 0.0387497211523981,
+      "host_cpu_sec": 29.56,
+      "container_cpu_sec": {
+        "client": 0.752681,
+        "relay": 2.306232,
+        "server": 0.514142
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "wan",
+      "instrument": "iperf3-4",
+      "run": 3,
+      "wall_sec": 13.482962846755981,
+      "value": 0.025453988949683985,
+      "host_cpu_sec": 11.8,
+      "container_cpu_sec": {
+        "client": 0.702378,
+        "relay": 2.239758,
+        "server": 0.511746
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "wan",
+      "instrument": "tcp_rr",
+      "run": 3,
+      "wall_sec": 12.11265230178833,
+      "value": 31.45,
+      "mean_us": 31698.84,
+      "p50_us": 31528,
+      "p99_us": 33000,
+      "host_cpu_sec": 8.69,
+      "container_cpu_sec": {
+        "client": 0.223092,
+        "relay": 0.708424,
+        "server": 0.187428
+      }
+    },
+    {
+      "transport": "tw",
+      "condition": "wan",
+      "instrument": "scp",
+      "run": 3,
+      "wall_sec": 72.80218815803528,
+      "value": 3.6871893935013875,
+      "payload_bytes": 268435456,
+      "wire_bytes": 284731249,
+      "host_cpu_sec": 68.73,
+      "container_cpu_sec": {
+        "client": 4.301575,
+        "relay": 13.287666,
+        "server": 3.723214
+      }
+    }
+  ],
+  "rss": [
+    {
+      "transport": "ssh",
+      "label": "Baseline (all transports; idle listeners after the runs)",
+      "peak_kb": {
+        "server / iperf3": 3840,
+        "server / netserver": 1424,
+        "server / sshd": 4692
+      }
+    },
+    {
+      "transport": "wireguard",
+      "peak_kb": {
+        "kernel (no userspace process)": 0
+      }
+    },
+    {
+      "transport": "tw",
+      "peak_kb": {
+        "client / tw client connect": 56904,
+        "relay / caddy": 70092,
+        "relay / xray": 42392,
+        "server / tw server start": 46848
+      }
+    }
+  ],
+  "diagnostics": [
+    {
+      "transport": "ssh",
+      "condition": "wan",
+      "name": "client tc -s qdisc show dev eth0",
+      "output": "qdisc netem 8014: root refcnt 33 limit 100000 delay 15ms loss 0.1%\n Sent 6209807 bytes 84644 pkt (dropped 83, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\ndrop ratio: 83/(84644+83) = 0.098 %"
+    },
+    {
+      "transport": "ssh",
+      "condition": "wan",
+      "name": "server tc -s qdisc show dev eth0",
+      "output": "qdisc netem 8015: root refcnt 33 limit 100000 delay 15ms loss 0.1%\n Sent 1401600306 bytes 928299 pkt (dropped 929, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\ndrop ratio: 929/(928299+929) = 0.100 %"
+    },
+    {
+      "transport": "wireguard",
+      "condition": "wan",
+      "name": "client tc -s qdisc show dev eth0",
+      "output": "qdisc netem 8016: root refcnt 33 limit 100000 delay 15ms loss 0.1%\n Sent 31692814 bytes 226071 pkt (dropped 212, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\ndrop ratio: 212/(226071+212) = 0.094 %"
+    },
+    {
+      "transport": "wireguard",
+      "condition": "wan",
+      "name": "server tc -s qdisc show dev eth0",
+      "output": "qdisc netem 8017: root refcnt 33 limit 100000 delay 15ms loss 0.1%\n Sent 1464198571 bytes 981430 pkt (dropped 956, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\ndrop ratio: 956/(981430+956) = 0.097 %"
+    },
+    {
+      "transport": "wireguard",
+      "condition": "wan",
+      "name": "client ip -d link show wg0",
+      "output": "3: wg0: \u003cPOINTOPOINT,NOARP,UP,LOWER_UP\u003e mtu 1420 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000\n    link/none  promiscuity 0  allmulti 0 minmtu 0 maxmtu 2147483552 \n    wireguard addrgenmode none numtxqueues 1 numrxqueues 1 gso_max_size 65536 gso_max_segs 65535 tso_max_size 65536 tso_max_segs 65535 gro_max_size 65536"
+    },
+    {
+      "transport": "wireguard",
+      "condition": "wan",
+      "name": "client wg show wg0 transfer",
+      "output": "TlXctjWwZdwxseEP/l0s3sUwZhR2Z1/vx92t2kJRRRM=\t29028903448\t565651264"
+    },
+    {
+      "transport": "tw",
+      "condition": "wan",
+      "name": "client tc -s qdisc show dev eth0",
+      "output": "qdisc netem 8018: root refcnt 33 limit 100000 delay 15ms loss 0.1%\n Sent 31928099 bytes 346477 pkt (dropped 311, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\ndrop ratio: 311/(346477+311) = 0.090 %"
+    },
+    {
+      "transport": "tw",
+      "condition": "wan",
+      "name": "server tc -s qdisc show dev eth0",
+      "output": "qdisc netem 8019: root refcnt 33 limit 100000 delay 15ms loss 0.1%\n Sent 1260218223 bytes 876801 pkt (dropped 860, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\ndrop ratio: 860/(876801+860) = 0.098 %"
+    }
+  ]
+}

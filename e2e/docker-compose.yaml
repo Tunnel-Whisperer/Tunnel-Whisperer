@@ -6,6 +6,10 @@ x-tw: &tw
     - ./shared:/shared
   networks:
     twnet: {}
+  # WireGuard interface creation + tc netem for the benchmark (TestBench);
+  # harmless for the ordinary e2e scenarios.
+  cap_add:
+    - NET_ADMIN
 
 services:
   relay:
@@ -23,9 +27,15 @@ services:
   server:
     <<: *tw
     hostname: server1
+    # Benchmark source file lives in RAM so reads never touch the overlay
+    # filesystem. Sized for BENCH_SIZE_GB=5 plus a 256 MiB warm-up file.
+    tmpfs:
+      - /bench:size=6g
   client:
     <<: *tw
     hostname: client1
+    tmpfs:
+      - /bench:size=64m
   server2:
     <<: *tw
     hostname: server2

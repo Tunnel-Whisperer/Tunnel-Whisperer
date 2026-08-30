@@ -13,12 +13,18 @@
 # this (Xray absent → the installer's clean `systemctl start/enable` branch, exit
 # 0), so leaving Xray out of the image makes the test path match a fresh VM
 # exactly. Product code is untouched.
+#
+# ethtool and iproute2 are the two packages below NOT in
+# install-script.sh.tmpl: they're harness-only extras so TestBench can turn
+# tso/gso/gro off (ethtool) and cap gso_max_segs (iproute2's `ip`) on the
+# relay's eth0 too, matching client and server.
 FROM debian:bookworm
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
       systemd systemd-sysv dbus \
       openssh-server sudo gnupg \
       debian-keyring debian-archive-keyring apt-transport-https curl ufw unzip \
+      ethtool iproute2 \
  && curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
       | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
  && curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
