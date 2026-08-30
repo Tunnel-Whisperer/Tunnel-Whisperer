@@ -93,6 +93,24 @@ runcmd:
 {{if .SSHOpen}}  - ufw allow 22/tcp
 {{end}}  - ufw --force enable
 
+  # Network tuning: raise TCP buffer ceilings so a single high-BDP flow can
+  # open its window, and prefer BBR (loss-tolerant) since the relay forwards
+  # every tunnel byte. Best-effort — a kernel without tcp_bbr keeps its default
+  # congestion control rather than failing.
+  - modprobe tcp_bbr 2>/dev/null || true
+  - |
+    cat > /etc/sysctl.d/99-tw-relay.conf <<'SYSCTL'
+    net.core.rmem_max = 16777216
+    net.core.wmem_max = 16777216
+    net.ipv4.tcp_rmem = 4096 131072 16777216
+    net.ipv4.tcp_wmem = 4096 16384 16777216
+    net.core.default_qdisc = fq
+    SYSCTL
+    if grep -qw bbr /proc/sys/net/ipv4/tcp_available_congestion_control 2>/dev/null; then
+      echo 'net.ipv4.tcp_congestion_control = bbr' >> /etc/sysctl.d/99-tw-relay.conf
+    fi
+    sysctl --system >/dev/null 2>&1 || true
+
   # Restart services (Ubuntu 24.04 uses 'ssh' not 'sshd')
   - systemctl restart ssh
   - systemctl enable --now xray

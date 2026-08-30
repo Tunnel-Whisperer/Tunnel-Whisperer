@@ -35,7 +35,7 @@ rm -f /usr/share/keyrings/caddy-stable-archive-keyring.gpg /etc/apt/sources.list
 if command -v ufw >/dev/null 2>&1; then ufw --force reset >/dev/null 2>&1 || true; fi
 
 # ── Create SSH user ──────────────────────────────────────────
-echo "[1/7] Creating SSH user '{{.SSHUser}}'..."
+echo "[1/8] Creating SSH user '{{.SSHUser}}'..."
 useradd -m -s /bin/bash {{.SSHUser}} 2>/dev/null || true
 echo "{{.SSHUser}} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/99-{{.SSHUser}}
 mkdir -p /home/{{.SSHUser}}/.ssh
@@ -61,13 +61,13 @@ chmod 600 "$AK"
 chown -R {{.SSHUser}}:{{.SSHUser}} /home/{{.SSHUser}}/.ssh
 
 # ── Install packages ─────────────────────────────────────────
-echo "[2/7] Installing packages..."
+echo "[2/8] Installing packages..."
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
   debian-keyring debian-archive-keyring apt-transport-https curl ufw unzip
 
 # ── Install Caddy ────────────────────────────────────────────
-echo "[3/7] Installing Caddy..."
+echo "[3/8] Installing Caddy..."
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
   | gpg --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
@@ -83,7 +83,7 @@ echo '{{.CaddyfileB64}}' | base64 -d > /etc/caddy/Caddyfile
 # Download to a file, never pipe the fetch straight into a root shell: that
 # form runs whatever HTML an error/rate-limit page returns. -f fails on HTTP
 # errors; --retry rides out transient 429s from raw.githubusercontent.com.
-echo "[4/7] Installing Xray {{.XrayVersion}}..."
+echo "[4/8] Installing Xray {{.XrayVersion}}..."
 curl -fsSL --retry 3 --retry-delay 10 -o /tmp/xray-install-release.sh \
   https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh \
   || { echo "ERROR: downloading the Xray installer failed (offline or rate-limited?)"; exit 1; }
@@ -94,14 +94,14 @@ mkdir -p /usr/local/etc/xray
 echo '{{.XrayConfigB64}}' | base64 -d > /usr/local/etc/xray/config.json
 
 # ── Configure SSH ────────────────────────────────────────────
-{{if .SSHOpen}}echo "[5/7] Configuring SSH (public access, key-only)..."
+{{if .SSHOpen}}echo "[5/8] Configuring SSH (public access, key-only)..."
 cat > /etc/ssh/sshd_config.d/99-tw-localhost.conf <<'SSHEOF'
 ListenAddress 0.0.0.0
 PasswordAuthentication no
 ClientAliveInterval 60
 ClientAliveCountMax 5
 SSHEOF
-{{else}}echo "[5/7] Configuring SSH (localhost-only)..."
+{{else}}echo "[5/8] Configuring SSH (localhost-only)..."
 cat > /etc/ssh/sshd_config.d/99-tw-localhost.conf <<'SSHEOF'
 ListenAddress 127.0.0.1
 PasswordAuthentication no
@@ -110,14 +110,35 @@ ClientAliveCountMax 5
 SSHEOF
 {{end}}{{if .HostKeyB64}}# tw-managed SSH host key: the relay presents a key the admin already holds,
 # so the direct (port-22) channel can be host-key-pinned instead of trusting on
-# first use. Loaded by the sshd restart in [7/7].
+# first use. Loaded by the sshd restart in [8/8].
 echo '{{.HostKeyB64}}' | base64 -d > /etc/ssh/ssh_host_ed25519_key
 chmod 600 /etc/ssh/ssh_host_ed25519_key
 echo '{{.HostKeyPub}}' > /etc/ssh/ssh_host_ed25519_key.pub
 chmod 644 /etc/ssh/ssh_host_ed25519_key.pub
 {{end}}
+# ── Network tuning ───────────────────────────────────────────
+# The relay forwards every tunnel byte, so its TCP stack is on the critical
+# path. Raise the socket buffer ceilings so a single high-BDP flow can open its
+# window, and prefer BBR congestion control: BBR is loss-tolerant, which matters
+# on lossy WAN links where CUBIC's throughput collapses. All best-effort — a
+# kernel without tcp_bbr keeps its existing congestion control rather than
+# failing the install.
+echo "[6/8] Applying network tuning..."
+modprobe tcp_bbr 2>/dev/null || true
+cat > /etc/sysctl.d/99-tw-relay.conf <<'SYSCTL'
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.ipv4.tcp_rmem = 4096 131072 16777216
+net.ipv4.tcp_wmem = 4096 16384 16777216
+net.core.default_qdisc = fq
+SYSCTL
+if grep -qw bbr /proc/sys/net/ipv4/tcp_available_congestion_control 2>/dev/null; then
+  echo 'net.ipv4.tcp_congestion_control = bbr' >> /etc/sysctl.d/99-tw-relay.conf
+fi
+sysctl --system >/dev/null 2>&1 || true
+
 # ── Firewall ─────────────────────────────────────────────────
-echo "[6/7] Configuring firewall..."
+echo "[7/8] Configuring firewall..."
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow 80/tcp
@@ -126,7 +147,7 @@ ufw allow 443/tcp
 {{end}}ufw --force enable
 
 # ── Start services ───────────────────────────────────────────
-echo "[7/7] Starting services..."
+echo "[8/8] Starting services..."
 systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
 systemctl enable xray
 systemctl restart xray
