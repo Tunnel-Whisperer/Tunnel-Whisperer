@@ -219,13 +219,13 @@ Measured with `make bench` on the e2e topology (real relay, real server, real cl
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/bench-chart-dark.svg">
-  <img alt="Benchmark: pure SSH vs SSH over WireGuard vs SSH over Tunnel Whisperer — LAN throughput, file copy, latency, lossy-WAN parallel streams, CPU per copy" src="docs/assets/bench-chart.svg" width="100%">
+  <img alt="Benchmark: pure SSH vs SSH over WireGuard vs SSH over Tunnel Whisperer — LAN throughput, file copy, latency, lossy-WAN parallel streams, CPU per copy, WAN latency" src="docs/assets/bench-chart.svg" width="100%">
 </picture>
 
-| Transport | iperf3 1 stream, LAN | iperf3 4 streams, WAN 30 ms / 0.1 % | TCP_RR p99, LAN | scp 5 GiB, LAN | Wire overhead, LAN | Gbit/s per busy core, LAN | Peak RSS (client / server / relay) |
-|---|---|---|---|---|---|---|---|
-| Pure SSH | 3.64 Gbit/s | 0.10 Gbit/s | 75 µs | 359 MB/s | 4.7 % | 1.37 | — / 4.6 MiB (idle sshd) / — |
-| SSH over WireGuard (direct peer) | 1.20 Gbit/s | 0.10 Gbit/s | 336 µs | 149 MB/s | 9.4 % | 0.29 | 0 (kernel) |
-| **SSH over Tunnel Whisperer** (via relay) | 0.97 Gbit/s | 0.03 Gbit/s | 1162 µs | 122 MB/s | 6.0 % | 0.12 | 55.6 / 45.8 / 109.8 MiB (caddy + xray) |
+| Transport | iperf3 1 stream, LAN | iperf3 4 streams, WAN 30 ms / 0.1 % | TCP_RR p99, LAN | TCP_RR p50, WAN 30 ms / 0.1 % | scp 5 GiB, LAN | Wire overhead, LAN | Gbit/s per busy core, LAN | Peak RSS (client / server / relay) |
+|---|---|---|---|---|---|---|---|---|
+| Pure SSH | 3.64 Gbit/s | 0.10 Gbit/s | 75 µs | 30.5 ms | 359 MB/s | 4.7 % | 1.37 | — / 4.6 MiB (idle sshd) / — |
+| SSH over WireGuard (direct peer) | 1.20 Gbit/s | 0.10 Gbit/s | 336 µs | 30.5 ms | 149 MB/s | 9.4 % | 0.29 | 0 (kernel) |
+| **SSH over Tunnel Whisperer** (via relay) | 0.97 Gbit/s | 0.03 Gbit/s | 1162 µs | 31.5 ms | 122 MB/s | 6.0 % | 0.12 | 55.6 / 45.8 / 109.8 MiB (caddy + xray) |
 
 tw crosses a relay and wraps traffic in TLS so it passes firewalls that block WireGuard outright; the table shows what that costs. At 4 streams under WAN loss, tw stays flat at its single-stream number because every stream is multiplexed over one outer TCP connection to the relay — a property of the design, not a bug.

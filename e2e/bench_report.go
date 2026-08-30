@@ -360,7 +360,7 @@ func approxTextWidth(s string, fontSize float64) float64 {
 }
 
 const (
-	chartW, chartH = 1200, 380
+	chartW, chartH = 1432, 380 // 6 panels: 24 left margin + 6*216 + 5*16 gutters + 32 right margin
 	chartPanelW    = 216
 	chartGutter    = 16
 	chartPanelX0   = 24
@@ -629,9 +629,13 @@ func renderBenchSVG(r *benchResults, dark bool) string {
 		func(tr string) benchStat {
 			return summarize(r.values(tr, condLAN, instRR, func(s benchSample) float64 { return s.P50Us }))
 		})
-	renderBarPanel(&b, p, 3, "Lossy WAN, parallel streams", []string{"WAN" + wanDerived, "iperf3, 4 streams · Gbit/s"}, "%.2f",
+	renderBarPanel(&b, p, 3, "WAN latency", []string{"WAN" + wanDerived + " · TCP_RR p50 · ms", "(lower is better)"}, "%.1f",
+		func(tr string) benchStat {
+			return summarize(r.values(tr, condWAN, instRR, func(s benchSample) float64 { return s.P50Us / 1000 }))
+		})
+	renderBarPanel(&b, p, 4, "Lossy WAN, parallel streams", []string{"WAN" + wanDerived, "iperf3, 4 streams · Gbit/s"}, "%.2f",
 		func(tr string) benchStat { return summarize(r.values(tr, condWAN, instIperf4, value)) })
-	renderStackPanel(&b, p, 4, r)
+	renderStackPanel(&b, p, 5, r)
 
 	cpu := strings.ReplaceAll(strings.ReplaceAll(r.Env.CPUModel, "(R)", ""), "(TM)", "")
 	cpu = strings.Join(strings.Fields(cpu), " ")

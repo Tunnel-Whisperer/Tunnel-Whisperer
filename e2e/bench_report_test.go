@@ -116,7 +116,7 @@ func TestRenderBenchSVG(t *testing.T) {
 		for _, want := range []string{
 			"<title>Tunnel Whisperer benchmark",
 			">Pure SSH<", ">SSH over WireGuard<", ">SSH over Tunnel Whisperer<",
-			">LAN throughput<", ">LAN file copy<", ">LAN latency<", ">Lossy WAN, parallel streams<", ">CPU per 5 GiB copy<",
+			">LAN throughput<", ">LAN file copy<", ">LAN latency<", ">Lossy WAN, parallel streams<", ">CPU per 5 GiB copy<", ">WAN latency<",
 			">3.50<", // iperf3-1 median of 3,4
 			">125<",  // scp median
 			">30<",   // tcp_rr p50 median
@@ -135,13 +135,46 @@ func TestRenderBenchSVG(t *testing.T) {
 		}
 		// The iperf3-1 bar (min 3, max 4) draws a whisker (main + 2 caps)
 		// per transport; every other bar in the fixture has min == max and
-		// draws none, and the WAN panel has no samples at all.
+		// draws none, and the WAN panels have no samples at all.
 		if n := strings.Count(svg, `class="whisker"`); n != 3*3 {
 			t.Fatalf("dark=%v: expected 9 whisker lines, got %d", dark, n)
+		}
+		// The fixture has no condWAN samples: both WAN panels (parallel
+		// streams and latency) must render "—" with no bar for all three
+		// transports — 6 dashes total.
+		if n := strings.Count(svg, ">—<"); n != 6 {
+			t.Fatalf("dark=%v: expected 6 em-dash placeholders (2 WAN panels × 3 transports), got %d", dark, n)
 		}
 		if benchSeriesColorRe.MatchString(svg) {
 			t.Fatalf("dark=%v: a <text> element uses a series colour as fill", dark)
 		}
+	}
+}
+
+// TestRenderBenchSVGWANLatency exercises the WAN-latency panel with real
+// (rather than absent) samples: three near-equal p50s, converted µs → ms,
+// which is the honest "loss dominates, transports are indistinguishable"
+// picture for this panel on a lossy WAN link.
+func TestRenderBenchSVGWANLatency(t *testing.T) {
+	r := sampleResults()
+	for _, s := range []struct {
+		tr  string
+		p50 float64
+	}{
+		{trSSH, 30503}, {trWG, 30510}, {trTW, 31524},
+	} {
+		r.add(benchSample{Transport: s.tr, Condition: condWAN, Instrument: instRR, Run: 1, Value: 32, P50Us: s.p50})
+	}
+
+	svg := renderBenchSVG(r, false)
+	if !strings.Contains(svg, ">WAN latency<") {
+		t.Fatalf("missing WAN latency panel title")
+	}
+	if n := strings.Count(svg, ">30.5<"); n != 2 {
+		t.Fatalf("expected two 30.5 ms labels (ssh 30.503, wg 30.510), got %d:\n%s", n, svg)
+	}
+	if !strings.Contains(svg, ">31.5<") {
+		t.Fatalf("missing 31.5 ms label (tw 31.524)")
 	}
 }
 
