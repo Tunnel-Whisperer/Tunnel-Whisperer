@@ -125,6 +125,7 @@ func testContexts(t *testing.T) {
 		"tw config rename-context and delete-context clean up the scratch context",
 		"tw config current-context reflects each switch",
 		"tab completion: tw __complete config use-context offers the context name and its short ID",
+		"a colliding config import exits non-zero when the replace prompt is declined or stdin is closed, keeping the existing context (issue #10)",
 		"tw status (ungated) prints the unified header — context, mode, and USER alice on the client; context and mode relay on the admin")
 
 	// Client: the context imported from alice's user bundle must show the ssh
@@ -188,5 +189,25 @@ func testContexts(t *testing.T) {
 	// The admin's context must still hold its identity after the round-trip.
 	if !strings.Contains(out, id) {
 		fatalf(t, "admin context lost its ID %s after the switch round-trip:\n%s", id, out)
+	}
+
+	// Issue #10: importing a bundle whose context already exists must not exit
+	// 0 without importing. With stdin closed the prompt cannot be answered —
+	// that is an error, not a silent "keep the default"; an explicit 'n' keeps
+	// the context but still exits non-zero so scripts can tell nothing changed.
+	bundle := "/shared/tw_relay-tw-test.twctx"
+	if out, err := execInOK("admin", "tw config import "+bundle+" < /dev/null"); err == nil {
+		fatalf(t, "colliding config import with closed stdin exited 0:\n%s", out)
+	} else if !strings.Contains(out, "already exists") || !strings.Contains(out, "--force") {
+		fatalf(t, "colliding import (closed stdin) error missing collision/--force hint:\n%s", out)
+	}
+	if out, err := execInOK("admin", "printf 'n\\n' | tw config import "+bundle); err == nil {
+		fatalf(t, "declined colliding config import exited 0:\n%s", out)
+	} else if !strings.Contains(out, "Kept the existing context") {
+		fatalf(t, "declined colliding import did not report keeping the context:\n%s", out)
+	}
+	out = execIn(t, "admin", "tw config get-contexts")
+	if !strings.Contains(out, id) {
+		fatalf(t, "admin context ID %s gone after refused imports:\n%s", id, out)
 	}
 }

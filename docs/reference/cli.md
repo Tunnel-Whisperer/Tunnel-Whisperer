@@ -226,8 +226,8 @@ profile to disk and unseals the target. These commands work in any mode.
 | `tw config use-context <name\|id>` | Switch the active context (seals the current one, reconnects). Warns if a running `tw` service is still serving the old context. |
 | `tw config new-context <name>` | Create a fresh empty context and switch to it (the current one is preserved). |
 | `tw config rename-context <old-name\|id> <new>` | Rename a context. |
-| `tw config delete-context <name\|id>` | Delete a stored context. Deleting the only, active context is a **full reset** (removes all tw configuration from the machine; confirmed interactively, refused while the service is running). |
-| `tw config import <bundle.twctx>` | Import a bundle as a new context. Prompts before replacing an existing context of the same name. |
+| `tw config delete-context <name\|id>` | Delete a stored context. Deleting the only, active context is a **full reset** (removes all tw configuration from the machine; confirmed interactively, refused while the service is running). Declining the confirmation — or being unable to answer it because stdin is closed — exits non-zero with nothing deleted. |
+| `tw config import <bundle.twctx>` | Import a bundle as a new context. Prompts before replacing an existing context of the same name; declining keeps the existing context and exits non-zero. Non-interactively (stdin closed) the collision is an error — pass `--force` to replace instead. |
 | `tw config export [name\|id]` | Export a context as a portable bundle (`tw_<name>.twctx`). No argument exports the active context. |
 | `tw config view` | Print the active config file (path header + raw YAML). `--as-json` prints it as indented JSON instead (no path header). |
 

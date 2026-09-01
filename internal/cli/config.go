@@ -294,9 +294,13 @@ func runConfigDeleteContext(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  %q is the only context and is active. Deleting it performs a FULL RESET:\n", name)
 		fmt.Println("  it removes all tw configuration (identity, keys, relay data) from this machine.")
 		fmt.Print("  Continue? [y/N]: ")
-		if ans, _ := sharedLine(); strings.ToLower(ans) != "y" {
+		yes, perr := confirmYes()
+		if perr != nil {
+			return fmt.Errorf("a full reset needs confirmation and %v", perr)
+		}
+		if !yes {
 			fmt.Println("  Aborted.")
-			return nil
+			return fmt.Errorf("aborted; context %q not deleted", name)
 		}
 	}
 	if err := o.DeleteContext(name); err != nil {
@@ -328,9 +332,13 @@ func runConfigImport(cmd *cobra.Command, args []string) error {
 		// Don't rewrite an existing context unasked. Keep it by default; only
 		// replace on explicit confirmation (or --force).
 		fmt.Printf("  Context %q already exists. Replace it with this bundle? [y/N]: ", name)
-		if ans, _ := sharedLine(); strings.ToLower(ans) != "y" {
+		yes, perr := confirmYes()
+		if perr != nil {
+			return fmt.Errorf("context %q already exists and %v; re-run with --force to replace it", name, perr)
+		}
+		if !yes {
 			fmt.Println("  Kept the existing context; nothing changed.")
-			return nil
+			return fmt.Errorf("context %q already exists; bundle not imported", name)
 		}
 		name, err = o.ImportContext(data, configImportName, true)
 	}

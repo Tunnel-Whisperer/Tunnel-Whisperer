@@ -99,7 +99,7 @@ tw config import <bundle.twctx> --name work     # store under a custom name
 tw config import <bundle.twctx> --force         # replace an existing same-name context without prompting
 ```
 
-If a context of the same name already exists, `tw` asks before replacing it (or keeps it, if you decline). Re-importing a bundle for the **active** context refreshes the live profile in place.
+If a context of the same name already exists, `tw` asks before replacing it. Declining keeps the existing context but the command exits non-zero, so a script can tell nothing was imported; when stdin is closed (a non-interactive caller) the collision is an error outright — pass `--force` to replace without asking. Re-importing a bundle for the **active** context refreshes the live profile in place.
 
 ### Default context names
 
