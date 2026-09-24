@@ -140,7 +140,7 @@ func killMatching(t *testing.T, service, substr string) {
 }
 
 // twServices are the containers that run the tw binary.
-var twServices = []string{"admin", "server", "client", "server2"}
+var twServices = []string{"admin", "server", "client", "server2", "admin2"}
 
 // fatalf fails the test after dumping full topology diagnostics.
 func fatalf(t *testing.T, format string, args ...any) {

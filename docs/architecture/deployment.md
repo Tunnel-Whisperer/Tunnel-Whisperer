@@ -12,6 +12,7 @@ proxy: ""                          # e.g. "socks5://user:pass@host:port" or "htt
 
 xray:
   uuid: ""                         # auto-generated on first run
+  # server_id: <host>-<first8>     # server/relay only: stored on first use, never re-derived
   relay_host: ""                   # e.g. relay.example.com
   relay_port: 443
   path: /tw                        # becomes /tw/<server-id> once provisioned/enrolled
@@ -66,8 +67,11 @@ client:                            # only needed for `tw client connect`
 │   ├── cloud-init.yaml            # rendered cloud-init
 │   ├── terraform.tfstate
 │   ├── terraform.tfvars           # cloud credentials (Hetzner/DO only)
+│   ├── .terraform.lock.hcl        # provider lock file
 │   ├── relay-meta.json            # cloud relay metadata (name, ssh_open, ...)
 │   └── manual-relay.json          # manual relay marker (domain, ip, ssh_open)
+├── cache/                         # machine-local, regenerable, never bundled
+│   └── terraform/<context-id>/    # TF_DATA_DIR: provider plugins (relay role, cloud relays)
 ├── servers/                       # enrolled-server registry (relay role)
 └── users/                         # per-user client configs (server role)
     └── alice/

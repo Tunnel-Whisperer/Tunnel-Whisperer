@@ -43,6 +43,8 @@ tw config rename-context <old|id> <new>
 tw config delete-context <name|id>
 ```
 
+Deleting a context also removes its Terraform provider cache (`cache/terraform/<context-id>/`, see [File Layout](../reference/file-layout.md#the-cache-directory)).
+
 `new-context` preserves the current context — it is sealed to disk and stays in the list, ready to switch back to. A typical use is joining a second relay from an already-configured server: `tw join` always stores its result as a new context (auto-named from the relay host or username, or pass `--name` to choose), so joining a second relay doesn't disturb the first:
 
 ```bash
@@ -86,9 +88,15 @@ A context travels as a single portable file, `tw_<name>.twctx` (dots/colons/slas
 ```bash
 tw config export              # export the active context → tw_<name>.twctx
 tw config export <name|id>    # export a stored context
+tw config export -o /path/to/dir           # write into a directory as tw_<name>.twctx
+tw config export <name|id> --output custom.twctx  # write to an exact file path
 ```
 
-The relay's bundle is also written automatically at the end of `tw relay create` — it is the relay's only backup (CA keypair, relay SSH key, metadata). There is no recovery if it is lost.
+Without `-o`, the bundle is written to the current directory. With `--output`/`-o`, a path that is an existing directory (or ends in a slash) receives `tw_<name>.twctx` inside it; any other path is used as the exact file name. Parent directories are not created.
+
+The relay's bundle is also written automatically at the end of `tw relay create` (always to the directory you ran it from) — it is the relay's only backup (CA keypair, relay SSH key, metadata). There is no recovery if it is lost.
+
+A bundle is **machine- and OS-independent**: import it on another host — different hostname, Linux or Windows — and it keeps its identity. The server-id is stored in the bundle's `config.yaml` (`xray.server_id`) rather than re-derived from the hostname (see [Relay Authentication](../security/relay-authentication.md#stored-server-id)), and certificate paths are derived from the config dir at runtime. Terraform's provider cache lives outside the profile, under `cache/terraform/<context-id>/`, and is never bundled — the importing machine re-creates it on its next Terraform call — so even a cloud relay's bundle is a few hundred KB at most. The exact contents are listed in [File Layout → Context bundles](../reference/file-layout.md#context-bundles-twctx).
 
 ### Import
 

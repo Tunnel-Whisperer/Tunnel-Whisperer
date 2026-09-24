@@ -74,6 +74,8 @@ relay infrastructure state:
 ├── servers/                 # Enrolled-server registry: one JSON file per tenant
 │   └── <server-id>.json     # server_id, uuid, hostname, remote_port, ca_cert_pem, ssh_pubkey, enrolled_at
 ├── relay/                   # Relay infrastructure state (see below)
+├── cache/
+│   └── terraform/<context-id>/   # Terraform provider cache (TF_DATA_DIR); regenerable, never bundled (see below)
 ├── archive/
 │   └── <domain>/caddy-certs.tar.gz   # Relay's Caddy TLS data, saved (best-effort) before destroy for reuse on re-provision
 └── enroll.lock              # Transient lock serializing enroll/un-enroll runs (auto-removed; stale locks expire)
@@ -89,10 +91,15 @@ For a **cloud (Terraform) relay**, created by `tw relay create`:
 | `cloud-init.yaml` | Cloud-init user data that installs Caddy + Xray and configures SSH |
 | `terraform.tfvars` | Input variables (provider credentials/region), written `0600` |
 | `terraform.tfstate` | Terraform state tracking the provisioned resources — its presence marks the relay as cloud-provisioned |
-| `terraform.tfstate.backup` | Terraform's automatic backup of the previous state |
-| `.terraform/` | Terraform working directory: downloaded provider plugins (can be large) |
+| `terraform.tfstate.backup` | Terraform's automatic backup of the previous state — not included in context bundles |
 | `.terraform.lock.hcl` | Terraform provider dependency lock file |
 | `relay-meta.json` | Relay metadata (`ssh_open`, name) |
+
+That is the whole directory: only durable provisioning state, a few hundred
+KB at most. Terraform's working data (`.terraform/`, with the downloaded
+provider plugins) is kept in the [`cache/` directory](#the-cache-directory)
+instead. `tw relay status` reads the relay IP straight from
+`terraform.tfstate`, so it needs neither the cache nor a `terraform` binary.
 
 For a **manual (bring-your-own-VM) relay** there is no Terraform state; the
 marker is:
@@ -107,6 +114,20 @@ the directory where you ran `tw relay create`, not the config dir.
 !!! warning "Do not edit `terraform.tfstate`"
     The state file is managed by Terraform. Manual edits can cause resource
     drift or prevent clean destruction of the relay server.
+
+### The `cache/` directory
+
+`cache/terraform/<context-id>/` is Terraform's data directory: `tw` sets
+`TF_DATA_DIR` to it on every Terraform call. `<context-id>` is the context's
+short ID (first 8 hex of its Xray UUID, as shown by `tw config get-contexts`),
+so each relay context has its own cache. It holds only regenerable data
+(downloaded provider plugins, which can be large): it is never bundled,
+`terraform init` re-creates it — `tw relay destroy` runs `terraform init`
+first for exactly that reason — and `tw config delete-context` removes it.
+
+Profiles created by older versions kept this data in `relay/.terraform/`; the
+first Terraform call after upgrading deletes that directory, and the cache is
+rebuilt under `cache/`.
 
 ## Client file tree
 
@@ -139,13 +160,20 @@ files sealed in the `TWBOX1` container format, **with no passphrase**:
 
 | Bundle | Produced by | Contents |
 |---|---|---|
-| `tw_<name>.twctx` | `tw config export` (and automatically at the end of `tw relay create`) | The full profile of the exported context |
+| `tw_<name>.twctx` | `tw config export` — current directory, or wherever `--output`/`-o` points (see [Contexts](../global/contexts.md#export)) — and automatically at the end of `tw relay create` (current directory) | The full profile of the exported context |
 | `tw_rescue_<name>.twctx` | `tw join`, when a granted context can't be stored (e.g. unwritable config dir) | The received profile, written to the current directory (or the system temp dir) so the one-time invite isn't lost — recover with `tw config import` |
 
 A sealed context contains `config.yaml`, the identity key pair
-(`id_ed25519`/`id_ed25519.pub`), the certificates (`ca.crt`, `ca.key`,
-`client.crt`, `client.key`), and the `relay/`, `users/`, and `servers/`
-directories — whichever of those exist for the profile.
+(`id_ed25519`/`id_ed25519.pub`), the relay host key pair
+(`relay_host_ed25519`/`.pub`, relay contexts), the certificates (`ca.crt`,
+`ca.key`, `client.crt`, `client.key`), and the `relay/`, `users/`, and
+`servers/` directories — whichever of those exist for the profile.
+`relay/.terraform/` and `relay/terraform.tfstate.backup` are always skipped,
+so a bundle holds no Terraform provider plugins and stays small. Because the
+server-id is stored in `config.yaml` (see
+[Relay Authentication](../security/relay-authentication.md#stored-server-id)),
+a bundle imported on a host with a different hostname or OS keeps its
+identity.
 
 !!! note "Not part of a context"
     `authorized_keys` and `ssh_host_ed25519_key` are **not** sealed into
@@ -153,6 +181,9 @@ directories — whichever of those exist for the profile.
     config dir across switches. In practice only server mode uses them, and
     a server machine rarely switches contexts; but if you repurpose a
     machine, remove them along with the rest of the config dir.
+
+    The [`cache/` directory](#the-cache-directory) is not part of any context
+    either: it is machine-local, keyed per context, and regenerated on demand.
 
 Client identities are no longer packaged as a separate per-user bundle type —
 `tw server user invite` / `tw join` deliver them directly over an

@@ -1,9 +1,11 @@
 package ops
 
 import (
+	"bytes"
 	"crypto/x509"
 	"encoding/pem"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
@@ -117,5 +119,139 @@ func TestEnsureCertsRegeneratesOldStyleCert(t *testing.T) {
 	}
 	if got != want {
 		t.Errorf("client cert CN = %q, want %q", got, want)
+	}
+}
+
+// writeIdentityFixture writes a CA (CN caCN) and a client cert issued from it
+// (CN clientCN) into the config dir.
+func writeIdentityFixture(t *testing.T, caCN, clientCN string) {
+	t.Helper()
+	if err := os.MkdirAll(config.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	caPEM, caKeyPEM, err := pki.GenerateCA(caCN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientPEM, clientKeyPEM, err := pki.IssueClientCert(caPEM, caKeyPEM, clientCN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []struct {
+		path string
+		data []byte
+		mode os.FileMode
+	}{
+		{config.CACertPath(), caPEM, 0o644},
+		{config.CAKeyPath(), caKeyPEM, 0o600},
+		{config.ClientCertPath(), clientPEM, 0o644},
+		{config.ClientKeyPath(), clientKeyPEM, 0o600},
+	} {
+		if err := os.WriteFile(w.path, w.data, w.mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestEnsureCertsRefusesMismatchedStoredID: a stored server id that does not
+// match the on-disk client cert CN must never trigger a silent CA
+// regeneration — that would lock the admin out of its own relay.
+func TestEnsureCertsRefusesMismatchedStoredID(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	writeIdentityFixture(t, "other-89abcdef", "other-89abcdef")
+	caKeyBefore, err := os.ReadFile(config.CAKeyPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	o, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.cfg.Mode = "server"
+	o.cfg.Xray.RelayHost = "relay.example.com"
+	o.cfg.Xray.UUID = "01234567-aaaa-bbbb-cccc-ddddeeeeffff"
+	o.cfg.Xray.ServerID = "foo-01234567"
+
+	err = o.ensureCerts()
+	if err == nil || !strings.Contains(err.Error(), "does not match the stored server id") {
+		t.Fatalf("ensureCerts error = %v, want CN/server-id mismatch refusal", err)
+	}
+	caKeyAfter, err := os.ReadFile(config.CAKeyPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(caKeyBefore, caKeyAfter) {
+		t.Error("ca.key was rewritten; the CA must never be regenerated on a stored-id mismatch")
+	}
+}
+
+// TestEnsureCertsKeepsMatchingStoredID: CN == stored id is a no-op even when
+// the hostname would derive a different id.
+func TestEnsureCertsKeepsMatchingStoredID(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	writeIdentityFixture(t, "foo-01234567", "foo-01234567")
+	caKeyBefore, err := os.ReadFile(config.CAKeyPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	o, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.cfg.Mode = "server"
+	o.cfg.Xray.RelayHost = "relay.example.com"
+	o.cfg.Xray.UUID = "01234567-aaaa-bbbb-cccc-ddddeeeeffff"
+	o.cfg.Xray.ServerID = "foo-01234567"
+
+	if err := o.ensureCerts(); err != nil {
+		t.Fatal(err)
+	}
+	caKeyAfter, err := os.ReadFile(config.CAKeyPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(caKeyBefore, caKeyAfter) {
+		t.Error("ca.key was rewritten for a matching stored id")
+	}
+	if got := readCertCN(t, config.ClientCertPath()); got != "foo-01234567" {
+		t.Errorf("client cert CN = %q, want foo-01234567", got)
+	}
+}
+
+// TestEnsureCertsRefusesUnreadableCertAfterDestroy: after `tw relay destroy`
+// RelayHost is "" and an unreadable client.crt yields CN "" — the two must not
+// compare equal and silently regenerate the CA.
+func TestEnsureCertsRefusesUnreadableCertAfterDestroy(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	writeIdentityFixture(t, "foo-01234567", "foo-01234567")
+	if err := os.WriteFile(config.ClientCertPath(), []byte("not a certificate"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	caKeyBefore, err := os.ReadFile(config.CAKeyPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	o, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.cfg.Mode = "server"
+	o.cfg.Xray.RelayHost = ""
+	o.cfg.Xray.UUID = "01234567-aaaa-bbbb-cccc-ddddeeeeffff"
+	o.cfg.Xray.ServerID = "foo-01234567"
+
+	err = o.ensureCerts()
+	if err == nil || !strings.Contains(err.Error(), "unreadable") {
+		t.Fatalf("ensureCerts error = %v, want unreadable-certificate refusal", err)
+	}
+	caKeyAfter, err := os.ReadFile(config.CAKeyPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(caKeyBefore, caKeyAfter) {
+		t.Error("ca.key was rewritten; the CA must never be regenerated for an unreadable client cert")
 	}
 }

@@ -367,9 +367,14 @@ authority. The lifecycle is handled transparently:
   machine as a server, or `tw relay create`), `internal/ops/keys.go`
   (`ensureCerts`) creates the CA (`ca.crt`/`ca.key`) and issues the server's
   client certificate (`client.crt`/`client.key`, CN = server-id) via
-  `internal/pki`. Generation is **idempotent and self-healing**: an existing
-  CA is never regenerated, but a missing client cert is re-issued from the
-  existing CA. It is skipped in client mode.
+  `internal/pki`. The server-id is resolved once (`serverID` in
+  `internal/ops/identity.go`: stored `xray.server_id`, else the CN of an
+  existing `client.crt`, else `<hostname>-<first 8 hex of uuid>`) and
+  persisted, so a profile moved to another host keeps it. Generation is
+  **idempotent**: an existing CA is never regenerated, and a missing client
+  cert is re-issued from the existing CA. A client cert whose CN differs from
+  the stored id is a hard error, except the legacy relay-domain CN, which is
+  re-issued. It is skipped in client mode.
 - **Distribution to the relay** — for the admin's own entry, the CA *public*
   certificate is base64-embedded into cloud-init / the install script and written
   to `/etc/caddy/ca/<server-id>.crt` at provisioning; for joined servers, the

@@ -50,10 +50,6 @@ func (m *serverManager) Start(o *Ops, progress ProgressFunc) error {
 
 	cfg := o.Config()
 
-	m.mu.Lock()
-	m.cfgHash = config.FileHash()
-	m.mu.Unlock()
-
 	fail := func(step, total int, label string, err error) error {
 		m.mu.Lock()
 		m.state = StateError
@@ -74,6 +70,12 @@ func (m *serverManager) Start(o *Ops, progress ProgressFunc) error {
 		return fail(1, total, "SSH keys", err)
 	}
 	progress(ProgressEvent{Step: 1, Total: total, Label: "SSH keys", Status: "completed"})
+
+	// Hash after EnsureKeys: it may persist config (e.g. xray.server_id on the
+	// first start after an upgrade), which must not read as drift.
+	m.mu.Lock()
+	m.cfgHash = config.FileHash()
+	m.mu.Unlock()
 
 	// Step 2: Start SSH server.
 	progress(ProgressEvent{Step: 2, Total: total, Label: "SSH server", Status: "running"})

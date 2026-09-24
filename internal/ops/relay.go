@@ -78,9 +78,10 @@ func (o *Ops) GetRelayStatus() RelayStatus {
 	// Check for tfstate to determine if cloud-provisioned.
 	if _, err := os.Stat(filepath.Join(relayDir, "terraform.tfstate")); err == nil {
 		status.Provisioned = true
-		// Try to read the IP from terraform output.
-		ip, err := o.TerraformOutput(relayDir, nil, "relay_ip")
-		if err == nil {
+		ip, err := tfstateOutput(filepath.Join(relayDir, "terraform.tfstate"), "relay_ip")
+		if err != nil {
+			slog.Debug("reading relay ip from tfstate", "error", err)
+		} else {
 			status.IP = ip
 		}
 		// Detect provider from main.tf.
@@ -136,8 +137,8 @@ func (o *Ops) GetRelayStatus() RelayStatus {
 	return status
 }
 
-// renderRelayConfigs derives the relay's tenant identity from the local
-// hostname + UUID and renders both relay configs (Caddyfile + Xray config.json)
+// renderRelayConfigs takes the relay's stored tenant identity (serverID) and
+// renders both relay configs (Caddyfile + Xray config.json)
 // for the single tenant this server represents. It is the single seam shared by
 // the cloud (ProvisionRelay) and manual (GenerateManualInstallScript) provisioning
 // paths so they can never drift. The derived path (/tw/<server-id>) is persisted
@@ -145,8 +146,9 @@ func (o *Ops) GetRelayStatus() RelayStatus {
 // server ID plus base64-encoded Caddyfile and Xray config; reading the CA PEM
 // remains the caller's job (each sets CACertB64 itself).
 func (o *Ops) renderRelayConfigs(cfg *config.Config) (serverID, caddyfileB64, xrayConfigB64 string, err error) {
-	osHost, _ := os.Hostname()
-	serverID = deriveServerID(osHost, cfg.Xray.UUID)
+	if serverID, err = o.serverID(); err != nil {
+		return "", "", "", err
+	}
 	relayPath := "/tw/" + serverID
 	remotePort := cfg.Server.RemotePort
 	vlessInPort := remotePort + 10000
@@ -217,6 +219,11 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 		if err := validateSSHUser(u); err != nil {
 			return err
 		}
+	}
+
+	if err := CheckTerraform(); err != nil {
+		progress(ProgressEvent{Step: 1, Total: 9, Label: "Terraform", Status: "failed", Error: err.Error()})
+		return err
 	}
 
 	relayDir := config.RelayDir()
@@ -671,23 +678,37 @@ func (o *Ops) DestroyRelay(ctx context.Context, creds map[string]string, progres
 		return fmt.Errorf("no relay to destroy (no tfstate or manual marker found)")
 	}
 
-	// Step 1: Save TLS certificates for reuse (best-effort, 30s timeout).
-	progress(ProgressEvent{Step: 1, Total: 3, Label: "Saving TLS certificates", Status: "running", Message: "Connecting to relay (30s timeout, will skip if unreachable)"})
-	o.saveCaddyCerts(ctx, progress)
-	progress(ProgressEvent{Step: 1, Total: 3, Label: "Saving TLS certificates", Status: "completed"})
-
-	// Step 2: Terraform destroy.
-	progress(ProgressEvent{Step: 2, Total: 3, Label: "Destroying relay", Status: "running"})
-	if err := o.RunTerraform(ctx, relayDir, creds, progress, "destroy", "-auto-approve"); err != nil {
-		progress(ProgressEvent{Step: 2, Total: 3, Label: "Destroying relay", Status: "failed", Error: err.Error()})
+	if err := CheckTerraform(); err != nil {
+		progress(ProgressEvent{Step: 1, Total: 4, Label: "Terraform", Status: "failed", Error: err.Error()})
 		return err
 	}
-	progress(ProgressEvent{Step: 2, Total: 3, Label: "Destroying relay", Status: "completed"})
 
-	// Step 3: Clean up.
-	progress(ProgressEvent{Step: 3, Total: 3, Label: "Cleaning up", Status: "running"})
+	// Step 1: Save TLS certificates for reuse (best-effort, 30s timeout).
+	progress(ProgressEvent{Step: 1, Total: 4, Label: "Saving TLS certificates", Status: "running", Message: "Connecting to relay (30s timeout, will skip if unreachable)"})
+	o.saveCaddyCerts(ctx, progress)
+	progress(ProgressEvent{Step: 1, Total: 4, Label: "Saving TLS certificates", Status: "completed"})
+
+	// Step 2: Terraform init — the data dir is a cache and may be empty
+	// (e.g. a profile imported on another machine).
+	progress(ProgressEvent{Step: 2, Total: 4, Label: "Initializing Terraform", Status: "running"})
+	if err := o.RunTerraform(ctx, relayDir, creds, progress, "init", "-input=false"); err != nil {
+		progress(ProgressEvent{Step: 2, Total: 4, Label: "Initializing Terraform", Status: "failed", Error: err.Error()})
+		return fmt.Errorf("terraform init: %w", err)
+	}
+	progress(ProgressEvent{Step: 2, Total: 4, Label: "Initializing Terraform", Status: "completed"})
+
+	// Step 3: Terraform destroy.
+	progress(ProgressEvent{Step: 3, Total: 4, Label: "Destroying relay", Status: "running"})
+	if err := o.RunTerraform(ctx, relayDir, creds, progress, "destroy", "-auto-approve"); err != nil {
+		progress(ProgressEvent{Step: 3, Total: 4, Label: "Destroying relay", Status: "failed", Error: err.Error()})
+		return err
+	}
+	progress(ProgressEvent{Step: 3, Total: 4, Label: "Destroying relay", Status: "completed"})
+
+	// Step 4: Clean up.
+	progress(ProgressEvent{Step: 4, Total: 4, Label: "Cleaning up", Status: "running"})
 	if err := os.RemoveAll(relayDir); err != nil {
-		progress(ProgressEvent{Step: 3, Total: 3, Label: "Cleaning up", Status: "failed", Error: err.Error()})
+		progress(ProgressEvent{Step: 4, Total: 4, Label: "Cleaning up", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("removing relay directory: %w", err)
 	}
 
@@ -695,11 +716,11 @@ func (o *Ops) DestroyRelay(ctx context.Context, creds map[string]string, progres
 	deactivateAllUsers()
 
 	if err := o.clearRelayHost(); err != nil {
-		progress(ProgressEvent{Step: 3, Total: 3, Label: "Cleaning up", Status: "failed", Error: err.Error()})
+		progress(ProgressEvent{Step: 4, Total: 4, Label: "Cleaning up", Status: "failed", Error: err.Error()})
 		return err
 	}
 
-	progress(ProgressEvent{Step: 3, Total: 3, Label: "Cleaning up", Status: "completed"})
+	progress(ProgressEvent{Step: 4, Total: 4, Label: "Cleaning up", Status: "completed"})
 
 	return nil
 }

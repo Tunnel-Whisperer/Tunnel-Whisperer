@@ -279,8 +279,10 @@ func (o *Ops) InviteUser(req CreateUserRequest, ttl time.Duration, ui InviteUI, 
 // ENROLLEE's public half and the cert is issued from their CSR. Rolls itself
 // back on failure.
 func (o *Ops) grantClient(cfg config.Config, req CreateUserRequest, off *enroll.ClientOffer) (out []byte, err error) {
-	host, _ := os.Hostname()
-	serverID := deriveServerID(host, cfg.Xray.UUID)
+	serverID, err := o.serverID()
+	if err != nil {
+		return nil, err
+	}
 	caCert, err := os.ReadFile(config.CACertPath())
 	if err != nil {
 		return nil, fmt.Errorf("reading CA cert: %w", err)

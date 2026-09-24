@@ -1,8 +1,15 @@
 package ops
 
 import (
+	"archive/zip"
+	"bytes"
 	"errors"
+	"io"
+	"log/slog"
 	"os"
+	"path/filepath"
+	"slices"
+	"sort"
 	"testing"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
@@ -340,5 +347,123 @@ func TestImportContext(t *testing.T) {
 	}
 	if meta.Relay != "imp.example.com" {
 		t.Errorf("relay = %q, want imp.example.com", meta.Relay)
+	}
+}
+
+func TestDeleteContextRemovesTerraformCache(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	o := newOpsForTest(t)
+	seedContext(t, "a", "admin", "a.example.com", "")
+	seedContext(t, "b", "admin", "b.example.com", "")
+	idx, err := config.LoadContextIndex()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := idx.Contexts["b"]
+	m.ID = "abcd1234"
+	idx.Contexts["b"] = m
+	if err := config.SaveContextIndex(idx); err != nil {
+		t.Fatal(err)
+	}
+	cache := filepath.Join(config.CacheDir(), "terraform", "abcd1234")
+	writeFile(t, filepath.Join(cache, "providers", "p.bin"), "bin")
+
+	if err := o.DeleteContext("b"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(cache); !os.IsNotExist(err) {
+		t.Errorf("terraform cache %s not removed (err=%v)", cache, err)
+	}
+}
+
+func TestDeleteContextIgnoresCraftedID(t *testing.T) {
+	parent := t.TempDir()
+	t.Setenv("TW_CONFIG_DIR", filepath.Join(parent, "cfg"))
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	o := newOpsForTest(t)
+	seedContext(t, "a", "admin", "a.example.com", "")
+	seedContext(t, "b", "admin", "b.example.com", "")
+	idx, err := config.LoadContextIndex()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := idx.Contexts["b"]
+	m.ID = "../../.."
+	idx.Contexts["b"] = m
+	if err := config.SaveContextIndex(idx); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(parent, "sentinel")
+	writeFile(t, sentinel, "keep")
+
+	if err := o.DeleteContext("b"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(sentinel); err != nil {
+		t.Errorf("parent dir content removed by crafted context id: %v", err)
+	}
+	if _, err := os.Stat(config.FilePath()); err != nil {
+		t.Errorf("config dir damaged by crafted context id: %v", err)
+	}
+}
+
+func TestExportContextStripsTerraformArtefacts(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	o := newOpsForTest(t)
+	seedContext(t, "a", "admin", "a.example.com", "")
+	seedContext(t, "old", "admin", "b.example.com", "")
+	// A context sealed by a pre-fix version still carries the terraform cache.
+	old := buildSealedBundle(t, map[string]string{
+		"config.yaml":                    "mode: admin\n",
+		"relay/manual-relay.json":        `{"domain":"b"}`,
+		"relay/.terraform/x/p.bin":       "bin",
+		"relay/terraform.tfstate.backup": "{}",
+	})
+	if err := os.WriteFile(config.ContextBundlePath("old"), old, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := o.ExportContext("old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := cryptobox.Decrypt(out, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(plain), int64(len(plain)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, f := range zr.File {
+		names = append(names, f.Name)
+	}
+	sort.Strings(names)
+	if want := []string{"config.yaml", "relay/manual-relay.json"}; !slices.Equal(names, want) {
+		t.Errorf("exported entries = %v, want %v", names, want)
+	}
+	if b, err := readZipEntry(plain, "relay/manual-relay.json"); err != nil || string(b) != `{"domain":"b"}` {
+		t.Errorf("manual-relay.json = %q, %v", b, err)
+	}
+}
+
+func TestExportContextUnchangedWhenClean(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	o := newOpsForTest(t)
+	seedContext(t, "a", "admin", "a.example.com", "")
+	seedContext(t, "b", "admin", "b.example.com", "")
+	stored, err := os.ReadFile(config.ContextBundlePath("b"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := o.ExportContext("b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(out, stored) {
+		t.Error("a bundle with nothing to exclude must be exported byte-for-byte")
 	}
 }

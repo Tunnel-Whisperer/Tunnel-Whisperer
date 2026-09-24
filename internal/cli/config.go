@@ -73,6 +73,7 @@ var (
 	configImportName     string
 	configImportActivate bool
 	configImportForce    bool
+	configExportOutput   string
 )
 
 var configExportCmd = &cobra.Command{
@@ -95,6 +96,8 @@ func init() {
 	configImportCmd.Flags().StringVar(&configImportName, "name", "", "context name (default: relay domain)")
 	configImportCmd.Flags().BoolVar(&configImportActivate, "activate", false, "switch to the imported context immediately (applies its mode)")
 	configImportCmd.Flags().BoolVar(&configImportForce, "force", false, "replace an existing context of the same name without prompting")
+	configExportCmd.Flags().StringVarP(&configExportOutput, "output", "o", "", "destination: a directory (bundle is written there as tw_<name>.twctx) or a full file path (default: current directory)")
+	_ = configExportCmd.MarkFlagFilename("output")
 	configViewCmd.Flags().BoolVar(&configViewAsJSON, "as-json", false, "output the config as JSON")
 	configCmd.AddCommand(configGetContextsCmd, configCurrentContextCmd, configUseContextCmd,
 		configNewContextCmd, configRenameContextCmd, configDeleteContextCmd, configImportCmd, configExportCmd,
@@ -383,34 +386,57 @@ func runConfigExport(cmd *cobra.Command, args []string) error {
 	// export it by sealing the live profile; a non-current context is already
 	// sealed on disk.
 	if name == cur || name == "" {
-		return writeProfileBundle(o, name)
+		return writeProfileBundle(o, name, configExportOutput)
 	}
 	data, err := o.ExportContext(name)
 	if err != nil {
 		return err
 	}
-	return writeBundleFile(name, data)
+	return writeBundleFile(name, data, configExportOutput)
 }
 
 // writeProfileBundle seals the active profile (no passphrase) and writes it as
 // tw_<name>.twctx. This is the single portable bundle format (admin/server/
 // client alike).
-func writeProfileBundle(o *ops.Ops, name string) error {
+func writeProfileBundle(o *ops.Ops, name, dest string) error {
 	data, err := o.ExportCurrentContext()
 	if err != nil {
 		return err
 	}
-	return writeBundleFile(name, data)
+	return writeBundleFile(name, data, dest)
 }
 
-func writeBundleFile(name string, data []byte) error {
+// writeBundleFile writes a sealed bundle to dest, resolving it as follows:
+// an empty dest writes tw_<name>.twctx into the current directory; a dest
+// that ends in a path separator or that names an existing directory writes
+// tw_<name>.twctx inside it; anything else is used as the exact file path.
+// Parent directories are never created.
+func writeBundleFile(name string, data []byte, dest string) error {
 	safe := strings.NewReplacer(".", "-", ":", "-", "/", "-", " ", "-").Replace(name)
 	if safe == "" {
 		safe = "context"
 	}
-	fname := fmt.Sprintf("tw_%s.twctx", safe)
+	defaultName := fmt.Sprintf("tw_%s.twctx", safe)
+
+	fname := defaultName
+	switch {
+	case dest == "":
+		// cwd default.
+	case strings.HasSuffix(dest, "/") || strings.HasSuffix(dest, string(os.PathSeparator)):
+		fname = filepath.Join(dest, defaultName)
+	default:
+		if info, err := os.Stat(dest); err == nil && info.IsDir() {
+			fname = filepath.Join(dest, defaultName)
+		} else {
+			fname = dest
+		}
+	}
+
 	if err := os.WriteFile(fname, data, 0600); err != nil {
 		return fmt.Errorf("writing %s: %w", fname, err)
+	}
+	if err := os.Chmod(fname, 0600); err != nil {
+		return fmt.Errorf("restricting permissions on %s: %w", fname, err)
 	}
 	abs, err := filepath.Abs(fname)
 	if err != nil {

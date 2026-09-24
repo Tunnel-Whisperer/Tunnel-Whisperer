@@ -52,9 +52,9 @@ Everything the relay owner does to the relay. All subcommands require
 
 | Command | Description |
 |---|---|
-| `tw relay create` | Provision a relay server — interactive wizard (cloud providers via Terraform, or a manual bring-your-own-VM flow). Writes the relay's portable context bundle (domain sanitized: `tw_relay-example-com.twctx`) on success. |
+| `tw relay create` | Provision a relay server — interactive wizard (cloud providers via Terraform, or a manual bring-your-own-VM flow); refuses to start the cloud path if Terraform is missing or older than 1.0. Writes the relay's portable context bundle (domain sanitized: `tw_relay-example-com.twctx`) on success. |
 | `tw relay add-server [<context-name>]` | Enroll **this machine** as a server tenant in one command and store the result as a new, ready-to-use context (default name `server-<relay's first DNS label>`). The single-operator shortcut: no join/response files, no context switching, and the context is born mode-signed. |
-| `tw relay destroy` | Destroy the provisioned relay (Terraform for cloud relays; prompts for AWS credentials when needed). |
+| `tw relay destroy` | Destroy the provisioned relay (Terraform for cloud relays: runs `terraform init` then `terraform destroy`, so it works from any machine that imported the relay bundle; refuses if Terraform is missing or older than 1.0; prompts for AWS credentials when needed). |
 | `tw relay invite [--ttl 15m]` | Mint a one-time code that enrolls a remote server — no files. Prints the code, waits for the enrollee's `tw join`, shows a short authentication string (SAS) to confirm against their read-back, then registers it, allocates its port, and rewrites the relay's Caddyfile/Xray config/`authorized_keys` live. |
 | `tw relay get-servers` | List servers registered on the relay (`SERVER-ID`, `PATH`, `PORT`, `ENROLLED`, `TUNNEL` up/down — live-checked against the relay). |
 | `tw relay un-enroll-server <server-id>` | Un-enroll a server from the relay and kill its live connections. Prints the server's details, then asks for confirmation. |
@@ -226,9 +226,9 @@ profile to disk and unseals the target. These commands work in any mode.
 | `tw config use-context <name\|id>` | Switch the active context (seals the current one, reconnects). Warns if a running `tw` service is still serving the old context. |
 | `tw config new-context <name>` | Create a fresh empty context and switch to it (the current one is preserved). |
 | `tw config rename-context <old-name\|id> <new>` | Rename a context. |
-| `tw config delete-context <name\|id>` | Delete a stored context. Deleting the only, active context is a **full reset** (removes all tw configuration from the machine; confirmed interactively, refused while the service is running). Declining the confirmation — or being unable to answer it because stdin is closed — exits non-zero with nothing deleted. |
+| `tw config delete-context <name\|id>` | Delete a stored context (and its Terraform provider cache under `cache/terraform/<context-id>/`). Deleting the only, active context is a **full reset** (removes all tw configuration from the machine; confirmed interactively, refused while the service is running). Declining the confirmation — or being unable to answer it because stdin is closed — exits non-zero with nothing deleted. |
 | `tw config import <bundle.twctx>` | Import a bundle as a new context. Prompts before replacing an existing context of the same name; declining keeps the existing context and exits non-zero. Non-interactively (stdin closed) the collision is an error — pass `--force` to replace instead. |
-| `tw config export [name\|id]` | Export a context as a portable bundle (`tw_<name>.twctx`). No argument exports the active context. |
+| `tw config export [name\|id] [-o <path>]` | Export a context as a portable bundle (`tw_<name>.twctx`), written to the current directory or to `--output`. No argument exports the active context. The bundle is machine- and OS-independent and excludes Terraform's provider cache. |
 | `tw config view` | Print the active config file (path header + raw YAML). `--as-json` prints it as indented JSON instead (no path header). |
 
 ### `tw config import` flags
@@ -238,6 +238,12 @@ profile to disk and unseals the target. These commands work in any mode.
 | `--name <name>` | Context name (default: derived from the bundle, e.g. the relay domain or user name). |
 | `--activate` | Switch to the imported context immediately (applies its mode). |
 | `--force` | Replace an existing context of the same name without prompting. |
+
+### `tw config export` flags
+
+| Flag | Description |
+|---|---|
+| `--output`, `-o <path>` | Destination: an existing directory, or a path ending in a slash (bundle is written there as `tw_<name>.twctx`), or a full file path. Parent directories are not created. Default: current directory. |
 
 !!! warning "Bundles carry no passphrase"
     All context bundles (`.twctx`) are passphrase-less. A bundle is the

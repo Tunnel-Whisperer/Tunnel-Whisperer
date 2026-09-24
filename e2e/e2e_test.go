@@ -50,6 +50,7 @@ func TestE2E(t *testing.T) {
 		{"CrossTenantCert", testCrossTenantCert},
 		{"InviteBurn", testInviteBurn},
 		{"SelfEnroll", testSelfEnroll},
+		{"AdminMigration", testAdminMigration},
 		{"Dashboard", testDashboard},
 		{"RelayResilience", testRelayResilience},
 		{"ConfigDirSafety", testConfigDirSafety},
@@ -100,7 +101,7 @@ func splitLines(s string) []string {
 // relay resolves.
 func testSmoke(t *testing.T) {
 	scenario(t, "the harness itself works: tw runs in every role container and the relay is reachable",
-		"the tw binary executes in admin/server/client/server2",
+		"the tw binary executes in admin/server/client/server2/admin2",
 		"relay.tw.test resolves over the compose network",
 		"the relay's sshd is active")
 	for _, svc := range twServices {

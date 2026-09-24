@@ -77,8 +77,10 @@ func (o *Ops) EnsureKeys() error {
 // certificate (presented to the relay's mTLS gate) if they don't exist yet.
 // It is skipped on client installs: clients receive their client cert from the
 // server via the config bundle and must never overwrite it with a self-signed
-// one. Idempotent and self-healing — an existing CA is never regenerated, but a
-// missing client cert is re-issued from the existing CA.
+// one. Idempotent: a missing client cert is re-issued from the existing CA. An
+// existing CA is regenerated only for a pre-server-id identity (client cert CN
+// == relay host); any other CN that differs from the stored server id —
+// including an unreadable cert — is a hard error, never a silent regeneration.
 func (o *Ops) ensureCerts() error {
 	o.mu.Lock()
 	mode := o.cfg.Mode
@@ -89,10 +91,11 @@ func (o *Ops) ensureCerts() error {
 		return nil
 	}
 
-	// The server-id (cert CN) is derived as "<host>-<first8(uuid)>". If the UUID
-	// is still empty here, the id truncates to "<host>-" and permanently desyncs
-	// the cert from the relay config (Caddyfile subject matcher / path / xray),
-	// which is rendered later once the UUID is populated. Assign and persist a
+	// The server-id (cert CN) is persisted as xray.server_id; when first
+	// resolved it comes from the existing client cert CN or, failing that, is
+	// derived as "<host>-<first8(uuid)>". With an empty UUID that derivation
+	// truncates to "<host>-" and permanently desyncs the cert from the relay
+	// config (Caddyfile subject matcher / path / xray). Assign and persist a
 	// UUID first so the identity is stable across cert issuance and rendering.
 	if xrayUUID == "" {
 		o.mu.Lock()
@@ -103,12 +106,13 @@ func (o *Ops) ensureCerts() error {
 				return fmt.Errorf("assigning Xray UUID: %w", err)
 			}
 		}
-		xrayUUID = o.cfg.Xray.UUID
 		o.mu.Unlock()
 	}
 
-	osHost, _ := os.Hostname()
-	id := deriveServerID(osHost, xrayUUID)
+	id, err := o.serverID()
+	if err != nil {
+		return err
+	}
 
 	caExists, err := statExists(config.CACertPath())
 	if err != nil {
@@ -119,8 +123,18 @@ func (o *Ops) ensureCerts() error {
 		return fmt.Errorf("checking client certificate: %w", err)
 	}
 	if caExists && clientExists {
-		if certCN(config.ClientCertPath()) == id {
+		cn := certCN(config.ClientCertPath())
+		if cn == id {
 			return nil
+		}
+		o.mu.Lock()
+		relayHost := o.cfg.Xray.RelayHost
+		o.mu.Unlock()
+		if cn == "" {
+			return fmt.Errorf("client certificate %s is unreadable and does not match the stored server id %q; refusing to regenerate the CA (fix xray.server_id in config.yaml or restore the matching certificates)", config.ClientCertPath(), id)
+		}
+		if cn != relayHost {
+			return fmt.Errorf("client certificate CN %q does not match the stored server id %q; refusing to regenerate the CA (fix xray.server_id in config.yaml or restore the matching certificates)", cn, id)
 		}
 		slog.Info("re-issuing identity: cert CN changed", "id", id)
 		caExists, clientExists = false, false

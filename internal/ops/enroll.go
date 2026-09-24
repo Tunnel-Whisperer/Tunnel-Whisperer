@@ -81,8 +81,10 @@ func renderRelayAuthorizedKeys(adminPubKey string, servers []RegisteredServer, s
 // plus the given registered servers.
 func (o *Ops) relayTenantState(registered []RegisteredServer) ([]caddy.Server, []relayxray.Tenant, map[string][]byte, error) {
 	cfg := o.Config()
-	osHost, _ := os.Hostname()
-	adminID := deriveServerID(osHost, cfg.Xray.UUID)
+	adminID, err := o.serverID()
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	adminRemotePort := cfg.Server.RemotePort
 
 	adminCAPEM, err := os.ReadFile(config.CACertPath())

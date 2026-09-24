@@ -87,6 +87,7 @@ func buildLocalServerConfig(ident *localServerIdentity, resp *JoinResponse, live
 	scfg := config.Default()
 	scfg.Mode = "server"
 	scfg.Xray.UUID = ident.uuid
+	scfg.Xray.ServerID = ident.serverID
 	scfg.Xray.RelayHost = resp.RelayHost
 	scfg.Xray.Path = resp.Path
 	scfg.Server.RemotePort = resp.RemotePort

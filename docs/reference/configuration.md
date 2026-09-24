@@ -50,10 +50,17 @@ proxy: ""
 
 # Shared transport layer (used by all modes).
 xray:
-  # Profile identity UUID (VLESS client id). On a server/relay it also derives
-  # the server-id (<hostname>-<first 8 hex of uuid>); on a client it is the
-  # per-user UUID issued at user creation.
+  # Profile identity UUID (VLESS client id). On a server/relay it seeds the
+  # server-id at first derivation; on a client it is the per-user UUID issued
+  # at user creation.
   uuid: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+  # Server/relay tenant identity (cert CN, relay path /tw/<server-id>). Written
+  # once on first use and never re-derived, so moving the profile to a host
+  # with a different hostname keeps the same identity. When unset it is taken
+  # from the CN of an existing client.crt, else derived as
+  # <hostname>-<first 8 hex of uuid>. Absent on clients.
+  server_id: web-01-a1b2c3d4
 
   # Domain or IP of the relay server.
   relay_host: relay.example.com
@@ -180,7 +187,8 @@ mode_auth:
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `uuid` | string | _(empty)_ | Profile identity UUID (Xray VLESS client id). Per-user on clients; on servers/relays it also derives the server-id. |
+| `uuid` | string | _(empty)_ | Profile identity UUID (Xray VLESS client id). Per-user on clients; on servers/relays its first 8 hex seed the server-id when it is first derived. |
+| `server_id` | string | _(set on first use)_ | Server/relay tenant identity: the client-certificate CN and the `/tw/<server-id>` relay path. Resolved once — from an existing `client.crt` CN, else `<hostname>-<first 8 hex of uuid>` — then stored and never re-derived, so the profile keeps its identity on another host. Absent on clients. See [Relay Authentication](../security/relay-authentication.md#stored-server-id). |
 | `relay_host` | string | _(empty)_ | Relay server domain or IP address. |
 | `relay_port` | int | `443` | HTTPS port on the relay. |
 | `path` | string | `/tw` | XHTTP path for the Xray transport. Becomes `/tw/<server-id>` once a relay is provisioned/joined. |

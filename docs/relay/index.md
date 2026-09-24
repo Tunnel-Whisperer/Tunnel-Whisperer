@@ -19,8 +19,8 @@ the admin's toolbox.
 | Admin SSH key pair | `<config-dir>/id_ed25519{,.pub}` | The only key that can open a shell on the relay. Tunnel-only by default (see [SSH access](ssh-access.md)). |
 | Admin CA + client certificate | `<config-dir>/ca.{crt,key}`, `client.{crt,key}` | The admin's own mTLS admission credentials — the relay trusts one CA per tenant, including the admin's own slot. The CA private key never leaves the admin machine. |
 | Server registry | `<config-dir>/servers/*.json` | One JSON file per enrolled server tenant: server-id, UUID, CA cert, SSH public key, allocated port. The relay's entire tenant configuration is re-rendered from this registry on every enroll/un-enroll. |
-| Relay state | `<config-dir>/relay/` | Terraform state for cloud relays, or the `manual-relay.json` marker for bring-your-own-VM relays, plus relay metadata (`ssh_open`, instance name). |
-| Admin bundle | `tw_<domain-sanitized>.twctx` (dots become dashes: `tw_relay-example-com.twctx`) | The portable relay identity, emitted at create time. **Keep it safe — there is no recovery.** Importing it on another machine makes that machine the relay admin. |
+| Relay state | `<config-dir>/relay/` | Terraform state for cloud relays, or the `manual-relay.json` marker for bring-your-own-VM relays, plus relay metadata (`ssh_open`, instance name). Terraform's provider cache lives outside it, in `<config-dir>/cache/` (see [File Layout](../reference/file-layout.md#the-cache-directory)). |
+| Admin bundle | `tw_<domain-sanitized>.twctx` (dots become dashes: `tw_relay-example-com.twctx`) | The portable relay identity, emitted at create time (a few hundred KB; Terraform's provider cache is never included). **Keep it safe — there is no recovery.** Importing it on another machine — any hostname or OS — makes that machine the relay admin under the same server-id. |
 
 The relay VM itself holds **no signing keys and no user credentials** — only
 the *public* CA certificates it verifies client certificates against, rendered

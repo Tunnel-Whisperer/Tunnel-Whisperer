@@ -56,9 +56,12 @@ usernames. Route-gating every tenant handle on a verified client certificate:
 
 Each server runs its own small certificate authority. There is **one CA per
 server**, and every client certificate it issues carries the same common name
-— the **server-id** (`<hostname>-<first 8 hex of the profile UUID>`) — since
-that's what the relay's per-tenant route matcher checks. How the certificate
-reaches a client differs by path:
+— the **server-id** — since that's what the relay's per-tenant route matcher
+checks. The server-id is stored in `config.yaml` as `xray.server_id`; it is
+derived once, as `<hostname>-<first 8 hex of the profile UUID>`, the first time
+the profile needs it, and never re-derived afterwards (see
+[Stored server-id](#stored-server-id) below). How the certificate reaches a
+client differs by path:
 
 | Artifact | Curve / validity | Stored at | Leaves the server? |
 |---|---|---|---|
@@ -71,9 +74,33 @@ reaches a client differs by path:
 The CA is generated automatically the first time a server or relay profile
 initializes (any `tw` command that touches ops — e.g. `tw server start`, `tw
 relay create`); generation is skipped in client mode. Generation is
-**idempotent and self-healing**: an existing CA is never regenerated, and if
-the server-id changes (hostname or UUID change) certificates are re-issued to
-match.
+**idempotent**: an existing CA is never regenerated, and a missing client
+certificate is re-issued from it.
+
+### Stored server-id
+
+The server-id is resolved once and saved as `xray.server_id` in `config.yaml`
+(see [Configuration](../reference/configuration.md)). Resolution order:
+
+1. the stored `xray.server_id`, if set;
+2. otherwise the CN of an existing `client.crt`, if it has the server-id shape
+   (so an upgraded profile keeps the identity its certificates already carry);
+3. otherwise derived as `<hostname>-<first 8 hex of the profile UUID>`.
+
+Every consumer — certificates, the relay path `/tw/<server-id>`, the Caddy
+matcher, enrollment — reads the stored value; the hostname is never read
+again. A profile or relay bundle therefore keeps its identity when it is
+imported on a machine with a different hostname or OS (see
+[Contexts → Bundles: Export & Import](../global/contexts.md#bundles-export-import) and
+[File Layout](../reference/file-layout.md)).
+
+If the client certificate's CN does not match the stored id, `tw` fails with
+an error (`client certificate CN … does not match the stored server id …`)
+rather than regenerating the CA. The only automatic re-issue is a legacy
+certificate whose CN is the relay domain (pre-multi-tenant installs): its CA
+and client certificate are replaced with ones carrying the server-id. For
+recovering a bundle that was moved between hosts with an older `tw`, see
+[Troubleshooting](../guides/troubleshooting.md#server-id-mismatch-after-moving-a-bundle-to-another-machine).
 
 !!! note "Same CN, but no longer one shared keypair"
     Every certificate issued by a server's CA carries that server's CN, so

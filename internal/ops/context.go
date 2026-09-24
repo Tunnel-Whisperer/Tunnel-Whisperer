@@ -172,6 +172,13 @@ func (o *Ops) DeleteContext(name string) error {
 	if err := os.Remove(config.ContextBundlePath(name)); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("removing bundle: %w", err)
 	}
+	if id := idx.Contexts[name].ID; id != "" {
+		if dir, err := config.TerraformDataDir(id); err != nil {
+			slog.Warn("not removing terraform cache for context", "context", name, "error", err)
+		} else if err := os.RemoveAll(dir); err != nil {
+			return fmt.Errorf("removing terraform cache: %w", err)
+		}
+	}
 	delete(idx.Contexts, name)
 	return config.SaveContextIndex(idx)
 }
@@ -233,7 +240,8 @@ func (o *Ops) ImportContext(bundle []byte, name string, replace bool) (string, e
 }
 
 // ExportContext returns the encrypted bundle bytes for a stored (non-current)
-// context, selected by name or short ID. To export the active context, use
+// context, selected by name or short ID. Regenerable Terraform artefacts left
+// in bundles sealed by older versions are stripped. To export the active context, use
 // ExportCurrentContext (it seals the live profile, which may have no on-disk
 // snapshot yet).
 func (o *Ops) ExportContext(name string) ([]byte, error) {
@@ -248,6 +256,10 @@ func (o *Ops) ExportContext(name string) ([]byte, error) {
 	data, err := os.ReadFile(config.ContextBundlePath(name))
 	if err != nil {
 		return nil, fmt.Errorf("reading context %q (not sealed yet?): %w", name, err)
+	}
+	data, err = stripExcluded(data)
+	if err != nil {
+		return nil, fmt.Errorf("exporting context %q: %w", name, err)
 	}
 	return data, nil
 }

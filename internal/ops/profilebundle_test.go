@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
@@ -209,6 +210,39 @@ func TestUnsealProfileLeavesLiveProfileUntouchedOnMidUnsealFailure(t *testing.T)
 	for _, e := range entries {
 		if e.IsDir() && filepath.Base(e.Name()) != "users" && filepath.Base(e.Name()) != "id_ed25519" {
 			t.Errorf("unexpected leftover entry in config.Dir(): %s", e.Name())
+		}
+	}
+}
+
+func TestProfileBundleSkipsTerraformArtefacts(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	writeFile(t, config.FilePath(), "mode: admin\n")
+	writeFile(t, filepath.Join(config.RelayDir(), "manual-relay.json"), `{"domain":"a"}`)
+	writeFile(t, filepath.Join(config.RelayDir(), ".terraform", "providers", "x", "provider.bin"), "bin")
+	writeFile(t, filepath.Join(config.RelayDir(), "terraform.tfstate.backup"), "{}")
+
+	sealed, err := sealProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := cryptobox.Decrypt(sealed, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(plain), int64(len(plain)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, f := range zr.File {
+		names[f.Name] = true
+	}
+	if !names["relay/manual-relay.json"] {
+		t.Errorf("relay/manual-relay.json missing from bundle: %v", names)
+	}
+	for n := range names {
+		if strings.HasPrefix(n, "relay/.terraform/") || n == "relay/terraform.tfstate.backup" {
+			t.Errorf("bundle must not contain %s", n)
 		}
 	}
 }

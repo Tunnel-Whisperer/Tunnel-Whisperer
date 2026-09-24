@@ -2,6 +2,8 @@ package ops
 
 import (
 	"fmt"
+	"log/slog"
+	"os"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
 )
@@ -23,6 +25,41 @@ func first8(uuid string) string {
 // deriveServerID is the canonical tenant identity: <sanitized-hostname>-<first8-uuid>.
 func deriveServerID(hostname, uuid string) string {
 	return sanitizeHostname(hostname) + "-" + first8(uuid)
+}
+
+// resolveServerID returns the stored server id, else the CN of the client
+// cert at clientCertPath when it is a valid server id (and not the legacy
+// relay-host CN), else the hostname + UUID derivation. It never persists.
+func resolveServerID(cfg *config.Config, clientCertPath string) string {
+	if cfg.Xray.ServerID != "" {
+		return cfg.Xray.ServerID
+	}
+	if cn := certCN(clientCertPath); cn != "" && joinServerIDRe.MatchString(cn) && cn != cfg.Xray.RelayHost {
+		return cn
+	}
+	hostname, _ := os.Hostname()
+	return deriveServerID(hostname, cfg.Xray.UUID)
+}
+
+// serverID returns this profile's tenant identity, resolving and persisting
+// it on first use so a later hostname change cannot alter it. Client profiles
+// have no tenant identity and get "".
+func (o *Ops) serverID() (string, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.cfg.Mode == "client" {
+		return "", nil
+	}
+	if o.cfg.Xray.ServerID == "" {
+		id := resolveServerID(o.cfg, config.ClientCertPath())
+		o.cfg.Xray.ServerID = id
+		if err := config.Save(o.cfg); err != nil {
+			o.cfg.Xray.ServerID = ""
+			return "", fmt.Errorf("persisting server id: %w", err)
+		}
+		slog.Info("server id persisted", "id", id)
+	}
+	return o.cfg.Xray.ServerID, nil
 }
 
 // firstFreeFromBase returns the lowest port >= base in [base, base+portRange)

@@ -109,6 +109,8 @@ Every machine runs the same `tw` binary in one of three modes (set by its first 
 - **Server:** joins a relay as a tenant, publishes its reverse tunnel, manages client users.
 - **Client:** enrolls with `tw join` against a spoken invite code and opens local ports that reach the server's services.
 
+Each role's identity is a small portable bundle (`tw config export`): move it to another machine — any hostname, Linux or Windows — with `tw config import` and it keeps its identity.
+
 ## Quick Start: One Relay, One Server, One Client
 
 The smallest setup — one relay, one server, one client:
@@ -146,7 +148,7 @@ ssh -p 2201 user@127.0.0.1             # you are on the server, through the rela
 
 [![Multi-server walkthrough recording](docs/assets/multi-server-walkthrough.gif)](https://tunnel-whisperer.github.io/Tunnel-Whisperer/guides/multi-server-walkthrough/)
 
-Building from source requires **Go 1.26+**; **Terraform** only for cloud relay provisioning (`make build` → `bin/tw`).
+Building from source requires **Go 1.26+**; **Terraform >= 1.0** only for cloud relay provisioning (`make build` → `bin/tw`). Terraform's provider cache lives outside the profile (`<config-dir>/cache/`), so relay bundles stay small.
 
 ---
 
@@ -171,7 +173,7 @@ Structured by role — with dynamic tab completion for contexts, users, and serv
 | `tw client connect` / `listen` / `set-port` / `test` / `status` | Open the tunnel and the local ports granted at enrollment |
 | **Global** | |
 | `tw status` | Unified status: active context, mode, live state (any role) |
-| `tw config get-contexts / use-context <name\|id> / import / export ...` | kubectl-style contexts: many relays/identities per machine |
+| `tw config get-contexts / use-context <name\|id> / import / export [-o <path>] ...` | kubectl-style contexts: many relays/identities per machine; `export -o` writes the bundle to a directory or file |
 | `tw dashboard` | Web dashboard (role-aware: tenant management, users, contexts, stats) |
 | `tw proxy set/clear` | Outbound SOCKS5/HTTP proxy for all tunnel traffic |
 | `tw service install/start/stop/uninstall` | Native service (Linux systemd / Windows SCM / macOS launchd) |

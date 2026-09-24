@@ -29,6 +29,13 @@ sanitized into the name: `tw_relay-example-com.twctx` for
     and there is **no recovery** if it is lost. Store it like a private key.
     (You can re-create it later from the admin machine with `tw config export`.)
 
+The admin bundle is **portable**: import it on another machine — any hostname,
+Linux or Windows — with `tw config import`, and that machine administers the
+same relay under the same identity (the server-id is stored in the bundle, not
+re-derived from the hostname) and can later run `tw relay destroy`. Terraform's
+provider cache is not bundled, so the file stays a few hundred KB. See
+[Contexts → Bundles](../global/contexts.md#bundles-export-import).
+
 ## Public SSH: the `--ssh-open` question
 
 Before anything else, the wizard asks one security question: **should the
@@ -49,9 +56,10 @@ loopback pin on the admin key. The full model — including exactly which
 
 ## Cloud provisioning (Terraform)
 
-Requires `terraform` in `PATH`
-([install](https://developer.hashicorp.com/terraform/install)). The wizard
-walks through:
+Requires Terraform >= 1.0 in `PATH`
+([install](../getting-started/installation.md#terraform-cloud-relays-only));
+`tw relay create` checks the version before asking for credentials. The
+wizard walks through:
 
 1. **Relay domain** — e.g. `relay.example.com` (you need control of its DNS).
 2. **Cloud provider** — Hetzner, DigitalOcean, or AWS.
@@ -60,7 +68,10 @@ walks through:
    them against the provider API before touching anything.
 4. **Confirm and provision** — `tw` generates cloud-init + Terraform config
    into `<config-dir>/relay/` and runs `terraform init` and
-   `terraform apply`. SSH keys, the Xray UUID, and the CA/client certificates
+   `terraform apply`. Downloaded provider plugins go to the per-context
+   cache (`<config-dir>/cache/terraform/<context-id>/`, see
+   [File Layout](../reference/file-layout.md#the-cache-directory)), not into
+   `relay/`. SSH keys, the Xray UUID, and the CA/client certificates
    are generated first if missing.
 5. **DNS + readiness** — the wizard prints the relay IP and the A record to
    create, then polls until the domain resolves and Caddy obtains a TLS
@@ -192,8 +203,9 @@ tw relay destroy
 ```
 
 - **Cloud relays** — saves the Caddy TLS certificates for reuse (best-effort,
-  30-second timeout if the relay is unreachable), runs
-  `terraform destroy`, then removes the local relay state. AWS asks for
+  30-second timeout if the relay is unreachable), runs `terraform init`
+  (restores the provider cache, e.g. on a machine that imported the context)
+  and then `terraform destroy`, then removes the local relay state. AWS asks for
   credentials again; Hetzner/DO reuse the stored token.
 - **Manual relays** — nothing is executed on the VM; `tw` forgets the relay
   marker and local state. Decommission the VM yourself.

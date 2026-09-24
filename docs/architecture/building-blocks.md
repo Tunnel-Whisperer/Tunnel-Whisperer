@@ -52,7 +52,7 @@ graph TB
 The server brings up its internal services:
 
 - **SSH Server** -- an embedded SSH server (Go `golang.org/x/crypto/ssh`) that listens on a configurable port (default `:2222`), supports `direct-tcpip` port forwarding, reads `authorized_keys` dynamically, and enforces `permitopen` (and optional `single-session`) restrictions per client key
-- **Xray Instance** -- in-process xray-core creating a VLESS+XHTTP+mTLS tunnel to the relay on the server's own path `/tw/<server-id>`; presents the per-server X.509 client certificate (`usage: "client-cert"`, CN = server-id) so the relay's Caddy `client_auth` gate admits it; dokodemo-door inbound on `sshPort+1` (or `server.xray_port`) forwards to the relay's SSH port
+- **Xray Instance** -- in-process xray-core creating a VLESS+XHTTP+mTLS tunnel to the relay on the server's own path `/tw/<server-id>`; presents the per-server X.509 client certificate (`usage: "client-cert"`, CN = server-id — resolved once and stored as `xray.server_id`, never re-derived from the hostname) so the relay's Caddy `client_auth` gate admits it; dokodemo-door inbound on `sshPort+1` (or `server.xray_port`) forwards to the relay's SSH port
 - **Reverse Tunnel** -- SSH reverse port forward (`-R`) through Xray, exposing the server's SSH on the relay at its admin-assigned `remote_port`
 - **Per-server CA** -- a small certificate authority (`internal/pki`) generated on first run that issues the client certificate presented at the relay; the CA public certificate is shipped to the relay's trust pool (at provisioning for the admin's own entry, at enrollment for joined servers), the signing key never leaves the server
 - **API Server** -- a gRPC service exposing status and management operations (`:50051`)
@@ -70,6 +70,8 @@ The relay is a lightweight VM provisioned by the admin machine (mode `relay`) vi
 - **Firewall (ufw)** -- only ports 80 and 443 open (plus 22 with `--ssh-open`)
 
 Supported cloud providers: **Hetzner**, **DigitalOcean**, **AWS** — plus **Manual** (bring your own VM).
+
+On the admin machine, `relay/` holds only durable provisioning state (rendered config, `terraform.tfvars`, `terraform.tfstate`, lock file, metadata) and travels in the relay's context bundle; Terraform's regenerable provider cache runs out of `<config-dir>/cache/terraform/<context-id>/` (`TF_DATA_DIR`) and is never bundled. Together with the stored server-id this makes the admin bundle small and portable across machines — see [File Layout](../reference/file-layout.md#the-cache-directory).
 
 ### Client (`tw client connect`)
 
@@ -189,7 +191,7 @@ tw/
 │   │   ├── ops.go                      # Ops struct, config change detection, lifecycle
 │   │   ├── modeauth/                   # ed25519 signature over (mode, identity) — tamper-evidence
 │   │   ├── keys.go                     # SSH key + CA/client-cert management (ensureCerts, applyClientCertPaths)
-│   │   ├── identity.go                 # deriveServerID, enrollPort (tunnel port + 20000)
+│   │   ├── identity.go                 # serverID (resolve once, persist xray.server_id), enrollPort (tunnel port + 20000)
 │   │   ├── join.go                     # JoinRequest/JoinResponse payload types (now travel inside invite grants, not files)
 │   │   ├── joinflow.go                 # Ops.Join: the tw join enrollee side (SPAKE2 offer, applies the grant)
 │   │   ├── invite.go                   # Ops.InviteServer / InviteUser: the tw relay invite / tw server user invite issuer side
@@ -207,7 +209,7 @@ tw/
 │   │   ├── client.go                   # clientManager lifecycle (start/stop/reconnect)
 │   │   ├── relay.go                    # provisioning, relay SSH helpers, manual install script
 │   │   ├── server.go                   # serverManager lifecycle (start/stop/restart)
-│   │   └── terraform.go                # Terraform init/apply/destroy wrappers
+│   │   └── terraform.go                # Terraform init/apply/destroy wrappers, TF_DATA_DIR cache, version check
 │   ├── logging/                        # structured logging
 │   │   └── logging.go                  # Setup(), SetLevel(), dynamic slog.LevelVar
 │   ├── api/                            # gRPC API service (JSON codec; proto is documentation only)

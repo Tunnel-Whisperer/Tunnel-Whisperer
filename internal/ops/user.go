@@ -379,8 +379,7 @@ func removeMultipleUUIDsFromRelayConfig(cfg *config.Config, users []UserInfo) er
 	if len(users) == 0 {
 		return nil
 	}
-	hostname, _ := os.Hostname()
-	serverID := deriveServerID(hostname, cfg.Xray.UUID)
+	serverID := resolveServerID(cfg, config.ClientCertPath())
 	inboundTag := "vless-in-" + serverID
 	return withRelaySSH(cfg, func(client *gossh.Client) error {
 		xrayConf, err := readRelayXrayConfig(client)
@@ -554,8 +553,7 @@ func addMultipleUUIDsToRelay(cfg *config.Config, uuids []string) error {
 	if len(uuids) == 0 {
 		return nil
 	}
-	hostname, _ := os.Hostname()
-	serverID := deriveServerID(hostname, cfg.Xray.UUID)
+	serverID := resolveServerID(cfg, config.ClientCertPath())
 	inboundTag := "vless-in-" + serverID
 	return withRelaySSH(cfg, func(client *gossh.Client) error {
 		xrayConf, err := readRelayXrayConfig(client)
@@ -963,8 +961,7 @@ func relayClients(xrayConf map[string]interface{}, inboundTag string) (settings 
 // first, then hot-adds via the Xray API.  Falls back to restart if the
 // API fails.
 func addUUIDToRelay(cfg *config.Config, newUUID string) error {
-	hostname, _ := os.Hostname()
-	serverID := deriveServerID(hostname, cfg.Xray.UUID)
+	serverID := resolveServerID(cfg, config.ClientCertPath())
 	inboundTag := "vless-in-" + serverID
 	return withRelaySSH(cfg, func(client *gossh.Client) error {
 		xrayConf, err := readRelayXrayConfig(client)
@@ -1009,8 +1006,7 @@ func addUUIDToRelay(cfg *config.Config, newUUID string) error {
 // and removes a client UUID from the relay's Xray config.  Persists to
 // disk first, then hot-removes via the Xray API.  Falls back to restart.
 func removeUUIDFromRelay(cfg *config.Config, targetUUID string) error {
-	hostname, _ := os.Hostname()
-	serverID := deriveServerID(hostname, cfg.Xray.UUID)
+	serverID := resolveServerID(cfg, config.ClientCertPath())
 	inboundTag := "vless-in-" + serverID
 	return withRelaySSH(cfg, func(client *gossh.Client) error {
 		xrayConf, err := readRelayXrayConfig(client)

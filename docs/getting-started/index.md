@@ -5,7 +5,7 @@ Tunnel Whisperer connects services across separated private networks via resilie
 ## Prerequisites
 
 - **Go 1.26+** — to build from source
-- **Terraform** — for automated cloud relay provisioning (not needed for the manual bring-your-own-VM path)
+- **Terraform >= 1.0** (tested with 1.16) — only for automated cloud relay provisioning; see [Installation](installation.md#terraform-cloud-relays-only)
 - **A domain name** — pointed at your relay VM (e.g. `relay.example.com`)
 - **A cloud account** — Hetzner, DigitalOcean, or AWS (for automated provisioning), or any VM with a public IP
 

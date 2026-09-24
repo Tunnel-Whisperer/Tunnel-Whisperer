@@ -69,6 +69,16 @@ func profileFiles() ([]string, error) {
 				}
 				return err
 			}
+			rel, err := relPath(p)
+			if err != nil {
+				return err
+			}
+			if isBundleExcluded(rel) {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
 			if !d.IsDir() {
 				files = append(files, p)
 			}
@@ -80,6 +90,75 @@ func profileFiles() ([]string, error) {
 	}
 	sort.Strings(files)
 	return files, nil
+}
+
+// bundleExcluded lists regenerable Terraform artefacts (zip-name form) that
+// are never bundled. Terraform's data dir now lives under config.CacheDir();
+// this is defence in depth for profiles created before that split.
+var bundleExcluded = map[string]bool{
+	"relay/.terraform":               true,
+	"relay/terraform.tfstate.backup": true,
+}
+
+// isBundleExcluded reports whether a zip-name path is, or lies under, a
+// bundleExcluded entry.
+func isBundleExcluded(rel string) bool {
+	for ex := range bundleExcluded {
+		if rel == ex || strings.HasPrefix(rel, ex+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// stripExcluded re-seals a sealed bundle without its bundleExcluded entries
+// (contexts sealed before the Terraform cache split still carry them). A
+// bundle with nothing to exclude is returned unchanged.
+func stripExcluded(sealed []byte) ([]byte, error) {
+	plain, err := cryptobox.Decrypt(sealed, "")
+	if err != nil {
+		return nil, fmt.Errorf("decrypting bundle: %w", err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(plain), int64(len(plain)))
+	if err != nil {
+		return nil, fmt.Errorf("reading bundle zip (corrupted?): %w", err)
+	}
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	stripped := false
+	for _, zf := range zr.File {
+		if isBundleExcluded(zf.Name) {
+			stripped = true
+			continue
+		}
+		rc, err := zf.Open()
+		if err != nil {
+			return nil, fmt.Errorf("reading bundle entry %q: %w", zf.Name, err)
+		}
+		data, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			return nil, fmt.Errorf("reading bundle entry %q: %w", zf.Name, err)
+		}
+		w, err := zw.Create(zf.Name)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := w.Write(data); err != nil {
+			return nil, err
+		}
+	}
+	if !stripped {
+		return sealed, nil
+	}
+	if err := zw.Close(); err != nil {
+		return nil, fmt.Errorf("finalizing bundle zip: %w", err)
+	}
+	enc, err := cryptobox.Encrypt(buf.Bytes(), "")
+	if err != nil {
+		return nil, fmt.Errorf("encrypting bundle: %w", err)
+	}
+	return enc, nil
 }
 
 // relPath converts an absolute profile-file path to its zip name (relative to config.Dir()).

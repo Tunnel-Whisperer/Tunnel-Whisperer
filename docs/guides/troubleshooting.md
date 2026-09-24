@@ -103,6 +103,56 @@ so nothing is lost.
 **Fix:** resolve the storage problem (permissions, disk space), then run
 `tw config import tw_rescue_<name>.twctx --activate`. No new invite needed.
 
+### Server-id Mismatch After Moving a Bundle to Another Machine
+
+In the common case there is nothing to fix: a bundle exported by an older
+`tw` and imported under the current `tw` keeps its identity, because the
+server-id is taken from the CN of the bundled client certificate when
+`xray.server_id` is not set yet.
+
+If `tw` refuses to start with:
+
+```text
+client certificate CN %q does not match the stored server id %q; refusing to regenerate the CA (fix xray.server_id in config.yaml or restore the matching certificates)
+```
+
+(`%q` are the certificate CN and the stored id, e.g. `"web-01-a1b2c3d4"` and
+`"laptop-a1b2c3d4"`), read on. Current `tw` stores the server-id in `config.yaml` (`xray.server_id`) and
+never re-derives it from the hostname, so a bundle exported by an up-to-date
+`tw` can be imported on any machine (see
+[Relay Authentication](../security/relay-authentication.md#stored-server-id)).
+Older versions re-derived the id from the local hostname on every run, so a
+relay or server bundle imported on a host with a different hostname could end
+up with a mismatched identity — this error, or tunnels the relay rejects
+because the certificates no longer match what it trusts.
+
+**Fix:** on the machine that shows the problem, check the CN of the current
+certificate:
+
+```bash
+openssl x509 -in /etc/tw/config/client.crt -noout -subject   # or <config-dir>/client.crt
+```
+
+- **The CN is the original id** (the one in `xray.path`, `/tw/<server-id>`):
+  set `xray.server_id` in `config.yaml` to exactly that CN, then retry.
+- **Otherwise** (the older `tw` already re-issued the certificates for the
+  new hostname): upgrade `tw` on the **original** machine, run
+  `tw config export` there, and re-import the fresh bundle on the new machine
+  with `tw config import <bundle.twctx> --force`.
+
+After hand-editing `config.yaml`, restart the tw service so it picks up the
+change: `tw service stop && tw service start` (Windows: `Restart-Service tw`
+in an elevated PowerShell).
+
+### Old Relay Bundle Contains `relay/.terraform/`
+
+Relay bundles exported by older versions include Terraform's provider cache
+(`relay/.terraform/`), which can be large. Nothing to do: the first
+Terraform call after importing (e.g. `tw relay destroy`, which runs
+`terraform init` first) deletes that directory and rebuilds the cache under
+`<config-dir>/cache/terraform/<context-id>/`, and `tw config export` never
+includes it, so any re-export is small. See [File Layout](../reference/file-layout.md#the-cache-directory).
+
 ### Mode Enforcement Errors
 
 ```

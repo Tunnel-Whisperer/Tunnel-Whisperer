@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 
 	"gopkg.in/yaml.v3"
@@ -55,6 +56,7 @@ type AnalyticsConfig struct {
 // XrayConfig is the shared transport layer (both server and client).
 type XrayConfig struct {
 	UUID           string `yaml:"uuid"`
+	ServerID       string `yaml:"server_id,omitempty"` // tenant identity (<hostname>-<first8(uuid)> at first derivation), persisted so it never changes with the hostname
 	RelayHost      string `yaml:"relay_host"`
 	RelayPort      int    `yaml:"relay_port"`
 	Path           string `yaml:"path"`
@@ -220,6 +222,24 @@ func FilePath() string {
 // RelayDir returns the path to the relay Terraform directory.
 func RelayDir() string {
 	return filepath.Join(Dir(), "relay")
+}
+
+// CacheDir returns the directory for regenerable data that is never bundled.
+func CacheDir() string {
+	return filepath.Join(Dir(), "cache")
+}
+
+// contextIDRE matches a ShortID: exactly 8 lowercase hex chars.
+var contextIDRE = regexp.MustCompile(`^[0-9a-f]{8}$`)
+
+// TerraformDataDir returns the TF_DATA_DIR for the profile with the given
+// context id. The id comes from bundle data, so anything that is not an
+// 8-hex ShortID is rejected rather than joined into a filesystem path.
+func TerraformDataDir(contextID string) (string, error) {
+	if !contextIDRE.MatchString(contextID) {
+		return "", fmt.Errorf("invalid context id %q: want 8 lowercase hex chars", contextID)
+	}
+	return filepath.Join(CacheDir(), "terraform", contextID), nil
 }
 
 // UsersDir returns the path to the directory containing per-user client configs.

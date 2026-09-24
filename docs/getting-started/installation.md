@@ -71,6 +71,40 @@ tw --help
 tw status       # works on any machine, even before setup
 ```
 
+## Terraform (cloud relays only)
+
+Terraform **>= 1.0** (tested with 1.16); needed only for `tw relay create` with a cloud provider — the manual bring-your-own-VM path does not use it.
+
+=== "Ubuntu/Debian"
+
+    ```bash
+    wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(grep -oP '(?<=UBUNTU_CODENAME=).*' /etc/os-release || lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+    sudo apt update && sudo apt install terraform
+    ```
+
+=== "macOS"
+
+    ```bash
+    brew tap hashicorp/tap && brew install hashicorp/tap/terraform
+    ```
+
+=== "Windows"
+
+    ```powershell
+    choco install terraform
+    ```
+
+    `choco` installs the community package; alternatively use the download page linked below.
+
+Verify:
+
+```bash
+terraform -version
+```
+
+Other platforms and downloads: [developer.hashicorp.com/terraform/install](https://developer.hashicorp.com/terraform/install).
+
 ## Shell Completion (zsh)
 
 ```bash

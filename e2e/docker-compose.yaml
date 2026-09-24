@@ -39,6 +39,9 @@ services:
   server2:
     <<: *tw
     hostname: server2
+  admin2:
+    <<: *tw
+    hostname: admin-b
 
 networks:
   twnet:

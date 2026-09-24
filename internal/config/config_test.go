@@ -173,3 +173,26 @@ func TestSaveWritesConfig0600(t *testing.T) {
 		t.Errorf("config.yaml perms = %o, want 600", perm)
 	}
 }
+
+func TestTerraformDataDir(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	want := filepath.Join(Dir(), "cache", "terraform", "0123abcd")
+	got, err := TerraformDataDir("0123abcd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("TerraformDataDir = %q, want %q", got, want)
+	}
+}
+
+func TestTerraformDataDirRejectsBadIDs(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	for _, id := range []string{"", "../../..", "../../../../etc", "0123abc", "0123abcde", "0123ABCD", "0123abc/", "0123abcg"} {
+		t.Run(id, func(t *testing.T) {
+			if got, err := TerraformDataDir(id); err == nil {
+				t.Fatalf("TerraformDataDir(%q) = %q, want error", id, got)
+			}
+		})
+	}
+}
