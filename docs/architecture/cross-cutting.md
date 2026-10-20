@@ -84,7 +84,7 @@ sequenceDiagram
 5. Writes the updated config via `sudo tee /usr/local/etc/xray/config.json` (persistence)
 6. Hot-adds the UUID via the Xray gRPC API (`AlterInbound` / `AddUserOperation` on loopback `:10085`, forwarded over the SSH connection); falls back to `systemctl restart xray` if the API call fails
 
-Relay-side *tenant* changes (server enroll / un-enroll) follow the same live-update philosophy but at a bigger granularity: the admin re-renders the Caddyfile, `authorized_keys`, and Xray `config.json` wholesale from the registry, then live-adds (`AddInbound` + `AddRule`) or live-removes the affected tenant via the same gRPC API — no Xray restart. Enroll and un-enroll are serialized by a local file lock (`internal/ops/oplock.go`).
+Relay-side *tenant* changes (server enroll / un-enroll) follow the same live-update philosophy but at a bigger granularity: the admin re-renders the Caddyfile, `authorized_keys`, and Xray `config.json` wholesale from the registry, then live-adds (`AddInbound` + `AddRule`) or live-removes the affected tenant via the same gRPC API — no Xray restart. One thing is deliberately *not* re-rendered: client-user UUIDs are owned by their servers and exist only in the relay's `config.json` (the admin's registry never sees them), so enroll and un-enroll read the current file and carry each surviving `vless-in-<server-id>` inbound's extra clients over into the rewritten one (`mergeRelayClients`, `internal/ops/relaymerge.go`); a removed tenant's inbound, users included, is dropped. Enroll and un-enroll are serialized by a local file lock (`internal/ops/oplock.go`).
 
 ---
 

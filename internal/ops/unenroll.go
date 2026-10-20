@@ -160,8 +160,14 @@ func (o *Ops) UnenrollServer(serverID string, progress ProgressFunc) error {
 		}
 
 		// (e) Persist the xray config for restarts/reboots (the running
-		// process was already updated in (b) — no restart).
-		xB64 := base64.StdEncoding.EncodeToString([]byte(xjson))
+		// process was already updated in (b) — no restart). The remaining
+		// tenants' client-user UUIDs exist only in the current file; the
+		// removed tenant's inbound (and its users) is dropped with it.
+		xmerged, err := mergedRelayXrayConfig(client, xjson)
+		if err != nil {
+			return err
+		}
+		xB64 := base64.StdEncoding.EncodeToString(xmerged)
 		if err := runRelayCmd(client, fmt.Sprintf("echo %s | base64 -d | sudo tee /usr/local/etc/xray/config.json >/dev/null", xB64)); err != nil {
 			return fmt.Errorf("writing relay Xray config: %w", err)
 		}

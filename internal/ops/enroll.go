@@ -262,8 +262,15 @@ func (o *Ops) EnrollServer(req *JoinRequest, progress ProgressFunc) (*JoinRespon
 		}
 
 		// Write the full Xray config.json for persistence (survives xray restarts/reboots).
+		// The rendered tenant list knows only each server's own UUID; the
+		// client-user UUIDs servers added to their inbounds live only in the
+		// relay's current file, so carry them over before overwriting it.
 		// Do NOT restart xray — liveAddTenant handles the live update below.
-		xB64 := base64.StdEncoding.EncodeToString([]byte(xjson))
+		xmerged, err := mergedRelayXrayConfig(client, xjson)
+		if err != nil {
+			return err
+		}
+		xB64 := base64.StdEncoding.EncodeToString(xmerged)
 		if err := runRelayCmd(client, fmt.Sprintf("echo %s | base64 -d | sudo tee /usr/local/etc/xray/config.json >/dev/null", xB64)); err != nil {
 			return fmt.Errorf("writing relay Xray config: %w", err)
 		}

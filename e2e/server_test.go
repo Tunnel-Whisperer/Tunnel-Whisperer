@@ -110,12 +110,38 @@ func testSecondTenant(t *testing.T) {
 		"server-1's tw server test and the admin's tw relay test still pass (non-disruptive)",
 		"tw relay un-enroll-server --yes removes the LIVE server2: registry row gone, relay listener gone, its tunnel test fails",
 		"server-1 and the admin remain unaffected after the un-enroll (non-disruptive removal)",
+		"a server-1 client user (dave) invited before the enroll still moves bytes after systemctl restart xray on the relay, both after the enroll and after the un-enroll — the relay's config.json kept his UUID across both full rewrites (ISS-002)",
 		"tab completion: tw __complete relay un-enroll-server offers the enrolled server-id")
 
 	// Clean identity on server2 (same rationale as ServerJoin's wipe — this
 	// also makes liveProfileEmpty() true so tw join auto-activates below).
 	killMatching(t, "server2", "tw server start")
 	execIn(t, "server2", "rm -rf /etc/tw-test")
+
+	// A server-1 client user must exist BEFORE server2 enrolls: his UUID
+	// lives only in the relay's xray config.json (addUUIDToRelay patches
+	// server-1's inbound there), which EnrollServer/UnenrollServer rewrite in
+	// full from the tenant list. Alice is gone since Revocation, so dave is
+	// this scenario's own user, in a throwaway --config-dir (AdminMigration's
+	// pattern) so the client's main profile and current context stay as the
+	// later scenarios expect them.
+	killMatching(t, "client", "twdave")
+	execIn(t, "client", "rm -rf /tmp/twdave")
+	if out, err := execInOK("server", "printf 'y\\n' | tw server user delete dave"); err != nil {
+		t.Logf("pre-cleanup: no leftover dave on the server (or delete failed, non-fatal): %v\n%s", err, out)
+	} else {
+		t.Logf("pre-cleanup: deleted a leftover dave from a previous run:\n%s", out)
+	}
+	runInviteExchange(t, "server", "tw server user invite dave -m "+davePort+":"+echoPort,
+		"client", "tw --config-dir /tmp/twdave join "+domain+" {code}")
+	defer func() {
+		killMatching(t, "client", "twdave")
+		execIn(t, "client", "rm -rf /tmp/twdave")
+		execIn(t, "server", "printf 'y\\n' | tw server user unregister dave")
+		execIn(t, "server", "printf 'y\\n' | tw server user delete dave")
+	}()
+	execDetached(t, "client", "tw --config-dir /tmp/twdave client connect > /var/log/tw-client-dave.log 2>&1")
+	assertDaveEcho(t, "baseline before server2 enroll")
 
 	// The ServerID is prefixed with the container's hostname — a random
 	// Docker ID here, NOT the compose service name — capture it to build
@@ -172,6 +198,11 @@ func testSecondTenant(t *testing.T) {
 		fatalf(t, "admin tunnel broken after server2 enroll:\n%s", out)
 	}
 
+	// ISS-002: the enroll rewrote config.json; the running xray still has
+	// dave only because it was never reloaded. A restart loads the file —
+	// his UUID must have survived the rewrite.
+	restartRelayXrayAndAssertDave(t, "after server2 enroll")
+
 	// 6. Un-enroll server2 while its daemon runs and its tunnel is LIVE —
 	// removal must be total: config gone AND live connections killed. The
 	// --yes flag skips the confirmation prompt (no TTY here).
@@ -218,6 +249,51 @@ func testSecondTenant(t *testing.T) {
 	if !strings.Contains(out, "tunnel and shell working") {
 		fatalf(t, "admin tunnel broken after server2 un-enroll:\n%s", out)
 	}
+
+	// ISS-002: same check for the un-enroll's full rewrite.
+	restartRelayXrayAndAssertDave(t, "after server2 un-enroll")
+}
+
+// davePort is dave's local port on the client — distinct from alice's 18080,
+// bob's 18081, PortOverride's 18090/18091, PermitOpen's 18092, 18093
+// (dashboard/carol) and AdminMigration's 18094.
+const davePort = "18095"
+
+// assertDaveEcho waits for dave's forward tunnel (throwaway --config-dir
+// /tmp/twdave on the client) and proves a byte-for-byte echo round-trip
+// through relay + server-1. Polls because the connect daemon's own reconnect
+// loop is what brings the tunnel back after a relay xray restart.
+func assertDaveEcho(t *testing.T, label string) {
+	t.Helper()
+	waitFor(t, "dave echo round-trip "+label, 120*time.Second, func() (bool, string) {
+		out, err := execInOK("client", "printf 'hello-tw-dave' | nc -w 5 127.0.0.1 "+davePort+" 2>&1")
+		if err != nil || strings.TrimSpace(out) != "hello-tw-dave" {
+			logOut, _ := execInOK("client", "tail -5 /var/log/tw-client-dave.log")
+			return false, "echo not (yet) working: " + strings.TrimSpace(out) + "\n" + logOut
+		}
+		return true, ""
+	})
+}
+
+// restartRelayXrayAndAssertDave restarts xray on the relay — forcing it to
+// reload /usr/local/etc/xray/config.json as last written by the enroll or
+// un-enroll — and proves server-1's user dave still authenticates, i.e. his
+// UUID was carried over by the rewrite (ISS-002). Also waits for server-1's
+// reverse tunnel to come back so the scenario's later assertions are stable.
+func restartRelayXrayAndAssertDave(t *testing.T, label string) {
+	t.Helper()
+	pidBefore := strings.TrimSpace(execIn(t, "relay", "systemctl show -p MainPID xray"))
+	execIn(t, "relay", "systemctl restart xray")
+	pidAfter := strings.TrimSpace(execIn(t, "relay", "systemctl show -p MainPID xray"))
+	if pidBefore == pidAfter {
+		fatalf(t, "%s: relay xray MainPID unchanged across systemctl restart: %s", label, pidBefore)
+	}
+	execIn(t, "relay", "systemctl is-active xray")
+	waitFor(t, "server-1 reverse tunnel recovery "+label, 120*time.Second, func() (bool, string) {
+		out, err := execInOK("server", "tw server test")
+		return err == nil && strings.Contains(out, "tunnel and shell working"), out
+	})
+	assertDaveEcho(t, label)
 }
 
 // mtlsForeignAlert is the stable substring of the OpenSSL/curl error text
