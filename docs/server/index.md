@@ -14,7 +14,7 @@ Setting up a server is three steps, in order:
 1. **[Join a relay](join-relay.md)** — get a one-time invite code from the relay admin (`tw relay invite`), redeem it:
 
     ```bash
-    tw join relay.example.com <code>
+    sudo tw join relay.example.com <code>
     ```
 
 2. **[Create users](users.md)** — one per client, each restricted to specific ports:

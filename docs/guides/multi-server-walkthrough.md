@@ -75,7 +75,7 @@ This mints a one-time code and waits. Read it to server1's operator over any tru
 **On server1:**
 
 ```bash
-tw join relay.example.com <code>
+sudo tw join relay.example.com <code>
 ```
 
 Both terminals now show a short authentication string (SAS). Read yours aloud to the admin.
@@ -130,7 +130,7 @@ No files change hands: each client's SSH key and a CSR are generated locally on 
 **On client1**, while server1's invite is waiting:
 
 ```bash
-tw join relay.example.com <code1>
+sudo tw join relay.example.com <code1>
 ```
 
 Read the displayed SAS aloud to server1's operator for approval. Once approved:

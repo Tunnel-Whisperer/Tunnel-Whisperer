@@ -110,7 +110,7 @@ Connect a cloud Jupyter notebook to an on-premise database behind a corporate fi
 
     ```bash
     # Join a relay: redeem the admin's spoken invite code
-    tw join relay.example.com <code>
+    sudo tw join relay.example.com <code>
 
     # Invite a client user: mint a code, read it to them,
     # approve on their SAS read-back
@@ -124,7 +124,7 @@ Connect a cloud Jupyter notebook to an on-premise database behind a corporate fi
 
     ```bash
     # Redeem the server operator's spoken invite code, then connect
-    tw join relay.example.com <code>
+    sudo tw join relay.example.com <code>
     tw client connect
     ```
 

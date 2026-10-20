@@ -189,6 +189,10 @@ Joins a relay using a one-time invite code from its operator (`tw relay
 invite` for a server tenant, `tw server user invite` for a client
 user). It's role-neutral and works even with **no mode configured** — the
 issuer's invite decides whether this machine becomes a server or a client.
+The default config directory is system-owned, so run it as `sudo tw join ...`
+(Windows: an Administrator shell) unless `TW_CONFIG_DIR` points at a directory
+you own; a "not writable" refusal happens before any relay contact, so the
+code stays unused.
 
 The exchange is a [SPAKE2](https://en.wikipedia.org/wiki/Password-authenticated_key_agreement)
 PAKE keyed by the code: once the key exchange completes, both sides display a

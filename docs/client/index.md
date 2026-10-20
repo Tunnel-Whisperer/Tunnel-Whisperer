@@ -12,7 +12,7 @@ Everything a client needs arrives over one spoken exchange: the server operator 
 ```bash
 # 1. Redeem the invite code the server operator read you
 #    (context is auto-named after your user; read the SAS back to them)
-tw join relay.example.com <code>
+sudo tw join relay.example.com <code>
 
 # 2. Connect (foreground; or install as a service)
 tw client connect

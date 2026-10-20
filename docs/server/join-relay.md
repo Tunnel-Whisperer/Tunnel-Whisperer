@@ -8,7 +8,7 @@ admin (relay owner)                    server
 tw relay invite
     │  mints code, waits
     │  reads code aloud ───────────────►
-                                        tw join <host> <code>
+                                   sudo tw join <host> <code>
     │◄──────── SPAKE2 key exchange ─────┤
     │  both sides show the SAME SAS
     │◄──── reads SAS aloud ─────────────┤
@@ -38,7 +38,7 @@ complete the enrollment (see the security note below).
 On your machine:
 
 ```bash
-tw join relay.example.com <code>
+sudo tw join relay.example.com <code>
 ```
 
 `tw join` is role-neutral — the admin's invite decided this one's a server —
@@ -99,7 +99,7 @@ remote port.
 another relay without losing the current one, name the new context:
 
 ```bash
-tw join other-relay.example.com <code> --name other-relay
+sudo tw join other-relay.example.com <code> --name other-relay
 ```
 
 This stores a new context named `other-relay`, preserving the current one.

@@ -55,7 +55,7 @@ enrollment (see [Security](#security)).
 ### On the server (the new machine)
 
 ```bash
-tw join relay.example.com <code> [--name <ctx>]
+sudo tw join relay.example.com <code> [--name <ctx>]
 ```
 
 `tw join` works with **no mode configured yet** — it's the single entry point

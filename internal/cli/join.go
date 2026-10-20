@@ -24,7 +24,7 @@ host (server role) or the granted username (client role) unless --name is
 given.`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireWritableConfig(); err != nil {
+		if err := joinPreflight(args[0], args[1]); err != nil {
 			return err
 		}
 		o, err := ops.New() // same constructor as relay_addserver.go:42

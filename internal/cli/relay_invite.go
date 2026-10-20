@@ -19,7 +19,10 @@ var relayInviteCmd = &cobra.Command{
 Read the code to the server operator over any channel (it cannot be abused
 without also passing the SAS check below). They run:
 
-  tw join <relay-host> <code>
+  sudo tw join <relay-host> <code>
+
+  (Windows: run as Administrator, without sudo. Neither is needed when
+  TW_CONFIG_DIR points to a directory you own.)
 
 When their enrollment arrives, BOTH terminals show a short authentication
 string. Have the operator read theirs aloud and approve only on an exact
@@ -41,7 +44,7 @@ match. The invite is single-use and expires automatically.`,
 				fmt.Printf("Invite code: %s\n", code)
 				fmt.Printf("Expires:     %s\n", expires.Format(time.Kitchen))
 				fmt.Println("\nRun this on the joining server:")
-				fmt.Printf("\n  tw join %s %s\n\n", o.Config().Xray.RelayHost, code)
+				fmt.Print(joinCommandHint(o.Config().Xray.RelayHost, code))
 				fmt.Println("Waiting for the enrollee ...")
 			},
 			ConfirmSAS: func(sas string) bool {

@@ -123,7 +123,7 @@ func runConfigNewContext(cmd *cobra.Command, args []string) error {
 	if err := newContextSealingCurrent(o, args[0]); err != nil {
 		return err
 	}
-	fmt.Printf("  Created context %q and switched to it. Configure it (e.g. tw join <relay-host> <code>), then\n", args[0])
+	fmt.Printf("  Created context %q and switched to it. Configure it (e.g. sudo tw join <relay-host> <code>), then\n", args[0])
 	fmt.Println("  switch back any time with: tw config use-context <name>")
 	return nil
 }

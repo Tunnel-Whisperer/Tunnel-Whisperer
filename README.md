@@ -132,14 +132,14 @@ tw relay create --provider manual --domain relay.example.com --ip <vps-ip>
 tw relay test                          # DNS → HTTPS/mTLS → SSH-over-tunnel
 
 # ── server: join the relay (admin runs `tw relay invite`, reads you the code) ──
-tw join relay.example.com <code>       # SAS spoken check on both sides
+sudo tw join relay.example.com <code>  # SAS spoken check on both sides (sudo: config dir is system-owned)
 
 # ── server: grant the client access to its SSH (port 22 → client's local 2201) ──
 tw server user invite alice -m 2201:22 # mints a one-time code; read it to alice
 tw server start                        # or: sudo tw service install && sudo tw service start
 
 # ── client: redeem the invite and connect ──
-tw join relay.example.com <code>       # keys are born locally; context stored ready-to-run
+sudo tw join relay.example.com <code>  # keys are born locally; context stored ready-to-run
 tw client connect
 ssh -p 2201 user@127.0.0.1             # you are on the server, through the relay
 ```

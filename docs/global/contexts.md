@@ -48,7 +48,7 @@ Deleting a context also removes its Terraform provider cache (`cache/terraform/<
 `new-context` preserves the current context — it is sealed to disk and stays in the list, ready to switch back to. A typical use is joining a second relay from an already-configured server: `tw join` always stores its result as a new context (auto-named from the relay host or username, or pass `--name` to choose), so joining a second relay doesn't disturb the first:
 
 ```bash
-tw join relay2.example.com <code> --name relay2
+sudo tw join relay2.example.com <code> --name relay2
 ```
 
 ## One Person, All Roles
@@ -132,7 +132,7 @@ tw server user invite alice -m 8080:80
 This mints a one-time code carrying alice's port mappings, and blocks waiting for her to redeem it. She runs, on her own machine:
 
 ```bash
-tw join relay.example.com <code>
+sudo tw join relay.example.com <code>
 ```
 
 Both sides show a short authentication string; she reads hers aloud, the server operator approves on an exact match, and her SSH key (generated locally — it never transits) plus a signed CSR complete the exchange. The result lands as a ready, mode-signed **client** context on her machine — activated immediately if it's a fresh install, otherwise `tw config use-context <name>` to switch to it. See [Users](../server/users.md) and [Tenants — enrolling a server](../relay/tenants.md#enrolling-a-server) for the full invite mechanics (the client and server flows share the same code+SAS design).

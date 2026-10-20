@@ -17,13 +17,13 @@ Tunnel Whisperer connects services across separated private networks via resilie
 2. Invite      tw relay invite            (mints a code, waits for the server)
 
                               # role: server
-3. Join        tw join relay.example.com <code>
+3. Join        sudo tw join relay.example.com <code>
 4. Invite      tw server user invite alice -m 8080:80
                (mints a code, waits for the client)
 5. Run         tw server start                 (or tw dashboard / tw service install)
 
                               # role: client
-6. Connect     tw join relay.example.com <code>
+6. Connect     sudo tw join relay.example.com <code>
                tw client connect
 ```
 

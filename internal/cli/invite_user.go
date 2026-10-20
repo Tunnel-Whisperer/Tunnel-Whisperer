@@ -28,7 +28,10 @@ var inviteUserCmd = &cobra.Command{
 Mints a code carrying the user's port mappings and waits for the enrollee.
 Read the code to them over any channel; they run:
 
-  tw join <relay-host> <code>
+  sudo tw join <relay-host> <code>
+
+  (Windows: run as Administrator, without sudo. Neither is needed when
+  TW_CONFIG_DIR points to a directory you own.)
 
 When their enrollment arrives, BOTH terminals show a short authentication
 string. Approve only on an exact match. The client generates its own keys
@@ -145,7 +148,7 @@ func runInviteUser(cmd *cobra.Command, args []string) error {
 			fmt.Printf("Invite code: %s\n", code)
 			fmt.Printf("Expires:     %s\n", expires.Format(time.Kitchen))
 			fmt.Printf("\nRun this on %s's client machine:\n", req.Name)
-			fmt.Printf("\n  tw join %s %s\n\n", o.Config().Xray.RelayHost, code)
+			fmt.Print(joinCommandHint(o.Config().Xray.RelayHost, code))
 			fmt.Println("Waiting for the enrollee ...")
 		},
 		ConfirmSAS: func(sas string) bool {

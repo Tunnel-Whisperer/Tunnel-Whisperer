@@ -209,7 +209,7 @@ the config dir at runtime, so a context works unchanged across platforms and
 
 !!! tip "Receiving a client identity"
     ```bash
-    tw join relay.example.com <code>
+    sudo tw join relay.example.com <code>
     tw client connect
     ```
 

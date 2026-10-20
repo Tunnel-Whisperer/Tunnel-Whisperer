@@ -23,7 +23,7 @@ A port mapping is `clientPort:serverPort` — the client listens on `localhost:c
 The command mints a one-time invite code carrying the user's port mappings and blocks, waiting for them to redeem it. Read the code to them over any channel — it's a [SPAKE2](https://en.wikipedia.org/wiki/Password-authenticated_key_agreement) password, not a bearer credential. On their machine:
 
 ```bash
-tw join relay.example.com <code>
+sudo tw join relay.example.com <code>
 ```
 
 Both terminals then show a short authentication string (SAS); the enrollee reads theirs aloud and you approve only on an exact match. On approval:

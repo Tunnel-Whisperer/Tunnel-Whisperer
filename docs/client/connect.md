@@ -7,7 +7,7 @@ This page covers the full client workflow: redeem the invite, connect, use your 
 The server operator runs `tw server user invite <name>` and reads you the resulting one-time code over any channel. Redeem it with:
 
 ```bash
-tw join relay.example.com <code> [--name alice]
+sudo tw join relay.example.com <code> [--name alice]
 ```
 
 Both terminals show a short authentication string (SAS) once the code exchange completes — **read yours aloud to the server operator**; they approve only on an exact match, which is what makes overhearing the code alone useless to an eavesdropper. On approval:
@@ -130,9 +130,9 @@ If this persists, ask the server operator to check `tw server status` and `tw se
 Each context belongs to one server, but a client can hold several as kubectl-style contexts — `tw join` never disturbs the active context, so joining a second server (whether it's a second tenant on the same relay or a different relay entirely) is safe from an already-configured client:
 
 ```bash
-tw join relay.example.com <code2> --name bob   # a second server's invite
-tw config get-contexts                         # list stored contexts
-tw config use-context bob                      # switch (reconnects)
+sudo tw join relay.example.com <code2> --name bob   # a second server's invite
+tw config get-contexts                              # list stored contexts
+tw config use-context bob                           # switch (reconnects)
 ```
 
 One server connection is active at a time; switching contexts reconnects to the newly selected one.

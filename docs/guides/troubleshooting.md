@@ -103,6 +103,11 @@ so nothing is lost.
 **Fix:** resolve the storage problem (permissions, disk space), then run
 `tw config import tw_rescue_<name>.twctx --activate`. No new invite needed.
 
+If instead you see `config directory ... is not writable` *before* the SAS
+prompt, the code is still unused — that preflight runs before any relay
+contact. Rerun as `sudo tw join ...` (Windows: an Administrator shell), or
+point `TW_CONFIG_DIR` at a directory you own.
+
 ### Server-id Mismatch After Moving a Bundle to Another Machine
 
 In the common case there is nothing to fix: a bundle exported by an older
