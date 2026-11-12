@@ -40,6 +40,7 @@ machine, and the install script can be re-run from scratch.
 | `tw relay invite [--ttl 15m]` | Mint a one-time code that admits a server tenant onto the relay, live and without an Xray restart — no files. See [Tenants](tenants.md). |
 | `tw relay get-servers` | List enrolled servers with **live** tunnel state queried from the relay. |
 | `tw relay un-enroll-server <server-id> [--yes]` | Completely remove a tenant: block re-auth, sever live connections, rewrite configs, forget the registry entry. |
+| `tw relay sync-tenants` | Give every enrolled server its own locked-down relay account and drop tenant keys from the admin account. Run once on relays set up by older versions. See [Tenants](tenants.md#migrating-to-per-tenant-relay-accounts). |
 
 All of these are gated to the relay mode — a server or client profile cannot
 run them.

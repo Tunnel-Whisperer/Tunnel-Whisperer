@@ -64,7 +64,7 @@ chown -R {{.SSHUser}}:{{.SSHUser}} /home/{{.SSHUser}}/.ssh
 echo "[2/8] Installing packages..."
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-  debian-keyring debian-archive-keyring apt-transport-https curl ufw unzip
+  debian-keyring debian-archive-keyring apt-transport-https curl ufw unzip python3
 
 # ── Install Caddy ────────────────────────────────────────────
 echo "[3/8] Installing Caddy..."
@@ -116,6 +116,12 @@ chmod 600 /etc/ssh/ssh_host_ed25519_key
 echo '{{.HostKeyPub}}' > /etc/ssh/ssh_host_ed25519_key.pub
 chmod 644 /etc/ssh/ssh_host_ed25519_key.pub
 {{end}}
+# Tenant request handler: enrolled servers get their own relay accounts that
+# can only open their reverse tunnels and talk to this handler — no shell, no
+# sudo. Enroll creates the accounts; re-running this script removes any (the
+# clean step above already dropped their Xray inbounds).
+echo '{{.TenantSetupB64}}' | base64 -d | sh -s
+
 # ── Network tuning ───────────────────────────────────────────
 # The relay forwards every tunnel byte, so its TCP stack is on the critical
 # path. Raise the socket buffer ceilings so a single high-BDP flow can open its

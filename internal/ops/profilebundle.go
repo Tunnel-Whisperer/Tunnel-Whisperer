@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -16,23 +17,57 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/cryptobox"
 )
 
+// profileFlatFiles returns the absolute paths of the flat identity files of a
+// profile in config.Dir(). Together with profileSubdirs it is the single
+// definition of what a profile (and so a sealed bundle) may contain.
+func profileFlatFiles() []string {
+	dir := config.Dir()
+	return []string{
+		config.FilePath(), config.CACertPath(), config.CAKeyPath(),
+		config.ClientCertPath(), config.ClientKeyPath(),
+		filepath.Join(dir, "id_ed25519"), filepath.Join(dir, "id_ed25519.pub"),
+		// The relay host keypair: the .pub is the pin a second-machine admin
+		// needs to verify the relay on the direct port-22 channel (SP-7); the
+		// private half lets that machine re-provision the same relay identity.
+		filepath.Join(dir, "relay_host_ed25519"), filepath.Join(dir, "relay_host_ed25519.pub"),
+	}
+}
+
+// profileSubdirs are the config.Dir() subdirectories whose whole content
+// belongs to the profile.
+var profileSubdirs = []string{"relay", "users", "servers"}
+
+// isProfileEntry reports whether a zip name is one sealProfile can produce:
+// a canonical forward-slash path naming a profileFlatFiles entry or a file
+// under one of profileSubdirs.
+func isProfileEntry(name string) bool {
+	if name == "" || name != path.Clean(name) || path.IsAbs(name) || strings.ContainsAny(name, "\\\x00") {
+		return false
+	}
+	for _, abs := range profileFlatFiles() {
+		if rel, err := relPath(abs); err == nil && rel == name {
+			return true
+		}
+	}
+	for _, sub := range profileSubdirs {
+		if strings.HasPrefix(name, sub+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // clearLiveProfile removes the active profile from config.Dir() (the flat
 // identity files + the relay/users/servers dirs), leaving the context store
 // (contexts/ + contexts.yaml) intact. Used to start a fresh empty context.
 func clearLiveProfile() error {
 	dir := config.Dir()
-	flat := []string{
-		config.FilePath(), config.CACertPath(), config.CAKeyPath(),
-		config.ClientCertPath(), config.ClientKeyPath(),
-		filepath.Join(dir, "id_ed25519"), filepath.Join(dir, "id_ed25519.pub"),
-		filepath.Join(dir, "relay_host_ed25519"), filepath.Join(dir, "relay_host_ed25519.pub"),
-	}
-	for _, f := range flat {
+	for _, f := range profileFlatFiles() {
 		if err := os.Remove(f); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("removing %s: %w", f, err)
 		}
 	}
-	for _, sub := range []string{"relay", "users", "servers"} {
+	for _, sub := range profileSubdirs {
 		if err := os.RemoveAll(filepath.Join(dir, sub)); err != nil {
 			return fmt.Errorf("removing %s: %w", sub, err)
 		}
@@ -46,21 +81,12 @@ func clearLiveProfile() error {
 func profileFiles() ([]string, error) {
 	dir := config.Dir()
 	var files []string
-	flat := []string{
-		config.FilePath(), config.CACertPath(), config.CAKeyPath(),
-		config.ClientCertPath(), config.ClientKeyPath(),
-		filepath.Join(dir, "id_ed25519"), filepath.Join(dir, "id_ed25519.pub"),
-		// The relay host keypair: the .pub is the pin a second-machine admin
-		// needs to verify the relay on the direct port-22 channel (SP-7); the
-		// private half lets that machine re-provision the same relay identity.
-		filepath.Join(dir, "relay_host_ed25519"), filepath.Join(dir, "relay_host_ed25519.pub"),
-	}
-	for _, f := range flat {
+	for _, f := range profileFlatFiles() {
 		if _, err := os.Stat(f); err == nil {
 			files = append(files, f)
 		}
 	}
-	for _, sub := range []string{"relay", "users", "servers"} {
+	for _, sub := range profileSubdirs {
 		root := filepath.Join(dir, sub)
 		err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 			if err != nil {
@@ -207,19 +233,30 @@ func sealProfile() ([]byte, error) {
 	return enc, nil
 }
 
-// unsealProfile decrypts and unzips a profile into config.Dir(), overwriting
-// the profile files. It refuses any zip entry that escapes config.Dir()
-// (zip-slip) or targets the contexts store.
+// profileRename is os.Rename; a variable so tests can fail the commit midway.
+var profileRename = os.Rename
+
+// unsealProfile decrypts and unzips a profile into config.Dir(), REPLACING the
+// live profile: afterwards the profile set (profileFlatFiles + profileSubdirs,
+// the same set clearLiveProfile removes) is exactly what the bundle carries.
+// A file the bundle does not contain — e.g. a servers/<id>.json or users/<x>/
+// planted by a third-party bundle — does not survive a switch back to another
+// context (where it would otherwise be resealed into that context). Regenerable
+// bundleExcluded artefacts in the live relay/ go with the old profile too.
 //
-// Every entry is staged in a scratch directory under config.Dir() first and
-// only moved into place once ALL of them staged and validated successfully
-// (see the pass-by-pass comments below) — a failure partway through (disk
-// full, a structural conflict with what's already on disk, whatever) leaves
-// the live profile untouched rather than a mix of old and new files. This
-// is deliberately not a single atomic directory swap: config.Dir() is a
-// fixed path several other things (notably the contexts store) depend on
-// staying put, so it can't be swapped wholesale — see the per-pass comments
-// for what guarantee that trade-off still gets you.
+// It refuses any zip entry sealProfile could not have produced
+// (isProfileEntry) — so nothing outside the profile file set, such as the
+// contexts store or authorized_keys, can be planted.
+//
+// The new profile is staged (with its final modes) in a scratch directory
+// under config.Dir() first; only once ALL entries staged and validated does
+// the commit swap each profile subdir and flat file: the live one is renamed
+// into the scratch dir and the staged one renamed into place. A failure before
+// the commit leaves the live profile untouched; a rename failure during the
+// commit rolls back the renames already done. config.Dir() itself is a fixed
+// path other things (the contexts store) depend on, so it is not swapped
+// wholesale. On Windows renaming an open file fails; that's the same
+// daemon-must-be-stopped assumption `tw config delete-context` documents.
 func unsealProfile(data []byte) error {
 	plain, err := cryptobox.Decrypt(data, "")
 	if err != nil {
@@ -232,10 +269,7 @@ func unsealProfile(data []byte) error {
 	dir := filepath.Clean(config.Dir())
 
 	// Pass 1: validate every entry and collect its config.Dir()-relative
-	// path, content, and mode. Write NOTHING here — any rejected entry
-	// (zip-slip, excluded context-store entry, read error) aborts the whole
-	// unseal with zero side effects, so a malformed bundle can never leave a
-	// half-overwritten config.
+	// path, content, and mode. Write NOTHING here.
 	type pending struct {
 		rel     string // config.Dir()-relative, OS-native separators
 		content []byte
@@ -243,10 +277,15 @@ func unsealProfile(data []byte) error {
 	}
 	var writes []pending
 	for _, zf := range zr.File {
-		clean := filepath.Clean(zf.Name)
-		if clean == "contexts" || clean == "contexts.yaml" || strings.HasPrefix(clean, "contexts"+string(os.PathSeparator)) || strings.HasPrefix(clean, "contexts/") {
-			return fmt.Errorf("profile bundle must not contain context-store entry %q", zf.Name)
+		// Legacy bundles may still carry Terraform cache artefacts; they are
+		// regenerable and never restored.
+		if isBundleExcluded(zf.Name) {
+			continue
 		}
+		if !isProfileEntry(zf.Name) {
+			return fmt.Errorf("profile bundle contains unexpected entry %q", zf.Name)
+		}
+		clean := filepath.FromSlash(zf.Name)
 		dest := filepath.Join(dir, clean)
 		if dest != dir && !strings.HasPrefix(dest, dir+string(os.PathSeparator)) {
 			return fmt.Errorf("illegal profile entry path %q", zf.Name)
@@ -260,15 +299,14 @@ func unsealProfile(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("reading profile entry %q: %w", zf.Name, err)
 		}
-		// Secrets unpack 0600: private keys, the SSH identity, config.yaml
-		// (proxy creds + VLESS UUID), and any token file. Public material
-		// (.crt/.pub) stays 0644 (finding #12/SP-12).
-		mode := os.FileMode(0o644)
-		base := filepath.Base(clean)
-		if strings.HasSuffix(clean, ".key") || base == "id_ed25519" ||
-			base == "relay_host_ed25519" || base == "config.yaml" ||
-			strings.HasSuffix(clean, ".token") {
-			mode = 0o600
+		// Owner-only by default (keys, config.yaml, tokens, and everything
+		// under relay/: cloud-init carries the relay host key, tfvars the
+		// cloud API token, tfstate is secret-bearing — SP-12/SP-14). Only
+		// public material (.crt/.pub) outside relay/ unpacks 0644.
+		mode := os.FileMode(0o600)
+		if !strings.HasPrefix(zf.Name, "relay/") &&
+			(strings.HasSuffix(zf.Name, ".pub") || strings.HasSuffix(zf.Name, ".crt")) {
+			mode = 0o644
 		}
 		writes = append(writes, pending{rel: clean, content: content, mode: mode})
 	}
@@ -276,66 +314,102 @@ func unsealProfile(data []byte) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	if len(writes) == 0 {
-		return nil
+
+	// A directory where the bundle wants a flat file is not something tw
+	// creates; refuse rather than discard whatever it is.
+	for _, w := range writes {
+		if strings.ContainsRune(w.rel, os.PathSeparator) {
+			continue
+		}
+		dest := filepath.Join(dir, w.rel)
+		if fi, statErr := os.Lstat(dest); statErr == nil && fi.IsDir() {
+			return fmt.Errorf("cannot install %s: an existing directory is in the way", dest)
+		}
 	}
 
-	// Pass 2: stage every entry in a scratch directory UNDER config.Dir()
-	// (same filesystem as the live profile, so pass 4's move is a rename,
-	// not a copy). A failure here — disk full, permissions changing
-	// mid-run, whatever — touches ONLY the staging dir; the live profile is
-	// completely untouched. Always cleaned up: on success the files have
-	// already been moved OUT of it by pass 4, on failure nothing was ever
-	// staged into the live dir to begin with.
+	// Pass 2: stage every entry, with its final mode and 0700 parent dirs,
+	// under staging/new (same filesystem as the live profile, so the commit
+	// is renames only). A failure here touches only the staging dir, which
+	// is always removed — on success it holds just the replaced live files.
 	staging, err := os.MkdirTemp(dir, ".profile-staging-")
 	if err != nil {
 		return fmt.Errorf("creating staging dir: %w", err)
 	}
 	defer os.RemoveAll(staging)
-
+	newRoot, oldRoot := filepath.Join(staging, "new"), filepath.Join(staging, "old")
+	for _, d := range []string{newRoot, oldRoot} {
+		if err := os.Mkdir(d, 0o700); err != nil {
+			return fmt.Errorf("creating staging dir: %w", err)
+		}
+	}
 	for _, w := range writes {
-		stagePath := filepath.Join(staging, w.rel)
-		if err := os.MkdirAll(filepath.Dir(stagePath), 0o755); err != nil {
+		stagePath := filepath.Join(newRoot, w.rel)
+		if err := os.MkdirAll(filepath.Dir(stagePath), 0o700); err != nil {
 			return fmt.Errorf("staging %s: %w", w.rel, err)
 		}
 		if err := os.WriteFile(stagePath, w.content, w.mode); err != nil {
 			return fmt.Errorf("staging %s: %w", w.rel, err)
 		}
-	}
-
-	// Pass 3: every entry staged successfully. Before touching the live
-	// profile at all, verify every destination is actually replaceable —
-	// this catches a STRUCTURAL conflict (e.g. the live dir already has a
-	// directory where the bundle wants a plain file) up front too, not just
-	// the content-write failures pass 2 guards against, so "on failure the
-	// live dir is untouched" covers this case as well.
-	for _, w := range writes {
-		dest := filepath.Join(dir, w.rel)
-		if fi, statErr := os.Lstat(dest); statErr == nil && fi.IsDir() {
-			return fmt.Errorf("cannot install %s: an existing directory is in the way", dest)
-		}
-		if fi, statErr := os.Lstat(filepath.Dir(dest)); statErr == nil && !fi.IsDir() {
-			return fmt.Errorf("cannot install %s: %s exists and is not a directory", dest, filepath.Dir(dest))
+		if err := os.Chmod(stagePath, w.mode); err != nil {
+			return fmt.Errorf("staging %s: %w", w.rel, err)
 		}
 	}
-
-	// Pass 4: validated + staged — move each into place. Per-file rename,
-	// not a single atomic directory swap, for the config.Dir()-is-fixed
-	// reason in the function doc above. Each rename is a metadata-only
-	// filesystem operation (no data copy), so this is a much narrower
-	// failure window than pass 2's content writes — which is why pass 3
-	// tries to rule out the foreseeable failure modes before this loop ever
-	// starts. On Windows, renaming over an open file fails; that's the same
-	// daemon-must-be-stopped assumption `tw config delete-context` already
-	// documents elsewhere in this package (a running daemon holds profile
-	// files open).
-	for _, w := range writes {
-		dest := filepath.Join(dir, w.rel)
-		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-			return fmt.Errorf("preparing %s: %w", dest, err)
+	// MkdirAll's mode is filtered by the umask; set every staged dir 0700.
+	err = filepath.WalkDir(newRoot, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
-		if err := os.Rename(filepath.Join(staging, w.rel), dest); err != nil {
-			return fmt.Errorf("installing %s: %w", dest, err)
+		if d.IsDir() && p != newRoot {
+			return os.Chmod(p, 0o700)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("staging profile dirs: %w", err)
+	}
+
+	// Commit: for every member of the profile set, move the live entry (if
+	// any) aside and the staged one (if any) into place.
+	var rels []string
+	for _, f := range profileFlatFiles() {
+		rel, err := filepath.Rel(dir, f)
+		if err != nil {
+			return err
+		}
+		rels = append(rels, rel)
+	}
+	rels = append(rels, profileSubdirs...)
+
+	type move struct{ from, to string }
+	var done []move
+	rename := func(from, to string) error {
+		if err := profileRename(from, to); err != nil {
+			return err
+		}
+		done = append(done, move{from, to})
+		return nil
+	}
+	rollback := func(cause error) error {
+		for i := len(done) - 1; i >= 0; i-- {
+			if err := profileRename(done[i].to, done[i].from); err != nil {
+				return fmt.Errorf("%w (rollback failed too, the profile in %s is incomplete: %v)", cause, dir, err)
+			}
+		}
+		return cause
+	}
+	for _, rel := range rels {
+		live, staged := filepath.Join(dir, rel), filepath.Join(newRoot, rel)
+		if _, err := os.Lstat(live); err == nil {
+			if err := rename(live, filepath.Join(oldRoot, rel)); err != nil {
+				return rollback(fmt.Errorf("replacing %s: %w", live, err))
+			}
+		} else if !os.IsNotExist(err) {
+			return rollback(fmt.Errorf("replacing %s: %w", live, err))
+		}
+		if _, err := os.Lstat(staged); err == nil {
+			if err := rename(staged, live); err != nil {
+				return rollback(fmt.Errorf("installing %s: %w", live, err))
+			}
 		}
 	}
 	return nil

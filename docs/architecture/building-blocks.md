@@ -66,7 +66,8 @@ The relay is a lightweight VM provisioned by the admin machine (mode `relay`) vi
 
 - **Caddy** -- reverse proxy on `:443`, automatic server TLS via Let's Encrypt, **mutual TLS** (`client_auth verify_if_given`, TLS 1.3 only) verifying a *presented* client certificate against a trust pool holding one CA per tenant — a bare handshake with no certificate is allowed too, so certless enrollees can reach `/enroll`. Each tenant gets a `handle` block matching *both* its path (`/tw/<server-id>*`) *and* its verified certificate CN (`CN=<server-id>`), proxying h2c to that tenant's loopback VLESS inbound, plus an `@enroll_<server-id>` block routing `/enroll/<tok>/*` to its local invite listener (no certificate required there — the one-time code is the gate); anything else gets a 404. This is the relay's admission gate — see [Relay Authentication](../security/relay-authentication.md)
 - **Xray** (standalone, pinned version) -- one `vless-in-<server-id>` inbound per tenant on `127.0.0.1:<remote-port>+10000` with XHTTP transport, an `api-in` dokodemo inbound on `127.0.0.1:10085` exposing `HandlerService`/`StatsService`/`RoutingService`, a freedom outbound whose `finalRules` allow loopback destinations only, and per-tenant allow (ports `22,<remote-port>`) / deny (blackhole) routing rules
-- **SSH** -- OpenSSH on `127.0.0.1:22` (`--ssh-open` provisions it on `0.0.0.0` instead); password authentication disabled. The tw-managed `authorized_keys` holds the admin's key (pinned `from="127.0.0.1"` unless `--ssh-open`) plus one restricted line per tenant (`from="127.0.0.1",restrict,port-forwarding,permitopen=<sentinel>,permitlisten=<own remote-port>`) — only the admin can shell in; tenants can only publish their own reverse tunnel
+- **SSH** -- OpenSSH on `127.0.0.1:22` (`--ssh-open` provisions it on `0.0.0.0` instead); password authentication disabled. The admin account (passwordless sudo) holds only the admin's key (pinned `from="127.0.0.1"` unless `--ssh-open`). Each tenant logs in as its own `twt-<hash>` account whose single line is `from="127.0.0.1",restrict,command="/usr/local/lib/tw/tw-tenant-request",port-forwarding,permitopen=<sentinel>,permitlisten=<own ports>`, backed by a `Match User twt-*` `ForceCommand` drop-in (`98-tw-tenants.conf`) — only the admin can shell in; tenants can only publish their own reverse tunnel and send add/remove/list UUID requests for their own inbound
+- **Tenant request handler** -- `tw-tenant@.socket` (one instance per tenant account, socket `/run/tw/tenant/<account>.sock`) activates `tw-tenant-handler` (Python, root, systemd-sandboxed to write only `/usr/local/etc/xray`), which identifies the tenant by socket path and peer uid and edits only that tenant's inbound. Source: `internal/relay/tenant`
 - **Firewall (ufw)** -- only ports 80 and 443 open (plus 22 with `--ssh-open`)
 
 Supported cloud providers: **Hetzner**, **DigitalOcean**, **AWS** — plus **Manual** (bring your own VM).
@@ -235,6 +236,12 @@ tw/
 │   │   │   ├── config.go               # RenderConfig(), Tenant (VlessInPort = remote_port+10000)
 │   │   │   ├── relayconfig.json.tmpl   # api-in :10085, per-tenant inbounds/rules, freedom finalRules (loopback only)
 │   │   │   └── tenant.go               # single-tenant fragments for the gRPC live-add path
+│   │   ├── tenant/                     # per-tenant relay accounts (go:embed)
+│   │   │   ├── tenant.go               # UserName(), RenderSync() (root reconcile script)
+│   │   │   ├── tw-tenant-request.py    # forced command of every tenant session
+│   │   │   ├── tw-tenant-handler.py    # root handler: add/remove/list UUIDs on the caller's own inbound
+│   │   │   ├── tw-tenant@.socket/.service
+│   │   │   └── 98-tw-tenants.conf      # sshd Match User twt-* drop-in
 │   │   └── terraform/                  # cloud-init + Terraform templates (go:embed)
 │   │       ├── cloud-init.yaml.tmpl
 │   │       ├── install-script.sh.tmpl  # manual install script template

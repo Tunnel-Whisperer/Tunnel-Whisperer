@@ -42,20 +42,24 @@ function wizardNext(step) {
     const details = $('#confirm-details');
     const btn = $('#btn-provision');
 
+    const kv = (pairs) => details.replaceChildren(...pairs.flatMap(([label, value]) => [
+      makeEl('span', 'kv-label', label),
+      makeEl('span', 'kv-value', value),
+    ]));
     if (wizardState.providerKey === 'manual') {
-      details.innerHTML = `
-        <span class="kv-label">Domain</span><span class="kv-value">${wizardState.domain}</span>
-        <span class="kv-label">Provider</span><span class="kv-value">Manual Install</span>
-      `;
+      kv([
+        ['Domain', wizardState.domain],
+        ['Provider', 'Manual Install'],
+      ]);
       btn.textContent = 'Generate Script';
       btn.onclick = generateManualScript;
     } else {
-      details.innerHTML = `
-        <span class="kv-label">Domain</span><span class="kv-value">${wizardState.domain}</span>
-        <span class="kv-label">Provider</span><span class="kv-value">${wizardState.providerName}</span>
-        <span class="kv-label">Region</span><span class="kv-value">${wizardState.regionName || wizardState.region || '(default)'}</span>
-        <span class="kv-label">Instance</span><span class="kv-value">Ubuntu 24.04 (smallest tier)</span>
-      `;
+      kv([
+        ['Domain', wizardState.domain],
+        ['Provider', wizardState.providerName],
+        ['Region', wizardState.regionName || wizardState.region || '(default)'],
+        ['Instance', 'Ubuntu 24.04 (smallest tier)'],
+      ]);
       btn.textContent = 'Provision';
       btn.onclick = startProvision;
     }
@@ -166,37 +170,37 @@ function buildCredFields(provider) {
   const help = $('#cred-help');
   const fields = $('#cred-fields');
   help.textContent = `Generate here: ${provider.token_link}`;
-  fields.innerHTML = '';
+  fields.replaceChildren();
+
+  const group = (label, control) => {
+    const g = makeEl('div', 'form-group');
+    g.append(makeEl('label', '', label), control);
+    fields.appendChild(g);
+  };
+  const input = (type, id) => {
+    const i = document.createElement('input');
+    i.type = type;
+    i.id = id;
+    return i;
+  };
 
   if (provider.name === 'AWS') {
-    fields.innerHTML = `
-      <div class="form-group">
-        <label>AWS Access Key ID</label>
-        <input type="text" id="cred-token">
-      </div>
-      <div class="form-group">
-        <label>AWS Secret Access Key</label>
-        <input type="password" id="cred-secret">
-      </div>
-    `;
+    group('AWS Access Key ID', input('text', 'cred-token'));
+    group('AWS Secret Access Key', input('password', 'cred-secret'));
   } else {
-    fields.innerHTML = `
-      <div class="form-group">
-        <label>${provider.token_name}</label>
-        <input type="password" id="cred-token">
-      </div>
-    `;
+    group(provider.token_name, input('password', 'cred-token'));
   }
 
   // Region selector.
   if (provider.regions && provider.regions.length > 0) {
-    let opts = provider.regions.map(r => `<option value="${r.key}">${r.name}</option>`).join('');
-    fields.innerHTML += `
-      <div class="form-group">
-        <label>Region</label>
-        <select id="cred-region">${opts}</select>
-      </div>
-    `;
+    const select = document.createElement('select');
+    select.id = 'cred-region';
+    provider.regions.forEach(r => {
+      const opt = makeEl('option', '', r.name);
+      opt.value = r.key;
+      select.appendChild(opt);
+    });
+    group('Region', select);
   }
 }
 
@@ -353,14 +357,15 @@ async function destroyRelay() {
     }, (err) => {
       relayOpInProgress = false;
       if (err) {
-        log.innerHTML += `<div class="progress-step failed"><span class="step-label">Error: ${err.message}</span></div>`;
+        appendFailedStep(log, 'Error: ' + err.message);
       } else {
         setTimeout(() => { window.location.href = '/relay'; }, 1500);
       }
     });
   } catch (err) {
     relayOpInProgress = false;
-    log.innerHTML = `<div class="progress-step failed"><span class="step-label">Error: ${err.message}</span></div>`;
+    log.replaceChildren();
+    appendFailedStep(log, 'Error: ' + err.message);
     if (btn) btn.disabled = false;
   }
 }
@@ -409,13 +414,13 @@ async function testRelay() {
       renderProgressEvent(result, ev);
     }, (err) => {
       if (err) {
-        result.innerHTML += `<div class="progress-step failed"><span class="step-label">${err.message}</span></div>`;
+        appendFailedStep(result, err.message);
       }
       btn.disabled = false;
       btn.textContent = 'Test Connectivity';
     });
   } catch (err) {
-    result.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+    showAlert(result, err.message);
     btn.disabled = false;
     btn.textContent = 'Test Connectivity';
   }
@@ -441,7 +446,7 @@ async function closeRelaySSH() {
       renderProgressEvent(log, ev);
     }, (err) => {
       if (err) {
-        log.innerHTML += `<div class="progress-step failed"><span class="step-label">${err.message}</span></div>`;
+        appendFailedStep(log, err.message);
         btn.disabled = false;
         btn.textContent = 'Close Port 22';
       } else {
@@ -449,7 +454,7 @@ async function closeRelaySSH() {
       }
     });
   } catch (err) {
-    log.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+    showAlert(log, err.message);
     btn.disabled = false;
     btn.textContent = 'Close Port 22';
   }

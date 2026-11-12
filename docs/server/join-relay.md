@@ -55,12 +55,16 @@ on an exact match.
 
 Once the admin confirms the read-back, their side runs the same enrollment
 that always ran: register the tenant, allocate a port, rewrite the relay's
-Caddyfile / Xray config / `authorized_keys`, and live-add the new tenant's
-Xray inbound — no restart, no disruption to other tenants.
+Caddyfile / Xray config, create this server's own relay account, and
+live-add the new tenant's Xray inbound — no restart, no disruption to other
+tenants.
 
 The result — relay host, path, allocated port, SSH user, and a signature
 binding your mode to your keypair — comes back over the same encrypted
-channel and is stored as a new context. If this machine had no active
+channel and is stored as a new context. The SSH user is this server's own
+relay account (`twt-` followed by 24 hex characters). It can publish the server's
+reverse tunnel and manage the server's client UUIDs on the relay, and it
+has no shell (see [Tenants](../relay/tenants.md#tenant-accounts-on-the-relay)). If this machine had no active
 profile yet, the context is **activated automatically**; otherwise:
 
 ```bash
@@ -71,7 +75,7 @@ Then bring the tunnel up:
 
 ```bash
 tw server start          # foreground
-tw server test           # expect: tunnel and shell working
+tw server test           # expect: tunnel and tenant request channel working
 ```
 
 ## Security
@@ -84,6 +88,30 @@ tw server test           # expect: tunnel and shell working
 - **Single-use, short TTL, burns on any attempt.** Default 15 minutes
   (`--ttl` on the admin side); the invite is consumed by the *first*
   redemption attempt, successful or not.
+- **Only the enrollee can complete or break the exchange.** The route token
+  in the code is not secret. Once a valid offer has arrived, a garbage offer
+  from someone else no longer cancels the enrollment. The issuer also counts
+  the grant as collected only when the `/result` poll proves the session key,
+  so a third party cannot make the admin's side report success. Old and new
+  versions interoperate. An enrollee that predates the proof still works,
+  and its unauthenticated poll still counts. The issuer then logs `enrollee
+  predates the result proof; counting an unauthenticated /result poll as
+  grant collection`. Upgrade `tw` on both sides to close that gap.
+- **The join request is validated before anything is stored.** The admin
+  side refuses the request (and denies the enrollment) unless:
+    - `server_id` is lowercase alphanumerics and dashes, at most 64
+      characters,
+    - `uuid` is a canonical lowercase UUID,
+    - `ca_cert_pem` is exactly one PEM certificate: a CA with path length 0
+      whose subject CN equals `server_id`,
+    - `ssh_pubkey` is a single valid public key.
+
+  Your `tw join` then fails with `issuer denied the enrollment`, and the
+  admin sees `invalid enrollment offer: join request <reason>`. Requests made
+  by `tw join` always pass. The exception is the length cap: the server-id
+  is `<sanitized hostname>-<first 8 hex of the UUID>`, so a hostname whose
+  sanitized form is longer than 55 characters yields a server-id that is too
+  long. Shorten the hostname and join again.
 
 ## Re-enrolling and edge cases
 

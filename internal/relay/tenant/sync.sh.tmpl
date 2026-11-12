@@ -1,0 +1,182 @@
+# tw tenant sync: run as root on the relay (sudo sh -s). Installs the tenant
+# request handler and reconciles one locked-down account per enrolled server.
+# Idempotent; every value below was validated and base64-encoded by tw.
+set -eu
+umask 022
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+tw_put() { # <path> <mode> <base64 content>: atomic root-owned write
+	printf '%s' "$3" | base64 -d > "$1.tw-new"
+	chown root:root "$1.tw-new"
+	chmod "$2" "$1.tw-new"
+	mv -f "$1.tw-new" "$1"
+}
+
+# tw_kill_foreign_listeners <port> <uid>: end sessions that hold a tenant's
+# port under any other account. Before per-tenant accounts, tenants logged in
+# as the admin user; such a session could still open exec channels.
+tw_kill_foreign_listeners() {
+	inos=$(awk -v suf="$(printf ':%04X' "$1")" '$4=="0A" && substr($2, length($2)-4)==suf {print $10}' /proc/net/tcp /proc/net/tcp6)
+	for ino in $inos; do
+		for p in /proc/[0-9]*; do
+			ls -l "$p/fd" 2>/dev/null | grep -q "socket:\[$ino\]" || continue
+			owner=$(awk '/^Uid:/{print $3}' "$p/status" 2>/dev/null) || continue
+			if [ -n "$owner" ] && [ "$owner" != "$2" ]; then
+				echo "tw: ending pre-migration session (pid ${p#/proc/}, uid $owner) on tenant port $1"
+				kill "${p#/proc/}" 2>/dev/null || true
+			fi
+		done
+	done
+}
+
+# tw_check_tenant_match: sshd must apply the drop-in's Match block to tenant
+# accounts. An earlier config file can win (sshd keeps the first value it
+# reads) or the drop-in directory may not be included at all; either leaves
+# tenants with only their authorized_keys restrictions.
+tw_check_tenant_match() {
+	eff=$(sshd -T -C user=twt-000000000000000000000000,host=tw-check,addr=127.0.0.1 2>&1) || {
+		echo "tw: sshd -T failed: $eff" >&2
+		return 1
+	}
+	for want in "forcecommand {{.RequestPath}}" "allowtcpforwarding remote" "permittty no" "allowstreamlocalforwarding no"; do
+		if ! printf '%s\n' "$eff" | grep -qxF "$want"; then
+			echo "tw: sshd does not apply the tenant Match block of {{.SSHDDropIn}} (effective config for a twt-* account lacks \"$want\"; is the drop-in directory included, or does an earlier file set this?)" >&2
+			return 1
+		fi
+	done
+}
+
+# tw_kill_admin_sessions <user> <own pid>: end every sshd session of the
+# admin account except the one this script runs in (found by walking the
+# parent chain of <own pid>). Run once tenant keys left the admin's
+# authorized_keys: a pre-migration session authenticated with a tenant key
+# could otherwise stay open and later run commands as the admin. Matches the
+# process titles of OpenSSH <= 9.7 ("sshd: <user> [priv]", "sshd: <user>@notty")
+# and >= 9.8 ("sshd-session: ...").
+tw_kill_admin_sessions() {
+	pids=$(ps -eo pid=,ppid=,args= | awk -v user="$1" -v self="$2" '
+		{ ppid[$1] = $2; t = $3; n = $4; x = $5
+		  if ((t == "sshd:" || t == "sshd-session:") &&
+		      ((n == user && x == "[priv]") || index(n, user "@") == 1))
+			cand[$1] = 1 }
+		END {
+			for (p = self; p != "" && p != "0" && !(p in mine); p = ppid[p]) mine[p] = 1
+			for (p in cand) if (!(p in mine)) print p
+		}')
+	[ -n "$pids" ] || return 0
+	echo "tw: ending sessions of $1 opened before tenant keys left its authorized_keys:" $pids
+	kill $pids 2>/dev/null || true
+	i=0
+	for p in $pids; do
+		while kill -0 "$p" 2>/dev/null; do
+			i=$((i + 1))
+			if [ "$i" -gt 10 ]; then
+				kill -KILL "$p" 2>/dev/null || true
+				break
+			fi
+			sleep 1
+		done
+	done
+}
+
+# tw_admin_keys <user> <authorized_keys b64>: rewrite the admin account's
+# authorized_keys (admin key only) and, if that changed it, end the admin's
+# other sessions.
+tw_admin_keys() {
+	home=$(getent passwd "$1" | cut -d: -f6)
+	[ -n "$home" ] && [ -d "$home/.ssh" ] || { echo "tw: admin account $1 has no ~/.ssh" >&2; exit 1; }
+	ak="$home/.ssh/authorized_keys"
+	if [ -f "$ak" ] && printf '%s' "$2" | base64 -d | cmp -s - "$ak"; then
+		return 0
+	fi
+	tmp=$(mktemp "$ak.tw-XXXXXX")
+	printf '%s' "$2" | base64 -d > "$tmp"
+	chown "$1:" "$tmp"
+	chmod 600 "$tmp"
+	mv -f "$tmp" "$ak"
+	tw_kill_admin_sessions "$1" $$
+}
+
+tw_slice_limits() { # <uid>: bound every login session of a tenant account
+	d="/etc/systemd/system/user-$1.slice.d"
+	install -d -o root -g root -m 0755 "$d"
+	printf '%s\n' "# Installed by tw (tw relay sync-tenants); do not edit." "[Slice]" "TasksMax=32" "MemoryMax=256M" > "$d/90-tw-tenant.conf.tw-new"
+	mv -f "$d/90-tw-tenant.conf.tw-new" "$d/90-tw-tenant.conf"
+}
+
+tw_tenant_remove() { # <account>
+	echo "tw: removing tenant account $1"
+	if systemctl is-enabled --quiet "tw-tenant@$1.socket" 2>/dev/null || systemctl is-active --quiet "tw-tenant@$1.socket"; then
+		systemctl disable --now "tw-tenant@$1.socket" >/dev/null
+	fi
+	rm -f "/run/tw/tenant/$1.sock" "/etc/tw/tenants/$1" "{{.HomeBase}}/$1/.ssh/authorized_keys"
+	if getent passwd "$1" >/dev/null; then
+		uid=$(id -u "$1")
+		pkill -KILL -u "$1" || true
+		i=0
+		while pgrep -u "$1" >/dev/null; do
+			i=$((i + 1))
+			[ "$i" -le 10 ] || { echo "tw: processes of $1 survived SIGKILL" >&2; exit 1; }
+			sleep 1
+		done
+		userdel "$1"
+		rm -f "/etc/systemd/system/user-$uid.slice.d/90-tw-tenant.conf"
+	fi
+	rm -rf "{{.HomeBase}}/$1"
+}
+
+tw_tenant_ensure() { # <account> <server-id> <authorized_keys b64> <server-id b64> <port>...
+	u=$1 sid=$2 ak=$3 sidb64=$4
+	shift 4
+	home="{{.HomeBase}}/$u"
+	if ! getent passwd "$u" >/dev/null; then
+		useradd --system --user-group --no-create-home --home-dir "$home" --shell /bin/sh --password '*' --comment "tw tenant $sid" "$u"
+	fi
+	if [ "$(getent passwd "$u" | cut -d: -f6)" != "$home" ] || [ "$(id -nG "$u")" != "$u" ]; then
+		echo "tw: account $u exists but is not a tw tenant account (home or groups differ); refusing to use it" >&2
+		exit 1
+	fi
+	install -d -o root -g root -m 0755 "$home" "$home/.ssh"
+	tw_put "$home/.ssh/authorized_keys" 0644 "$ak"
+	tw_put "/etc/tw/tenants/$u" 0600 "$sidb64"
+	uid=$(id -u "$u")
+	tw_slice_limits "$uid"
+	systemctl enable --now "tw-tenant@$u.socket" >/dev/null
+	for port in "$@"; do
+		tw_kill_foreign_listeners "$port" "$uid"
+	done
+}
+
+command -v python3 >/dev/null 2>&1 || { echo "tw: python3 is required on the relay (apt-get install -y python3)" >&2; exit 1; }
+
+install -d -o root -g root -m 0755 /usr/local/lib/tw /etc/tw /var/lib/tw "{{.HomeBase}}"
+install -d -o root -g root -m 0700 /etc/tw/tenants
+{{range .Files}}tw_put {{.Path}} {{.Mode}} {{.B64}}
+{{end}}systemctl daemon-reload
+if ! sshd_out=$(sshd -t 2>&1); then
+	rm -f {{.SSHDDropIn}}
+	echo "tw: sshd rejected its config with the tenant drop-in (removed it again): $sshd_out" >&2
+	exit 1
+fi
+if ! tw_check_tenant_match; then
+	rm -f {{.SSHDDropIn}}
+	echo "tw: removed the tenant drop-in again; fix the sshd configuration and re-run 'tw relay sync-tenants'" >&2
+	exit 1
+fi
+if systemctl is-active --quiet ssh; then
+	systemctl reload ssh
+elif systemctl is-active --quiet sshd; then
+	systemctl reload sshd
+fi
+
+tw_keep=" {{range .Accounts}}{{.User}} {{end}}"
+for u in $( { getent passwd | cut -d: -f1; ls /etc/tw/tenants "{{.HomeBase}}"; } 2>/dev/null | grep -E '^twt-[0-9a-f]{24}$' | sort -u); do
+	case "$tw_keep" in
+	*" $u "*) ;;
+	*) tw_tenant_remove "$u" ;;
+	esac
+done
+{{range .Accounts}}tw_tenant_ensure {{.User}} {{.ServerID}} {{.AuthorizedKeysB64}} {{.ServerIDB64}}{{range .Ports}} {{.}}{{end}}
+{{end}}systemctl daemon-reload
+{{with .Admin}}tw_admin_keys {{.User}} {{.AuthorizedKeysB64}}
+{{end}}echo "tw: tenant sync complete ({{len .Accounts}} tenant accounts)"

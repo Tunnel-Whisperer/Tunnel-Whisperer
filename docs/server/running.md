@@ -10,7 +10,7 @@ tw server start
 
 This runs in the foreground (Ctrl-C stops it) and starts, in one process:
 
-1. **Embedded SSH server** on `:2222` — the tunnel endpoint clients land on. It enforces per-user `permitopen` restrictions from `authorized_keys`, which it re-reads on every auth attempt.
+1. **Embedded SSH server** on `:2222` — the tunnel endpoint clients land on. It enforces per-user `permitopen` restrictions from `authorized_keys`, which it re-reads on every auth attempt and every forwarded channel.
 2. **Xray client tunnel** to the relay — VLESS + XHTTP over TLS on port 443, presenting the server's client certificate to the relay's mutual-TLS gate.
 3. **SSH reverse tunnel** through Xray — publishes the server's SSH endpoint on the relay's `127.0.0.1:<remote_port>` (the port assigned at enrollment), so clients can reach it. End-to-end SSH encryption means the relay never sees plaintext.
 4. **gRPC API** on `:50051` — the local management API. Other `tw` commands (`status`, `user list`, ...) talk to the running daemon through it, and fall back to operating on local files when it's not running.
@@ -24,7 +24,7 @@ All ports are configurable in `config.yaml` under the `server` section (`ssh_por
 tw server test
 ```
 
-Verifies the whole path to the relay — DNS, HTTPS/mTLS admission, and SSH over the tunnel. Expect "tunnel and shell working". Runs via the daemon when the server is up, or standalone when it isn't.
+Verifies the whole path to the relay — DNS, HTTPS/mTLS admission, and SSH over the tunnel. Expect "tunnel and tenant request channel working". Runs via the daemon when the server is up, or standalone when it isn't.
 
 ## Status
 

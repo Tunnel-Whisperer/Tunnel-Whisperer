@@ -92,7 +92,7 @@ graph LR
 | Per-user access control | Identity and authorization live entirely on the on-prem server — no external control plane; each user key grants specific `host:port` targets only, never network/overlay reachability | SSH `authorized_keys` + `permitopen` (+ optional `single-session`) |
 | Infrastructure provisioning | Interactive wizard generates Terraform + cloud-init, or an install script for a bring-your-own VM | Terraform (Hetzner, DigitalOcean, AWS) / manual install script |
 | Cross-platform operation | Single binary for all three roles | Go (Linux + Windows + macOS) |
-| Dynamic user management | Re-read authorized_keys on every auth attempt | No server restart needed |
+| Dynamic user management | Re-read authorized_keys on every auth attempt and every forwarded channel | No server restart needed |
 | Config change detection | SHA-256 hash comparison of config file | `crypto/sha256` |
 | Real-time dashboard | SSE for progress + log streaming, WebSocket for SSH terminal | Go `net/http`, `gorilla/websocket`, xterm.js |
 | Runtime log level | Dynamic `slog.LevelVar` propagates through handler chain | `log/slog` |

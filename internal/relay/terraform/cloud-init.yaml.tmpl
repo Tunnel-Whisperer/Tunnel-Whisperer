@@ -40,6 +40,13 @@ write_files:
     encoding: b64
     content: {{.CaddyfileB64}}
 
+  # Tenant request handler + one locked-down account per enrolled server
+  # (none yet; enroll adds them). Run from runcmd below.
+  - path: /root/tw-tenant-setup.sh
+    permissions: "0700"
+    encoding: b64
+    content: {{.TenantSetupB64}}
+
   - path: /etc/ssh/sshd_config.d/99-tw-localhost.conf
     permissions: "0644"
     content: |
@@ -110,6 +117,11 @@ runcmd:
       echo 'net.ipv4.tcp_congestion_control = bbr' >> /etc/sysctl.d/99-tw-relay.conf
     fi
     sysctl --system >/dev/null 2>&1 || true
+
+  # Tenant request handler: enrolled servers get their own relay accounts
+  # that can only open their reverse tunnels and talk to this handler.
+  - sh /root/tw-tenant-setup.sh
+  - rm -f /root/tw-tenant-setup.sh
 
   # Restart services (Ubuntu 24.04 uses 'ssh' not 'sshd')
   - systemctl restart ssh

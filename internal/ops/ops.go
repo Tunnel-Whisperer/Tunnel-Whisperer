@@ -76,6 +76,7 @@ func New() (*Ops, error) {
 		}
 		o.stats = stats.New(histSize)
 	}
+	trackLiveOps(o)
 	return o, nil
 }
 

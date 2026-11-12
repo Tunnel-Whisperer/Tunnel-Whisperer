@@ -1,12 +1,16 @@
 package ops
 
 import (
+	"encoding/base64"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/ops/modeauth"
+	relaytenant "github.com/tunnelwhisperer/tw/internal/relay/tenant"
 	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
 )
 
@@ -21,68 +25,86 @@ func genPubKey(t *testing.T) string {
 	return strings.TrimSpace(string(pub))
 }
 
-// TestRenderRelayAuthorizedKeys is a regression test for the second-tenant
-// enroll bug: key lines were appended without a trailing newline, so the
-// second server's line glued onto the first server's, corrupting both entries
-// and making the relay sshd reject both keys. The file is now fully rewritten
-// from the tenant list, every line newline-terminated.
+// TestRenderRelayAuthorizedKeys: the admin account's authorized_keys holds
+// the admin key only, newline-terminated (C1: tenant keys used to share this
+// NOPASSWD-sudo account and could exec as it).
 func TestRenderRelayAuthorizedKeys(t *testing.T) {
 	admin := genPubKey(t)
-	s1, s2 := genPubKey(t), genPubKey(t)
-	servers := []RegisteredServer{
-		{RemotePort: 20000, SSHPubkey: s1 + "\n"}, // trailing newline must be trimmed
-		{RemotePort: 20001, SSHPubkey: s2},
-	}
-	out := renderRelayAuthorizedKeys(admin+"\n", servers, false)
-
-	if !strings.HasSuffix(out, "\n") {
-		t.Error("authorized_keys content must end with a newline")
-	}
-	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
-	if len(lines) != 3 {
-		t.Fatalf("want 3 lines (admin + 2 servers), got %d:\n%s", len(lines), out)
-	}
-	if lines[0] != `from="127.0.0.1" `+admin {
-		t.Errorf("admin line = %q", lines[0])
-	}
-	for i, want := range []struct{ port, key string }{{"20000", s1}, {"20001", s2}} {
-		l := lines[i+1]
-		for _, tok := range []string{
-			`from="127.0.0.1"`, "restrict", "port-forwarding",
-			`permitopen="127.0.0.1:1"`, `permitlisten="127.0.0.1:` + want.port + `"`, want.key,
-		} {
-			if !strings.Contains(l, tok) {
-				t.Errorf("server line %d missing %q: %q", i+1, tok, l)
-			}
-		}
-		if strings.Contains(l, "\n") {
-			t.Errorf("server line %d contains embedded newline: %q", i+1, l)
-		}
+	out := renderRelayAuthorizedKeys(admin+"\n", false)
+	if out != `from="127.0.0.1" `+admin+"\n" {
+		t.Errorf("admin authorized_keys = %q, want only the pinned admin line", out)
 	}
 }
 
-// TestRenderRelayAuthorizedKeysRejectsInjection is the SP-1/SP-3 regression:
-// a tenant key carrying an embedded newline (plus an unrestricted second line)
-// must NOT produce an extra, option-free authorized_keys line on the relay.
-func TestRenderRelayAuthorizedKeysRejectsInjection(t *testing.T) {
-	admin := genPubKey(t)
-	evil := genPubKey(t)
-	// Attacker offers a valid first key with a smuggled unrestricted line.
-	poisoned := genPubKey(t) + "\n" + evil
-	out := renderRelayAuthorizedKeys(admin, []RegisteredServer{
-		{ServerID: "srv-1", RemotePort: 20000, SSHPubkey: poisoned},
-	}, false)
-
-	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
-	// The malformed tenant is dropped (fail-closed): admin line only.
-	if len(lines) != 1 {
-		t.Fatalf("poisoned tenant must be skipped, got %d lines:\n%s", len(lines), out)
+// TestRenderTenantAuthorizedKeys is the C1 regression: a tenant's line
+// carries command= forcing tw-tenant-request, so OpenSSH runs nothing else
+// for any exec/shell/subsystem request, while -R to the tenant's own ports
+// still works. It also keeps the second-tenant-bug invariant: exactly one
+// newline-terminated line.
+func TestRenderTenantAuthorizedKeys(t *testing.T) {
+	key := genPubKey(t)
+	line, err := renderTenantAuthorizedKeys(RegisteredServer{ServerID: "srv-1", RemotePort: 20000, SSHPubkey: key + "\n"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	// The injected key must appear nowhere — and certainly not on a line
-	// lacking the restriction prefix.
-	for _, l := range lines {
-		if strings.Contains(l, evil) && !strings.Contains(l, "restrict") {
-			t.Fatalf("injected unrestricted key leaked into authorized_keys: %q", l)
+	want := `from="127.0.0.1",restrict,command="/usr/local/lib/tw/tw-tenant-request",port-forwarding,` +
+		`permitopen="127.0.0.1:1",permitlisten="127.0.0.1:20000",permitlisten="127.0.0.1:40000" ` + key + "\n"
+	if line != want {
+		t.Errorf("tenant line =\n%q\nwant\n%q", line, want)
+	}
+}
+
+// TestRenderTenantAuthorizedKeysRejectsInjection is the SP-1/SP-3
+// regression: a tenant key carrying an embedded newline (plus an
+// unrestricted second line) must not produce an authorized_keys line, and
+// the tenant gets no relay account at all (fail closed).
+func TestRenderTenantAuthorizedKeysRejectsInjection(t *testing.T) {
+	evil := genPubKey(t)
+	poisoned := genPubKey(t) + "\n" + evil
+	srv := RegisteredServer{ServerID: "srv-1", RemotePort: 20000, SSHPubkey: poisoned}
+	if line, err := renderTenantAuthorizedKeys(srv); err == nil {
+		t.Fatalf("poisoned key must be rejected, got %q", line)
+	}
+	script, err := renderTenantSync("ubuntu", "ssh-ed25519 AAAAadmin\n", []RegisteredServer{srv})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(script, "tw_tenant_ensure "+relaytenant.UserName("srv-1")) {
+		t.Fatalf("poisoned tenant must get no relay account:\n%s", script)
+	}
+}
+
+// TestRenderTenantSyncAccounts: every registered server gets its own account
+// whose authorized_keys is exactly its forced-command line, plus its tunnel
+// and enroll ports (for ending pre-migration sessions on them).
+func TestRenderTenantSyncAccounts(t *testing.T) {
+	k1, k2 := genPubKey(t), genPubKey(t)
+	servers := []RegisteredServer{
+		{ServerID: "srv-1", RemotePort: 20000, SSHPubkey: k1},
+		{ServerID: "srv-2", RemotePort: 20001, SSHPubkey: k2},
+	}
+	adminAK := renderRelayAuthorizedKeys(genPubKey(t), false)
+	script, err := renderTenantSync("ubuntu", adminAK, servers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// L3: the admin's keys are rewritten by the same script, after every
+	// tenant account exists.
+	adminCall := "tw_admin_keys ubuntu " + base64.StdEncoding.EncodeToString([]byte(adminAK)) + "\n"
+	if at := strings.Index(script, adminCall); at < 0 || at < strings.LastIndex(script, "tw_tenant_ensure ") {
+		t.Errorf("sync script must rewrite the admin keys after the tenant accounts:\n%s", script)
+	}
+	for _, s := range servers {
+		ak, err := renderTenantAuthorizedKeys(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := fmt.Sprintf("tw_tenant_ensure %s %s %s %s %d %d\n", relaytenant.UserName(s.ServerID), s.ServerID,
+			base64.StdEncoding.EncodeToString([]byte(ak)),
+			base64.StdEncoding.EncodeToString([]byte(s.ServerID+"\n")),
+			s.RemotePort, enrollPort(s.RemotePort))
+		if !strings.Contains(script, want) {
+			t.Errorf("sync script lacks %q", want)
 		}
 	}
 }
@@ -110,23 +132,19 @@ func TestEnrollServerSignsServerMode(t *testing.T) {
 // TestRenderRelayAuthorizedKeysSSHOpen: --ssh-open means the admin key must
 // actually WORK over the open port 22 — so the admin line drops its
 // from="127.0.0.1" pin (which rejects any non-loopback source and made the
-// open port unusable with tw's own key). Tenant lines stay pinned and
-// forward-only regardless.
+// open port unusable with tw's own key). Tenant lines live in the tenants'
+// own accounts and stay pinned regardless.
 func TestRenderRelayAuthorizedKeysSSHOpen(t *testing.T) {
 	admin := genPubKey(t)
-	servers := []RegisteredServer{
-		{RemotePort: 20000, SSHPubkey: genPubKey(t)},
+	if out := renderRelayAuthorizedKeys(admin, true); out != admin+"\n" {
+		t.Errorf("ssh-open admin authorized_keys = %q, want the unpinned admin line only", out)
 	}
-	out := renderRelayAuthorizedKeys(admin, servers, true)
-	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("want 2 lines, got %d:\n%s", len(lines), out)
+	line, err := renderTenantAuthorizedKeys(RegisteredServer{RemotePort: 20000, SSHPubkey: genPubKey(t)})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if lines[0] != admin {
-		t.Errorf("ssh-open admin line must be unpinned, got %q", lines[0])
-	}
-	if !strings.Contains(lines[1], `from="127.0.0.1"`) || !strings.Contains(lines[1], "restrict") {
-		t.Errorf("tenant line must stay pinned+restricted even with ssh-open: %q", lines[1])
+	if !strings.HasPrefix(line, `from="127.0.0.1",restrict,command=`) {
+		t.Errorf("tenant line must stay pinned, restricted and forced: %q", line)
 	}
 }
 
@@ -185,9 +203,11 @@ func TestRelayTenantStateSeedsAdminFirst(t *testing.T) {
 	}
 }
 
-func TestRenderRelayAuthorizedKeysEnrollListen(t *testing.T) {
-	out := renderRelayAuthorizedKeys(genPubKey(t),
-		[]RegisteredServer{{ServerID: "s1", RemotePort: 20000, SSHPubkey: genPubKey(t)}}, false)
+func TestRenderTenantAuthorizedKeysEnrollListen(t *testing.T) {
+	out, err := renderTenantAuthorizedKeys(RegisteredServer{ServerID: "s1", RemotePort: 20000, SSHPubkey: genPubKey(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(out, `permitlisten="127.0.0.1:20000"`) ||
 		!strings.Contains(out, `permitlisten="127.0.0.1:40000"`) {
 		t.Fatalf("tenant line must permit both the tunnel and enroll listens:\n%s", out)
@@ -207,4 +227,50 @@ func signServerModeForTest(t *testing.T, o *Ops, req *JoinRequest) (*JoinRespons
 		t.Fatal(err)
 	}
 	return &JoinResponse{ServerID: req.ServerID, ModeSig: sig, ModeIssuer: issuer}, sig, issuer
+}
+
+// TestEnrollServerRollsBackRegistryBeforeRelay is the C7 regression: a
+// failure before the relay is touched (here the relay Xray render rejecting
+// the uuid) must not leave the tenant in the registry, where it would break
+// every later enrollment's render.
+func TestEnrollServerRollsBackRegistryBeforeRelay(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	o := newTestOps(t)
+	o.cfg.Xray.UUID = "a1b2c3d4-aaaa-bbbb-cccc-ddddeeeeffff"
+	o.cfg.Xray.RelayHost = "relay.example.com"
+	o.cfg.Server.RemotePort = 2222
+	if err := os.WriteFile(config.CACertPath(), []byte(testCAPEM(t, "admin")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// AddServer now refuses a malformed tenant uuid outright, so make the
+	// relay Xray render fail on the admin's own (non-canonical) uuid instead.
+	adminUUID := o.cfg.Xray.UUID
+	o.cfg.Xray.UUID = "not-a-uuid"
+	bad := &JoinRequest{Version: 1, ServerID: "evil-1", UUID: "11111111-2222-3333-4444-555555555556",
+		CACertPEM: testCAPEM(t, "evil-1"), SSHPubkey: genPubKey(t)}
+	if _, err := o.EnrollServer(bad, nil); err == nil || !strings.Contains(err.Error(), "invalid uuid") {
+		t.Fatalf("EnrollServer(render failure) = %v, want xray render failure", err)
+	}
+	if _, err := os.Stat(filepath.Join(RegistryDir(), "evil-1.json")); !os.IsNotExist(err) {
+		t.Fatalf("registry file kept after a pre-relay failure: %v", err)
+	}
+	o.cfg.Xray.UUID = adminUUID
+	list, err := o.ListServers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 0 {
+		t.Fatalf("registry kept %d entries after a pre-relay failure: %+v", len(list), list)
+	}
+
+	// The next enrollment is not poisoned: it gets past both renders and
+	// stops only at the admin key, the first step after them.
+	good := &JoinRequest{Version: 1, ServerID: "honest-1", UUID: "11111111-2222-3333-4444-555555555555",
+		CACertPEM: testCAPEM(t, "honest-1"), SSHPubkey: genPubKey(t)}
+	if _, err := o.EnrollServer(good, nil); err == nil || !strings.Contains(err.Error(), "admin public key") {
+		t.Fatalf("EnrollServer(honest) = %v, want admin-public-key failure", err)
+	}
+	if list, _ := o.ListServers(); len(list) != 0 {
+		t.Fatalf("registry kept %d entries after a pre-relay failure: %+v", len(list), list)
+	}
 }

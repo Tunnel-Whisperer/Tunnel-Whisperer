@@ -24,7 +24,7 @@ func testServerJoin(t *testing.T) {
 		"tw join <relay-host> <code> shows the SAS, gets approved on an exact read-back match, and creates a mode-signed server context",
 		"the invite's EnrollServer step re-renders + reloads the relay Caddyfile ('Caddyfile reloaded') AFTER SAS approval",
 		"the fresh server container has no live profile, so tw join activates the new context immediately (no separate use-context)",
-		"tw server start + echo target come up and tw server test reports 'tunnel and shell working'",
+		"tw server start + echo target come up and tw server test reports 'tunnel and tenant request channel working'",
 		"the local_certs shim reapply lands inside EnrollServer's ~15s SSH-dial retry budget with margin to spare")
 
 	// The server container's /etc/tw-test may carry state from an earlier full
@@ -74,7 +74,7 @@ func testServerJoin(t *testing.T) {
 
 	waitFor(t, "server tunnel up", 120*time.Second, func() (bool, string) {
 		out, err := execInOK("server", "tw server test")
-		return err == nil && strings.Contains(out, "tunnel and shell working"), out
+		return err == nil && strings.Contains(out, "tunnel and tenant request channel working"), out
 	})
 	out := execIn(t, "server", "tw server status")
 	t.Logf("server status:\n%s", out)
@@ -106,9 +106,10 @@ func testSecondTenant(t *testing.T) {
 	scenario(t, "a second server enrolls on the same relay (third tenant) non-disruptively",
 		"tw relay invite on the admin mints a code for the new tenant; server2 redeems it with tw join",
 		"the invite's EnrollServer live-adds the tenant (Caddyfile reloaded, no xray restart); tw relay get-servers lists both tenants",
-		"server2's context is born active (fresh container, no live profile) and tw server test reports 'tunnel and shell working'",
+		"server2's context is born active (fresh container, no live profile) and tw server test reports 'tunnel and tenant request channel working'",
+		"server2 logs in to the relay as its own locked-down twt-* account; that account gets 'Permission denied' on server-1's request socket, its own 'list' does not show server-1's user dave, and its 'remove <dave>' answers 'ok absent' and leaves dave in server-1's inbound (C1 isolation)",
 		"server-1's tw server test and the admin's tw relay test still pass (non-disruptive)",
-		"tw relay un-enroll-server --yes removes the LIVE server2: registry row gone, relay listener gone, its tunnel test fails",
+		"tw relay un-enroll-server --yes removes the LIVE server2: registry row gone, relay listener gone, its tunnel test fails, its relay tenant account/socket/mapping/home removed",
 		"server-1 and the admin remain unaffected after the un-enroll (non-disruptive removal)",
 		"a server-1 client user (dave) invited before the enroll still moves bytes after systemctl restart xray on the relay, both after the enroll and after the un-enroll — the relay's config.json kept his UUID across both full rewrites (ISS-002)",
 		"tab completion: tw __complete relay un-enroll-server offers the enrolled server-id")
@@ -185,12 +186,20 @@ func testSecondTenant(t *testing.T) {
 	// the field for a third tenant (VLESS dials, SSH never lands).
 	waitFor(t, "server2 tunnel up", 120*time.Second, func() (bool, string) {
 		out, err := execInOK("server2", "tw server test")
-		return err == nil && strings.Contains(out, "tunnel and shell working"), out
+		return err == nil && strings.Contains(out, "tunnel and tenant request channel working"), out
 	})
+
+	// C1 tenant isolation: server2 got its own locked-down relay account and
+	// cannot reach server-1's request socket or clients.
+	server2Account := relaySSHUserOf(t, "server2")
+	if want := expectedTenantAccount(server2ID); server2Account != want {
+		fatalf(t, "server2 (server id %s) stores relay_ssh_user %q, want its tenant account %q", server2ID, server2Account, want)
+	}
+	assertCrossTenantSocketIsolation(t, relaySSHUserOf(t, "server"), server2Account, server2ID, userUUIDOn(t, "server", "dave"))
 
 	// Non-disruptive: the existing tenants still work.
 	out := execIn(t, "server", "tw server test")
-	if !strings.Contains(out, "tunnel and shell working") {
+	if !strings.Contains(out, "tunnel and tenant request channel working") {
 		fatalf(t, "server-1 tunnel broken after server2 enroll:\n%s", out)
 	}
 	out = execIn(t, "admin", "tw relay test")
@@ -235,14 +244,17 @@ func testSecondTenant(t *testing.T) {
 
 	// server2 is dark: a fresh tunnel test must FAIL (its inbound and its CA
 	// trust are gone from the relay).
-	if testOut, testErr := execInOK("server2", "tw server test"); testErr == nil && strings.Contains(testOut, "tunnel and shell working") {
+	if testOut, testErr := execInOK("server2", "tw server test"); testErr == nil && strings.Contains(testOut, "tunnel and tenant request channel working") {
 		fatalf(t, "server2 tunnel still works after un-enroll:\n%s", testOut)
 	}
 	killMatching(t, "server2", "tw server start") // stop its reconnect spam
 
+	// Its relay tenant account, socket, mapping and home went with it.
+	assertTenantAccountGone(t, server2Account)
+
 	// 7. Still non-disruptive: server-1 and the admin are unaffected.
 	out = execIn(t, "server", "tw server test")
-	if !strings.Contains(out, "tunnel and shell working") {
+	if !strings.Contains(out, "tunnel and tenant request channel working") {
 		fatalf(t, "server-1 tunnel broken after server2 un-enroll:\n%s", out)
 	}
 	out = execIn(t, "admin", "tw relay test")
@@ -291,7 +303,7 @@ func restartRelayXrayAndAssertDave(t *testing.T, label string) {
 	execIn(t, "relay", "systemctl is-active xray")
 	waitFor(t, "server-1 reverse tunnel recovery "+label, 120*time.Second, func() (bool, string) {
 		out, err := execInOK("server", "tw server test")
-		return err == nil && strings.Contains(out, "tunnel and shell working"), out
+		return err == nil && strings.Contains(out, "tunnel and tenant request channel working"), out
 	})
 	assertDaveEcho(t, label)
 }

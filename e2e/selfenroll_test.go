@@ -76,7 +76,7 @@ func testSelfEnroll(t *testing.T) {
 		fatalf(t, "self-enrolled profile is not mode-signed (no mode_auth: block):\n%s", viewOut)
 	}
 	testOut := execIn(t, "admin", "tw server test 2>&1")
-	if !strings.Contains(testOut, "tunnel and shell working") {
+	if !strings.Contains(testOut, "tunnel and tenant request channel working") {
 		fatalf(t, "self-enrolled server test failed:\n%s", testOut)
 	}
 	if strings.Contains(testOut, "mode is unsigned") {

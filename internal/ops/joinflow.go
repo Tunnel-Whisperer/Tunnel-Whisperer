@@ -51,6 +51,11 @@ func (o *Ops) Join(ctx context.Context, relayHost, code, name string, ui JoinUI,
 	if err := config.CheckWritable(); err != nil {
 		return nil, err
 	}
+	if name != "" {
+		if err := config.ValidateContextName(name); err != nil {
+			return nil, err
+		}
+	}
 	tok, err := enroll.ParseCode(code)
 	if err != nil {
 		return nil, err
@@ -94,12 +99,19 @@ func (o *Ops) Join(ctx context.Context, relayHost, code, name string, ui JoinUI,
 		}
 		return o.applyServerGrant(srvIdent, grant, name)
 	case "client":
-		if name == "" {
-			name = role.Username
-		}
-		return o.applyClientGrant(&cli, grant, name, ui)
+		return o.applyClientGrant(&cli, grant, clientContextName(name, role.Username), ui)
 	}
 	return nil, fmt.Errorf("unreachable role %q", role.Role)
+}
+
+// clientContextName is the context name for a client grant: the operator's
+// choice if given, else derived from the issuer-supplied username — which is
+// sanitized, never used verbatim, because it ends up in a file path.
+func clientContextName(name, username string) string {
+	if name != "" {
+		return name
+	}
+	return config.DefaultContextName("client", "", username)
 }
 
 // applyServerGrant turns an issuer's JoinResponse grant into a stored,
@@ -233,9 +245,11 @@ func (o *Ops) applyClientGrant(c *clientMaterial, grant []byte, name string, ui 
 	if err != nil {
 		return nil, fmt.Errorf("sealing client context: %w", err)
 	}
-	if _, err := o.ImportContext(sealed, name, false); err != nil {
+	stored, err := o.ImportContext(sealed, name, false)
+	if err != nil {
 		return nil, rescueGrant(sealed, name, err)
 	}
+	name = stored
 	res := &JoinResult{ContextName: name, Role: "client"}
 	if liveProfileEmpty() {
 		if err := o.UseContext(name, nil); err != nil {

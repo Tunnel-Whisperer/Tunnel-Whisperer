@@ -161,6 +161,9 @@ func (o *Ops) InviteServer(ttl time.Duration, ui InviteUI, progress ProgressFunc
 				h.Deny()
 				return fmt.Errorf("enrollment denied: SAS read-back did not match")
 			}
+			if h.Denied() {
+				return fmt.Errorf("enrollment was denied before the relay was changed")
+			}
 			r, err := o.EnrollServer(req, progress)
 			if err != nil {
 				h.Deny()
@@ -243,6 +246,10 @@ func (o *Ops) InviteUser(req CreateUserRequest, ttl time.Duration, ui InviteUI, 
 				h.Deny()
 				return fmt.Errorf("offer does not match invite (user %q)", req.Name)
 			}
+			if !isCanonicalUUID(off.UUID) {
+				h.Deny()
+				return fmt.Errorf("offer uuid %q is not a canonical UUID", off.UUID)
+			}
 			// Canonicalize the enrollee's key and reject any trailing data, then
 			// use the normalized value everywhere downstream (id_ed25519.pub,
 			// authorized_keys, the undo, and the mode signature) so a newline
@@ -256,6 +263,9 @@ func (o *Ops) InviteUser(req CreateUserRequest, ttl time.Duration, ui InviteUI, 
 			if !ui.ConfirmSAS(h.SAS()) {
 				h.Deny()
 				return fmt.Errorf("enrollment denied: SAS read-back did not match")
+			}
+			if h.Denied() {
+				return fmt.Errorf("enrollment was denied before the user was created")
 			}
 			grant, err := o.grantClient(*cfg, req, &off)
 			if err != nil {

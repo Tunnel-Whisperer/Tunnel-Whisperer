@@ -55,9 +55,10 @@ Everything the relay owner does to the relay. All subcommands require
 | `tw relay create` | Provision a relay server — interactive wizard (cloud providers via Terraform, or a manual bring-your-own-VM flow); refuses to start the cloud path if Terraform is missing or older than 1.0. Writes the relay's portable context bundle (domain sanitized: `tw_relay-example-com.twctx`) on success. |
 | `tw relay add-server [<context-name>]` | Enroll **this machine** as a server tenant in one command and store the result as a new, ready-to-use context (default name `server-<relay's first DNS label>`). The single-operator shortcut: no join/response files, no context switching, and the context is born mode-signed. |
 | `tw relay destroy` | Destroy the provisioned relay (Terraform for cloud relays: runs `terraform init` then `terraform destroy`, so it works from any machine that imported the relay bundle; refuses if Terraform is missing or older than 1.0; prompts for AWS credentials when needed). |
-| `tw relay invite [--ttl 15m]` | Mint a one-time code that enrolls a remote server — no files. Prints the code, waits for the enrollee's `tw join`, shows a short authentication string (SAS) to confirm against their read-back, then registers it, allocates its port, and rewrites the relay's Caddyfile/Xray config/`authorized_keys` live. |
+| `tw relay invite [--ttl 15m]` | Mint a one-time code that enrolls a remote server — no files. Prints the code, waits for the enrollee's `tw join`, shows a short authentication string (SAS) to confirm against their read-back, then registers it, allocates its port, rewrites the relay's Caddyfile/Xray config/admin `authorized_keys` live, and creates the server's own relay account. |
 | `tw relay get-servers` | List servers registered on the relay (`SERVER-ID`, `PATH`, `PORT`, `ENROLLED`, `TUNNEL` up/down — live-checked against the relay). |
-| `tw relay un-enroll-server <server-id>` | Un-enroll a server from the relay and kill its live connections. Prints the server's details, then asks for confirmation. |
+| `tw relay sync-tenants` | Bring the relay's tenant accounts in line with the registry without enrolling anyone (see below). |
+| `tw relay un-enroll-server <server-id>` | Un-enroll a server from the relay and kill its live connections. Prints the server's details, then asks for confirmation. Also removes registry entries that fail validation and are skipped everywhere else. |
 | `tw relay ssh` | Open an interactive SSH shell on the relay server (through the tunnel). |
 | `tw relay status` | Relay-mode variant of [`tw status`](#tw-status). |
 | `tw relay test` | Test connectivity to the relay server. |
@@ -100,6 +101,32 @@ same machine; the chosen ports are printed.
 |---|---|
 | `--ttl <duration>` | Invite lifetime (default `15m`). The invite is single-use regardless of TTL — it burns on the first redemption attempt, successful or not. |
 
+### `tw relay sync-tenants`
+
+Takes no arguments and no flags. Over the admin's relay SSH connection it:
+
+1. installs or updates the tenant request handler, its systemd units and the
+   `98-tw-tenants.conf` sshd drop-in, and checks with `sshd -T` that the
+   drop-in's `Match` block is in effect,
+2. creates, updates or removes one `twt-*` account per enrolled server,
+3. rewrites the relay admin account's `authorized_keys` so it holds the admin
+   key only, and ends every other SSH session of the admin account (a
+   pre-migration tenant session must not survive).
+
+Enroll and un-enroll run the same sync. Run this command once to migrate a
+relay whose servers still log in as the admin account. Output:
+
+```text
+      [1/2] Render tenant accounts...
+      [1/2] Render tenant accounts — 2 enrolled servers
+      [2/2] Apply on relay...
+      [2/2] Apply on relay — admin authorized_keys rewritten, tenant accounts in sync
+
+  Relay tenant accounts are in sync with the registry.
+```
+
+See [Tenants → Migrating to per-tenant relay accounts](../relay/tenants.md#migrating-to-per-tenant-relay-accounts).
+
 ### `tw relay un-enroll-server` flags
 
 | Flag | Description |
@@ -130,7 +157,7 @@ does the whole thing in-process.
 |---|---|
 | `tw server user invite [name]` | Enroll a client user over a one-time invite code. With a name argument the mappings come from flags; without one it prompts for name and mappings first. Supports `--single-session` to enforce one concurrent connection per user. |
 | `tw server user list` | List all configured users and their tunnel mappings. |
-| `tw server user delete <name>` | Delete a user (with confirmation prompt). |
+| `tw server user delete <name>` | Delete a user (with confirmation prompt). Removes the user's relay UUID and `authorized_keys` line, and ends the user's live SSH sessions. |
 | `tw server user apply [name...]` | Register users on the relay (all users if no names are given). |
 | `tw server user unregister <name>` | Unregister a user from the relay (revoke tunnel access without deleting the user). |
 | `tw server user single-session <name> [on\|off]` | Show or set single-session enforcement (one concurrent SSH connection per user). No argument shows the current state; `on` or `off` sets it. Rewrites the user's authorized_keys entry; takes effect on the next auth attempt. |
@@ -204,7 +231,7 @@ immediately, otherwise switch to it with `tw config use-context <name>`.
 
 | Flag | Description |
 |---|---|
-| `--name <name>` | Context name (default: derived from the relay host for a server, or the granted username for a client). |
+| `--name <name>` | Context name (default: derived from the relay host for a server, or the sanitized granted username for a client). Must be a valid context name (no `/`, `\`, `.` or `..`, see [Contexts](../global/contexts.md#context-names)); an invalid one is refused before any relay contact. |
 
 For the client role, port conflicts on this machine are checked during the
 join itself — if a granted local port is busy, you're prompted for a
@@ -230,7 +257,7 @@ profile to disk and unseals the target. These commands work in any mode.
 | `tw config use-context <name\|id>` | Switch the active context (seals the current one, reconnects). Warns if a running `tw` service is still serving the old context. |
 | `tw config new-context <name>` | Create a fresh empty context and switch to it (the current one is preserved). |
 | `tw config rename-context <old-name\|id> <new>` | Rename a context. |
-| `tw config delete-context <name\|id>` | Delete a stored context (and its Terraform provider cache under `cache/terraform/<context-id>/`). Deleting the only, active context is a **full reset** (removes all tw configuration from the machine; confirmed interactively, refused while the service is running). Declining the confirmation — or being unable to answer it because stdin is closed — exits non-zero with nothing deleted. |
+| `tw config delete-context <name\|id>` | Delete a stored context (and its Terraform provider cache under `cache/terraform/<context-id>/`). Deleting the only, active context is a **full reset** (removes all tw configuration from the machine; confirmed interactively, refused while the service is running). Declining the confirmation — or being unable to answer it because stdin is closed — exits non-zero with nothing deleted. A name that is not a valid context name (stored by an older version) is only dropped from the index, never reset; see [Contexts → Context names](../global/contexts.md#context-names). |
 | `tw config import <bundle.twctx>` | Import a bundle as a new context. Prompts before replacing an existing context of the same name; declining keeps the existing context and exits non-zero. Non-interactively (stdin closed) the collision is an error — pass `--force` to replace instead. |
 | `tw config export [name\|id] [-o <path>]` | Export a context as a portable bundle (`tw_<name>.twctx`), written to the current directory or to `--output`. No argument exports the active context. The bundle is machine- and OS-independent and excludes Terraform's provider cache. |
 | `tw config view` | Print the active config file (path header + raw YAML). `--as-json` prints it as indented JSON instead (no path header). |

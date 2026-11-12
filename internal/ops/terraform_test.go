@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"os"
@@ -201,5 +202,61 @@ func TestCheckTerraform(t *testing.T) {
 				t.Fatalf("CheckTerraform() = %v, want error containing %q", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+// TestDestroyRelayRejectsNonCredentialEnv: the destroy creds map becomes the
+// terraform child's environment, so only the provider credential keys may
+// pass; anything else (LD_PRELOAD here) fails before terraform is invoked.
+func TestDestroyRelayRejectsNonCredentialEnv(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("stub terraform is a shell script")
+	}
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	bin := t.TempDir()
+	dump := filepath.Join(t.TempDir(), "invocations")
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = version ]; then echo '{\"terraform_version\":\"1.9.0\"}'; exit 0; fi\n" +
+		"echo \"$1 LD_PRELOAD=$LD_PRELOAD AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID\" >> " + dump + "\n"
+	if err := os.WriteFile(filepath.Join(bin, "terraform"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+
+	setup := func() *Ops {
+		o := newTestOps(t)
+		o.cfg.Xray.UUID = "0123abcd-4567-89ef-0123-456789abcdef"
+		if err := os.MkdirAll(config.RelayDir(), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(config.RelayDir(), "terraform.tfstate"), []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return o
+	}
+
+	o := setup()
+	err := o.DestroyRelay(context.Background(), map[string]string{
+		"AWS_ACCESS_KEY_ID": "AKIA", "LD_PRELOAD": "/tmp/evil.so",
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "LD_PRELOAD") {
+		t.Fatalf("DestroyRelay with LD_PRELOAD = %v, want unsupported-credential error", err)
+	}
+	if _, err := os.Stat(dump); !os.IsNotExist(err) {
+		t.Fatalf("terraform was invoked despite the rejected creds (stat err %v)", err)
+	}
+
+	o = setup()
+	if err := o.DestroyRelay(context.Background(), map[string]string{
+		"AWS_ACCESS_KEY_ID": "AKIA", "AWS_SECRET_ACCESS_KEY": "s",
+	}, nil); err != nil {
+		t.Fatalf("DestroyRelay with AWS creds: %v", err)
+	}
+	got, err := os.ReadFile(dump)
+	if err != nil {
+		t.Fatalf("terraform not invoked with allowed creds: %v", err)
+	}
+	if !strings.Contains(string(got), "destroy LD_PRELOAD= AWS_ACCESS_KEY_ID=AKIA") {
+		t.Fatalf("unexpected terraform invocations:\n%s", got)
 	}
 }

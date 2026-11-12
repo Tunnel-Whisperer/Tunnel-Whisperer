@@ -23,7 +23,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
       systemd systemd-sysv dbus \
       openssh-server sudo gnupg \
-      debian-keyring debian-archive-keyring apt-transport-https curl ufw unzip \
+      debian-keyring debian-archive-keyring apt-transport-https curl ufw unzip python3 \
       ethtool iproute2 \
  && curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
       | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \

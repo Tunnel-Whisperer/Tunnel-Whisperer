@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
@@ -349,7 +350,10 @@ func (s *Server) apiDestroyRelay(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Creds map[string]string `json:"creds"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
 
 	sessionID, progress := s.sse.create()
 
@@ -449,6 +453,8 @@ func (s *Server) apiSaveManualRelay(w http.ResponseWriter, r *http.Request) {
 
 // ── User endpoints ───────────────────────────────────────────────────────────
 
+var userNameRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
 func (s *Server) apiUsers(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -472,6 +478,10 @@ func (s *Server) apiUserAction(w http.ResponseWriter, r *http.Request) {
 
 	if name == "" {
 		jsonError(w, "user name required", http.StatusBadRequest)
+		return
+	}
+	if !userNameRe.MatchString(name) {
+		jsonError(w, "invalid user name", http.StatusBadRequest)
 		return
 	}
 

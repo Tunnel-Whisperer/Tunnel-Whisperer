@@ -10,6 +10,7 @@ import (
 	"os"
 	"regexp"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -160,7 +161,10 @@ func (o *Ops) ListUsers() ([]UserInfo, error) {
 				Client config.ClientConfig `yaml:"client"`
 			}
 			if yaml.Unmarshal(data, &clientCfg) == nil {
-				ui.UUID = clientCfg.Xray.UUID
+				// Xray treats UUIDs case-insensitively but the relay accepts
+				// only the canonical lowercase form; a hand-edited or older
+				// config may carry uppercase.
+				ui.UUID = strings.ToLower(clientCfg.Xray.UUID)
 				ui.Tunnels = clientCfg.Client.Tunnels
 			}
 		}
@@ -191,16 +195,26 @@ func (o *Ops) ListUsers() ([]UserInfo, error) {
 	return users, nil
 }
 
-// validateCreateUser runs the guards for InviteUser: name shape, non-empty
-// mappings, a configured relay/UUID, and that the user doesn't already exist.
-func validateCreateUser(cfg config.Config, req CreateUserRequest) error {
-	if req.Name == "" {
+// validateUserName enforces the user-name shape ([A-Za-z0-9_-]+). Every
+// function that joins a user name onto config.UsersDir() must call it so a
+// name like ".." cannot escape the users directory.
+func validateUserName(name string) error {
+	if name == "" {
 		return fmt.Errorf("user name is required")
 	}
-	for _, r := range req.Name {
+	for _, r := range name {
 		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_') {
 			return fmt.Errorf("user name must contain only letters, numbers, dashes, and underscores")
 		}
+	}
+	return nil
+}
+
+// validateCreateUser runs the guards for InviteUser: name shape, non-empty
+// mappings, a configured relay/UUID, and that the user doesn't already exist.
+func validateCreateUser(cfg config.Config, req CreateUserRequest) error {
+	if err := validateUserName(req.Name); err != nil {
+		return err
 	}
 	if len(req.Mappings) == 0 {
 		return fmt.Errorf("at least one port mapping is required")
@@ -222,6 +236,9 @@ func validateCreateUser(cfg config.Config, req CreateUserRequest) error {
 // DeleteUser removes a user's UUID from the relay, then removes the user
 // directory and their authorized_keys entry.
 func (o *Ops) DeleteUser(name string) error {
+	if err := validateUserName(name); err != nil {
+		return err
+	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
@@ -237,27 +254,32 @@ func (o *Ops) DeleteUser(name string) error {
 			Xray config.XrayConfig `yaml:"xray"`
 		}
 		if yaml.Unmarshal(data, &clientCfg) == nil && clientCfg.Xray.UUID != "" {
-			if err := removeUUIDFromRelay(o.cfg, clientCfg.Xray.UUID); err != nil {
+			if err := removeUUIDFromRelay(o.cfg, strings.ToLower(clientCfg.Xray.UUID)); err != nil {
 				slog.Warn("could not remove UUID from relay", "user", name, "error", err)
 			}
 		}
 	}
 
-	// Read the user's public key so we can remove it from authorized_keys.
-	pubPath := filepath.Join(userDir, "id_ed25519.pub")
-	pubData, _ := os.ReadFile(pubPath)
+	// Revoke SSH access BEFORE the user dir (and with it the public key) is
+	// gone, so a failure leaves a user that can be deleted again rather than
+	// a "deleted" user whose key still authenticates.
+	pubData, err := os.ReadFile(filepath.Join(userDir, "id_ed25519.pub"))
+	switch {
+	case err == nil:
+		err = removeAuthorizedKey(pubData)
+	case os.IsNotExist(err):
+		err = removeAuthorizedKeysByComment(name)
+	}
+	if err != nil {
+		return fmt.Errorf("removing %q from authorized_keys: %w", name, err)
+	}
 
-	// Remove user directory.
 	if err := os.RemoveAll(userDir); err != nil {
 		return fmt.Errorf("removing user directory: %w", err)
 	}
 
-	// Remove from authorized_keys.
-	if len(pubData) > 0 {
-		if err := removeAuthorizedKey(pubData); err != nil {
-			slog.Warn("could not remove authorized_keys entry", "user", name, "error", err)
-		}
-	}
+	// Removing the key only blocks new handshakes; end the live sessions too.
+	o.srv.DisconnectUser(name)
 
 	return nil
 }
@@ -265,6 +287,9 @@ func (o *Ops) DeleteUser(name string) error {
 // SetUserSingleSession enables or disables the single-session flag for a user.
 // When enabled, the SSH server rejects a second connection with the same key.
 func (o *Ops) SetUserSingleSession(name string, enabled bool) error {
+	if err := validateUserName(name); err != nil {
+		return err
+	}
 	userDir := filepath.Join(config.UsersDir(), name)
 	if _, err := os.Stat(userDir); err != nil {
 		return fmt.Errorf("user %q not found", name)
@@ -304,10 +329,16 @@ func (o *Ops) SetUserSingleSession(name string, enabled bool) error {
 		serverPorts = append(serverPorts, t.RemotePort)
 	}
 
-	if err := removeAuthorizedKey(pubData); err != nil {
-		slog.Warn("could not remove old authorized_keys entry", "user", name, "error", err)
+	line, err := authorizedKeyLine(pubData, name, serverPorts, enabled)
+	if err != nil {
+		return err
 	}
-	if err := appendAuthorizedKey(pubData, name, serverPorts, enabled); err != nil {
+	match := authorizedKeyMatch(pubData)
+	err = updateAuthorizedKeys(func(lines []string) []string {
+		kept := slices.DeleteFunc(lines, func(l string) bool { return strings.Contains(l, match) })
+		return append(kept, line)
+	})
+	if err != nil {
 		return fmt.Errorf("updating authorized_keys: %w", err)
 	}
 
@@ -374,14 +405,35 @@ func (o *Ops) UnregisterUsers(ctx context.Context, names []string, progress Prog
 }
 
 // removeMultipleUUIDsFromRelayConfig removes user UUIDs from the relay's
-// Xray config file on disk. Does NOT touch the running Xray process.
+// Xray config. On the relay admin's own profile it edits the file on disk
+// only (the running Xray process is not touched); a server goes through the
+// relay's tenant request handler, which also drops them from the running
+// Xray.
 func removeMultipleUUIDsFromRelayConfig(cfg *config.Config, users []UserInfo) error {
 	if len(users) == 0 {
 		return nil
 	}
+	if !isRelayAdminProfile(cfg) {
+		var uuids []string
+		for _, u := range users {
+			if u.UUID != "" {
+				uuids = append(uuids, u.UUID)
+			}
+		}
+		if len(uuids) == 0 {
+			return nil
+		}
+		return relayTenantApply(cfg, "remove", uuids)
+	}
 	serverID := resolveServerID(cfg, config.ClientCertPath())
 	inboundTag := "vless-in-" + serverID
 	return withRelaySSH(cfg, func(client *gossh.Client) error {
+		release, err := lockRelayXrayConfig(client)
+		if err != nil {
+			return err
+		}
+		defer release()
+
 		xrayConf, err := readRelayXrayConfig(client)
 		if err != nil {
 			return err
@@ -553,9 +605,23 @@ func addMultipleUUIDsToRelay(cfg *config.Config, uuids []string) error {
 	if len(uuids) == 0 {
 		return nil
 	}
+	for _, u := range uuids {
+		if !isCanonicalUUID(u) {
+			return fmt.Errorf("refusing to register non-canonical UUID %q on relay", u)
+		}
+	}
+	if !isRelayAdminProfile(cfg) {
+		return relayTenantApply(cfg, "add", uuids)
+	}
 	serverID := resolveServerID(cfg, config.ClientCertPath())
 	inboundTag := "vless-in-" + serverID
 	return withRelaySSH(cfg, func(client *gossh.Client) error {
+		release, err := lockRelayXrayConfig(client)
+		if err != nil {
+			return err
+		}
+		defer release()
+
 		xrayConf, err := readRelayXrayConfig(client)
 		if err != nil {
 			return err
@@ -603,11 +669,9 @@ func addMultipleUUIDsToRelay(cfg *config.Config, uuids []string) error {
 	})
 }
 
-// appendAuthorizedKey adds a public key to the server's authorized_keys
-// with permitopen restrictions and optional single-session enforcement.
-func appendAuthorizedKey(pubKey []byte, comment string, ports []int, singleSession bool) error {
-	akPath := config.AuthorizedKeysPath()
-
+// authorizedKeyLine renders the authorized_keys line for a user key with
+// permitopen restrictions and optional single-session enforcement.
+func authorizedKeyLine(pubKey []byte, comment string, ports []int, singleSession bool) (string, error) {
 	var options []string
 	if singleSession {
 		options = append(options, "single-session")
@@ -623,56 +687,99 @@ func appendAuthorizedKey(pubKey []byte, comment string, ports []int, singleSessi
 	// per-user port restrictions.
 	keyLine, err := canonicalAuthorizedKey(string(pubKey))
 	if err != nil {
-		return fmt.Errorf("refusing to write invalid ssh public key to authorized_keys: %w", err)
+		return "", fmt.Errorf("refusing to write invalid ssh public key to authorized_keys: %w", err)
 	}
-	line := fmt.Sprintf("%s %s %s@tw\n", strings.Join(options, ","), keyLine, comment)
+	return fmt.Sprintf("%s %s %s@tw", strings.Join(options, ","), keyLine, comment), nil
+}
 
-	existing, err := os.ReadFile(akPath)
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("reading authorized_keys: %w", err)
+// appendAuthorizedKey adds a public key to the server's authorized_keys
+// with permitopen restrictions and optional single-session enforcement.
+func appendAuthorizedKey(pubKey []byte, comment string, ports []int, singleSession bool) error {
+	line, err := authorizedKeyLine(pubKey, comment, ports, singleSession)
+	if err != nil {
+		return err
 	}
-	if len(existing) > 0 && existing[len(existing)-1] != '\n' {
-		existing = append(existing, '\n')
-	}
+	return updateAuthorizedKeys(func(lines []string) []string { return append(lines, line) })
+}
 
-	return os.WriteFile(akPath, append(existing, []byte(line)...), 0600)
+// authorizedKeyMatch returns the substring identifying a key's lines: the
+// base64 key data (lines carry options in front of it).
+func authorizedKeyMatch(pubKey []byte) string {
+	keyStr := strings.TrimSpace(string(pubKey))
+	if parts := strings.Fields(keyStr); len(parts) >= 2 {
+		return parts[1]
+	}
+	return keyStr
 }
 
 // removeAuthorizedKey removes lines containing the given public key.
 func removeAuthorizedKey(pubKey []byte) error {
+	match := authorizedKeyMatch(pubKey)
+	return updateAuthorizedKeys(func(lines []string) []string {
+		return slices.DeleteFunc(lines, func(l string) bool { return strings.Contains(l, match) })
+	})
+}
+
+// removeAuthorizedKeysByComment removes the lines authorizedKeyLine wrote for
+// user name (trailing "<name>@tw" comment), for when the key itself is gone.
+func removeAuthorizedKeysByComment(name string) error {
+	comment := name + "@tw"
+	return updateAuthorizedKeys(func(lines []string) []string {
+		return slices.DeleteFunc(lines, func(l string) bool {
+			f := strings.Fields(l)
+			return len(f) > 0 && f[len(f)-1] == comment
+		})
+	})
+}
+
+// updateAuthorizedKeys applies edit to the non-empty lines of authorized_keys
+// (missing file = no lines) and atomically replaces the file with the result:
+// the SSH server re-reads it on every channel, so it must never observe a
+// truncated or half-written file.
+func updateAuthorizedKeys(edit func(lines []string) []string) error {
 	akPath := config.AuthorizedKeysPath()
 	data, err := os.ReadFile(akPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reading authorized_keys: %w", err)
+	}
+	var lines []string
+	for _, line := range strings.Split(string(data), "\n") {
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	lines = edit(lines)
+	result := strings.Join(lines, "\n")
+	if len(lines) > 0 {
+		result += "\n"
+	}
+	return writeFileAtomic(akPath, []byte(result), 0o600)
+}
+
+// writeFileAtomic writes data to a temp file in path's directory, fsyncs it,
+// and renames it over path, so readers see either the old or the new file.
+func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-")
 	if err != nil {
 		return err
 	}
-
-	keyStr := strings.TrimSpace(string(pubKey))
-	// The key content (ssh-ed25519 AAAA...) may be wrapped with options;
-	// match on the base64 portion.
-	parts := strings.Fields(keyStr)
-	var matchStr string
-	if len(parts) >= 2 {
-		matchStr = parts[1] // the base64 key data
-	} else {
-		matchStr = keyStr
+	defer os.Remove(tmp.Name()) // no-op once renamed
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
 	}
-
-	var kept []string
-	for _, line := range strings.Split(string(data), "\n") {
-		if line == "" {
-			continue
-		}
-		if strings.Contains(line, matchStr) {
-			continue // remove this line
-		}
-		kept = append(kept, line)
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return err
 	}
-
-	result := strings.Join(kept, "\n")
-	if len(kept) > 0 {
-		result += "\n"
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
 	}
-	return os.WriteFile(akPath, []byte(result), 0600)
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 // withRelaySSH opens a temporary Xray tunnel to the relay, establishes an
@@ -749,18 +856,11 @@ func withRelaySSH(cfg *config.Config, fn func(client *gossh.Client) error) error
 		return fmt.Errorf("parsing server key: %w", err)
 	}
 
-	sshCfg := &gossh.ClientConfig{
-		User:            cfg.Server.RelaySSHUser,
-		Auth:            []gossh.AuthMethod{gossh.PublicKeys(signer)},
-		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
-		Timeout:         15 * time.Second,
-	}
-
 	xrayAddr := fmt.Sprintf("127.0.0.1:%d", listenPort)
 
 	var client *gossh.Client
 	for i := 0; i < 15; i++ {
-		client, err = gossh.Dial("tcp", xrayAddr, sshCfg)
+		client, err = dialRelaySSH(xrayAddr, cfg, signer, gossh.InsecureIgnoreHostKey(), 15*time.Second)
 		if err == nil {
 			break
 		}
@@ -957,13 +1057,26 @@ func relayClients(xrayConf map[string]interface{}, inboundTag string) (settings 
 }
 
 // addUUIDToRelay connects to the relay via a temporary Xray tunnel and
-// adds a new client UUID to the relay's Xray config.  Persists to disk
-// first, then hot-adds via the Xray API.  Falls back to restart if the
-// API fails.
+// adds a new client UUID to this profile's inbound in the relay's Xray
+// config.  Persists to disk first, then hot-adds via the Xray API.  Falls
+// back to restart if the API fails. A server asks the relay's tenant request
+// handler to do this; only the relay admin's profile edits the file itself.
 func addUUIDToRelay(cfg *config.Config, newUUID string) error {
+	if !isCanonicalUUID(newUUID) {
+		return fmt.Errorf("refusing to register non-canonical UUID %q on relay", newUUID)
+	}
+	if !isRelayAdminProfile(cfg) {
+		return relayTenantApply(cfg, "add", []string{newUUID})
+	}
 	serverID := resolveServerID(cfg, config.ClientCertPath())
 	inboundTag := "vless-in-" + serverID
 	return withRelaySSH(cfg, func(client *gossh.Client) error {
+		release, err := lockRelayXrayConfig(client)
+		if err != nil {
+			return err
+		}
+		defer release()
+
 		xrayConf, err := readRelayXrayConfig(client)
 		if err != nil {
 			return err
@@ -1005,10 +1118,20 @@ func addUUIDToRelay(cfg *config.Config, newUUID string) error {
 // removeUUIDFromRelay connects to the relay via a temporary Xray tunnel
 // and removes a client UUID from the relay's Xray config.  Persists to
 // disk first, then hot-removes via the Xray API.  Falls back to restart.
+// A server asks the relay's tenant request handler to do this.
 func removeUUIDFromRelay(cfg *config.Config, targetUUID string) error {
+	if !isRelayAdminProfile(cfg) {
+		return relayTenantApply(cfg, "remove", []string{targetUUID})
+	}
 	serverID := resolveServerID(cfg, config.ClientCertPath())
 	inboundTag := "vless-in-" + serverID
 	return withRelaySSH(cfg, func(client *gossh.Client) error {
+		release, err := lockRelayXrayConfig(client)
+		if err != nil {
+			return err
+		}
+		defer release()
+
 		xrayConf, err := readRelayXrayConfig(client)
 		if err != nil {
 			return err
@@ -1048,105 +1171,17 @@ func removeUUIDFromRelay(cfg *config.Config, targetUUID string) error {
 	})
 }
 
-// ensureRelayStats checks the relay's Xray config and adds the stats,
-// StatsService, and policy if missing. Returns true if the config was
-// patched (Xray needs restart).
-func ensureRelayStats(client *gossh.Client) bool {
-	xrayConf, err := readRelayXrayConfig(client)
-	if err != nil {
-		return false
-	}
-
-	changed := false
-
-	// Ensure "stats": {} exists.
-	if _, ok := xrayConf["stats"]; !ok {
-		xrayConf["stats"] = map[string]interface{}{}
-		changed = true
-	}
-
-	// Ensure "StatsService" is in the API services list.
-	api, _ := xrayConf["api"].(map[string]interface{})
-	if api == nil {
-		api = map[string]interface{}{"tag": "api"}
-		xrayConf["api"] = api
-		changed = true
-	}
-	services, _ := api["services"].([]interface{})
-	hasStats := false
-	for _, s := range services {
-		if s == "StatsService" {
-			hasStats = true
-			break
-		}
-	}
-	if !hasStats {
-		api["services"] = append(services, "StatsService")
-		changed = true
-	}
-
-	// Ensure policy exists with both system and user-level stats.
-	policy, _ := xrayConf["policy"].(map[string]interface{})
-	if policy == nil {
-		policy = map[string]interface{}{}
-		xrayConf["policy"] = policy
-		changed = true
-	}
-
-	// System-level stats (required by some Xray versions for the stats
-	// infrastructure to fully initialize).
-	system, _ := policy["system"].(map[string]interface{})
-	if system == nil {
-		system = map[string]interface{}{}
-		policy["system"] = system
-		changed = true
-	}
-	for _, key := range []string{"statsInboundUplink", "statsInboundDownlink", "statsOutboundUplink", "statsOutboundDownlink"} {
-		if v, _ := system[key].(bool); !v {
-			system[key] = true
-			changed = true
-		}
-	}
-
-	// User-level stats.
-	levels, _ := policy["levels"].(map[string]interface{})
-	if levels == nil {
-		levels = map[string]interface{}{}
-		policy["levels"] = levels
-		changed = true
-	}
-	level0, _ := levels["0"].(map[string]interface{})
-	if level0 == nil {
-		level0 = map[string]interface{}{}
-		levels["0"] = level0
-		changed = true
-	}
-	for _, key := range []string{"statsUserUplink", "statsUserDownlink", "statsUserOnline"} {
-		if v, _ := level0[key].(bool); !v {
-			level0[key] = true
-			changed = true
-		}
-	}
-
-	if !changed {
-		return false
-	}
-
-	slog.Info("patching relay Xray config with stats/policy")
-	if err := writeRelayXrayConfig(client, xrayConf); err != nil {
-		slog.Warn("failed to patch relay stats config", "error", err)
-		return false
-	}
-	restartRelayXray(client)
-	return true
-}
-
 // sshThroughServerTunnel opens an SSH connection to the relay using the
-// server's already-running Xray tunnel (dokodemo-door on SSHPort+1).
+// server's already-running Xray tunnel (dokodemo-door on serverXrayPort).
 // This is much faster than withRelaySSH since it doesn't create a
 // temporary Xray instance.
 func (o *Ops) sshThroughServerTunnel(cfg *config.Config, fn func(*gossh.Client) error) error {
-	xrayAddr := fmt.Sprintf("127.0.0.1:%d", cfg.Server.SSHPort+1)
+	xrayAddr := fmt.Sprintf("127.0.0.1:%d", serverXrayPort(cfg))
+
+	hostKeyCallback, hostKeyAlgos, err := relayTunnelHostKeyCallback()
+	if err != nil {
+		return err
+	}
 
 	privPath := filepath.Join(config.Dir(), "id_ed25519")
 	keyData, err := os.ReadFile(privPath)
@@ -1159,10 +1194,11 @@ func (o *Ops) sshThroughServerTunnel(cfg *config.Config, fn func(*gossh.Client) 
 	}
 
 	sshCfg := &gossh.ClientConfig{
-		User:            cfg.Server.RelaySSHUser,
-		Auth:            []gossh.AuthMethod{gossh.PublicKeys(signer)},
-		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
-		Timeout:         10 * time.Second,
+		User:              cfg.Server.RelaySSHUser,
+		Auth:              []gossh.AuthMethod{gossh.PublicKeys(signer)},
+		HostKeyCallback:   hostKeyCallback,
+		HostKeyAlgorithms: hostKeyAlgos,
+		Timeout:           10 * time.Second,
 	}
 
 	client, err := gossh.Dial("tcp", xrayAddr, sshCfg)
@@ -1171,6 +1207,21 @@ func (o *Ops) sshThroughServerTunnel(cfg *config.Config, fn func(*gossh.Client) 
 	}
 	defer client.Close()
 	return fn(client)
+}
+
+// relayTunnelHostKeyCallback verifies the relay's sshd behind the server's Xray
+// tunnel against the pinned relay host key when one is recorded. Without a pin
+// (a relay provisioned before pinning) it keeps the previous behaviour: the
+// mTLS-authenticated VLESS tunnel is the only relay authentication.
+func relayTunnelHostKeyCallback() (gossh.HostKeyCallback, []string, error) {
+	pinned, err := loadPinnedRelayHostKey()
+	if err != nil {
+		return nil, nil, fmt.Errorf("loading pinned relay host key: %w", err)
+	}
+	if pinned == nil {
+		return gossh.InsecureIgnoreHostKey(), nil, nil
+	}
+	return gossh.FixedHostKey(pinned), []string{pinned.Type()}, nil
 }
 
 // InvalidateOnlineCache clears the online status cache so the next
@@ -1293,55 +1344,3 @@ func (o *Ops) refreshOnlineStatus(cfg *config.Config) map[string]bool {
 
 	return result
 }
-
-// EnsureRelayStats patches the relay's Xray config to enable online
-// user tracking if it's not already configured. Call once at startup.
-// Uses the server's running Xray tunnel for fast access.
-func (o *Ops) EnsureRelayStats() {
-	cfg := o.Config()
-	if cfg.Xray.RelayHost == "" {
-		return
-	}
-
-	// Brief delay to let the server's Xray tunnel stabilize.
-	time.Sleep(3 * time.Second)
-
-	err := o.sshThroughServerTunnel(cfg, func(client *gossh.Client) error {
-		patched := ensureRelayStats(client)
-		if patched {
-			slog.Info("relay stats config patched, Xray restarted")
-			return nil
-		}
-
-		// Config looks correct — verify stats are actually working by
-		// querying the API. If no stats exist, force a restart to ensure
-		// the running Xray loaded the config with stats enabled.
-		conn, err := dialRelayGRPC(client)
-		if err != nil {
-			return nil // non-fatal
-		}
-		defer conn.Close()
-
-		sc := statsCmd.NewStatsServiceClient(conn)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		resp, err := sc.QueryStats(ctx, &statsCmd.QueryStatsRequest{Pattern: ""})
-		if err != nil {
-			return nil // non-fatal
-		}
-
-		// If the Xray process has been running for a while but has zero
-		// stats, the running process likely started before stats were
-		// configured. Force a restart.
-		if len(resp.GetStat()) == 0 {
-			slog.Info("relay Xray has zero stats — restarting to apply stats config")
-			restartRelayXray(client)
-		}
-		return nil
-	})
-	if err != nil {
-		slog.Warn("could not ensure relay stats config", "error", err)
-	}
-}
-

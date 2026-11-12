@@ -34,7 +34,7 @@ sequenceDiagram
     S->>S: shows the SAME SAS
     S->>A: reads the SAS aloud
     A->>A: confirms exact match, approves
-    A->>R: write CA cert, rewrite Caddyfile + authorized_keys,<br/>live-add Xray inbound (no restart)
+    A->>R: write CA cert, rewrite Caddyfile + admin authorized_keys,<br/>create the tenant's relay account, live-add Xray inbound (no restart)
     A->>S: encrypted grant (relay coords, mode signature)
     S->>S: stores a ready, mode-signed context (auto-activated)
     S->>R: tw server start — tunnel comes up
@@ -173,8 +173,9 @@ tw relay un-enroll-server <server-id> [--yes]
 
 This removes the tenant **completely** — configuration and live state:
 
-1. **Block re-auth** — `authorized_keys` is rewritten without the tenant's
-   key, so it cannot re-establish anything.
+1. **Block re-auth** — the tenant's relay account is removed: its processes
+   are killed, then the account, its `authorized_keys`, its server-id mapping
+   and its request socket are deleted, so it cannot re-establish anything.
 2. **Sever live VLESS** — the tenant's inbound and routing rules are
    hot-removed from the running Xray, cutting the server transport and all of
    its clients immediately.
@@ -224,6 +225,95 @@ the registry, adding the admin's `/enroll` route and every tenant's enroll
 `tw server user invite` work normally. Relays provisioned by this
 version of `tw` already have both from the start and need nothing.
 
+## Migrating to per-tenant relay accounts
+
+Older versions put every tenant's key into the relay **admin** account's
+`authorized_keys`. That account has passwordless sudo, and OpenSSH's
+`restrict` option does not block command execution, so any enrolled server
+could run commands as root on the relay. Tenants now get
+[their own locked-down accounts](#tenant-accounts-on-the-relay). To move an
+existing relay over, run this once from the relay admin context:
+
+```bash
+tw relay sync-tenants
+```
+
+It installs the tenant request handler and creates one account per
+registered server first. Then it rewrites the admin account's
+`authorized_keys` so it holds only the admin key. During the migration it
+also ends every other SSH session of the admin account, so a pre-migration
+tenant session (which could still run commands) does not survive. Other
+admin sessions, such as an open `tw relay ssh`, are closed too. The command
+is idempotent. Every enroll, un-enroll and **Close Port 22** runs the same
+sync, so a relay also migrates the next time you do any of those.
+
+What happens to the servers:
+
+- **Servers running this `tw` version** have the admin account's name stored
+  as their relay SSH user. When the relay rejects their key for that user,
+  they retry once with their own tenant account. If that works, they save it
+  to `server.relay_ssh_user`. The reverse tunnel reconnects on its own, and
+  no action is needed on the server.
+- **Servers running an older `tw`** lose their reverse tunnel after the sync:
+  their key is gone from the admin account and they don't know about tenant
+  accounts. Upgrade `tw` on those servers. After that they fall back to
+  their tenant account automatically.
+- **A new server on a relay that has not been synced** can bring up its
+  tunnel, but adding or removing users on the relay fails with a message
+  that tells the relay admin to run `tw relay sync-tenants`.
+
+!!! warning "The sync cannot undo a past compromise"
+    Under the old design any tenant could become root on the relay. If a
+    relay ever hosted a tenant you do not fully trust, assume it may be
+    compromised: rebuild it (re-provision, or a fresh VM with the install
+    script), rotate the relay's SSH host key and the admin SSH key, and
+    re-enroll the servers so they get fresh CAs.
+
+The relay needs `python3`, because the handler runs on it. Ubuntu cloud
+images ship it, and the manual install script installs it. The sync stops
+with an error if it is missing.
+
+## Tenant accounts on the relay
+
+Each enrolled server logs in to the relay as its own Unix account: `twt-`
+followed by 24 hex characters derived from the server-id (the start of its
+SHA-256 hash). Both sides can derive the name from the server-id. The relay
+admin's enrollment creates the account and tells the server its name.
+
+| Relay path | Purpose |
+| ---------- | ------- |
+| `/var/lib/tw/tenants/<account>/.ssh/authorized_keys` | The tenant's single key line, root-owned |
+| `/etc/tw/tenants/<account>` | Maps the account to its server-id (root, `0600`) |
+| `/run/tw/tenant/<account>.sock` | Request socket, owned by the account, `0600` |
+| `/usr/local/lib/tw/tw-tenant-request` | The only program a tenant session runs |
+| `/usr/local/lib/tw/tw-tenant-handler` | Root-side handler, started per connection |
+| `/etc/systemd/system/tw-tenant@.socket`, `tw-tenant@.service` | Socket activation, one `tw-tenant@<account>.socket` per tenant |
+| `/etc/ssh/sshd_config.d/98-tw-tenants.conf` | `Match User twt-*` block |
+
+A tenant's session can only do one thing. Its key line forces
+`command="/usr/local/lib/tw/tw-tenant-request"`, and the sshd drop-in repeats
+this as `ForceCommand` for every `twt-*` account. So any exec, shell or
+subsystem request runs `tw-tenant-request`, which ignores the requested
+command. It reads one request line from stdin (`add <uuid>`, `remove <uuid>`
+or `list`) and passes it to the account's own socket. systemd starts
+`tw-tenant-handler` as root for that connection. The handler identifies the
+tenant only from the socket path and the peer's uid, then edits only that
+tenant's `vless-in-<server-id>` inbound in the relay Xray config. It applies
+the change live through the Xray API and never restarts Xray. If the live
+apply fails, the change stays saved in the config and takes effect at the
+next Xray restart, and `tw` shows a warning. It accepts only canonical
+lowercase UUIDs, holds at most 1000 clients per tenant inbound, and refuses
+to remove the server's own UUID. The handler runs under a systemd sandbox
+that leaves it write access to `/usr/local/etc/xray` only. It and the admin
+take the same lock around every edit of the Xray config.
+
+The drop-in also sets `AllowTcpForwarding remote`, `PermitTTY no` and turns
+off agent, X11, stream-local and tunnel forwarding for `twt-*` accounts. The
+sync runs `sshd -t` before reloading sshd. If sshd rejects the config, the
+sync removes the drop-in again and fails. It also checks with `sshd -T` that
+the `Match` block is in effect for the tenant accounts, and fails if it is
+not.
+
 ## Dashboard equivalents
 
 The admin dashboard's **Servers** page mirrors the read side of this:
@@ -246,12 +336,22 @@ What a tenant *gets*:
 | Own CA in the mTLS trust pool (`/etc/caddy/ca/<id>.crt`) | Caddy `client_auth verify_if_given` + per-tenant CN match |
 | Own VLESS UUID and Xray inbound | Relay Xray config |
 | Own reverse-tunnel port (allocated at enrollment) | `permitlisten` in its `authorized_keys` line |
+| Own Unix account `twt-<24 hex>` without sudo | Created by the tenant sync on enroll |
+
+What a tenant *can* do on the relay: publish its two reverse forwards, and
+add, remove or list client UUIDs on its own Xray inbound through the
+[tenant request handler](#tenant-accounts-on-the-relay).
 
 What a tenant *cannot* do on the relay:
 
-- **No shell, no commands** — its `authorized_keys` line carries `restrict`
-  (with only `port-forwarding` re-enabled), so it is forwarding-only: no
-  shell, no exec, no agent or X11 forwarding.
+- **No shell, no commands** — every session runs the forced
+  `tw-tenant-request` (`command=` on its key line and `ForceCommand` in the
+  sshd drop-in), whatever the tenant asks for. The account has no sudo, no
+  TTY, and no agent or X11 forwarding. (`restrict` alone would not do this:
+  it does not block exec or shell requests.)
+- **No touching other tenants' inbounds** — the handler derives the inbound
+  from the account the kernel reports for the socket peer, never from the
+  request.
 - **No listening on other tenants' ports** — `permitlisten` pins its reverse
   forwards to its own two allocated ports (tunnel + enroll) only.
 - **No reaching relay-internal services** — local (`-L`) forwarding is pinned
@@ -265,3 +365,49 @@ What a tenant *cannot* do on the relay:
 
 The exact `authorized_keys` lines behind these guarantees are dissected on
 [SSH access](ssh-access.md).
+
+## Troubleshooting tenant accounts
+
+**`relay tenant request "add" failed: ... if the relay predates per-tenant
+accounts, its admin must run 'tw relay sync-tenants'`** — the relay has no
+tenant handler yet. Run `tw relay sync-tenants` from the admin context.
+
+**`relay refused "add" request: <reason>`** — the handler ran and refused
+the request. Common reasons:
+
+- `this account is not registered as a tenant on the relay`, or
+  `tenant registration does not match this account`: the server-id mapping
+  is missing or wrong. Run `tw relay sync-tenants`.
+- `inbound vless-in-<id> not found on the relay`: the relay Xray config
+  lacks the tenant's inbound, for example after an install-script re-run.
+  Re-enroll the server.
+- `tenant request channel unavailable on the relay`: the account's socket
+  is not listening.
+- `internal error on the relay (see journalctl -u 'tw-tenant@*')`: check the
+  journal on the relay.
+
+On the relay (`tw relay ssh`):
+
+```bash
+sudo ls /etc/tw/tenants/                             # tenant account names
+systemctl status 'tw-tenant@<account>.socket'        # one socket per tenant account
+sudo journalctl -u 'tw-tenant@*' --since -1h         # handler log: peer, request, reply
+sudo sshd -T -C user=<account>,host=localhost,addr=127.0.0.1 | grep -i forcecommand
+```
+
+**A server's tunnel stopped after the sync** — the server most likely runs
+a `tw` version without the tenant fallback. Upgrade `tw` on the server. Its log should then show `relay ssh
+user migrated to the server's tenant account`.
+
+**`tw relay sync-tenants` fails** — the error carries the relay-side
+output:
+
+- `python3 is required on the relay`: install it (`apt-get install -y
+  python3`) and rerun.
+- `account twt-... exists but is not a tw tenant account`: a non-tw user
+  already has that name. Remove or rename it.
+- `sshd rejected its config with the tenant drop-in`: fix the reported
+  sshd error and rerun.
+- The `Match User twt-*` block is not in effect for the tenant accounts:
+  check the rest of the sshd configuration with the `sshd -T` command below,
+  fix what keeps the block from applying, and rerun.

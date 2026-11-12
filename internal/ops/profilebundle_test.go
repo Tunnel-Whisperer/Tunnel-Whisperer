@@ -246,3 +246,60 @@ func TestProfileBundleSkipsTerraformArtefacts(t *testing.T) {
 		}
 	}
 }
+
+// TestUnsealProfileRejectsNonProfileEntry: a bundle may only carry the files
+// sealProfile produces; anything else (authorized_keys, the contexts store,
+// non-canonical paths) is rejected before anything is written.
+func TestUnsealProfileRejectsNonProfileEntry(t *testing.T) {
+	for _, entry := range []string{
+		"authorized_keys",
+		".ssh/authorized_keys",
+		"ssh_host_ed25519_key",
+		"contexts.yaml",
+		"contexts/x.twctx",
+		"relay/../authorized_keys",
+		"./config.yaml",
+		"users",
+	} {
+		t.Run(entry, func(t *testing.T) {
+			t.Setenv("TW_CONFIG_DIR", t.TempDir())
+			writeFile(t, config.FilePath(), "mode: client\n")
+			before := snapshotDir(t, config.Dir())
+
+			bundle := buildSealedBundle(t, map[string]string{
+				"config.yaml": "mode: client\nxray:\n  uuid: NEW\n",
+				entry:         "planted",
+			})
+			if err := unsealProfile(bundle); err == nil {
+				t.Fatalf("unseal accepted non-profile entry %q", entry)
+			}
+			diffSnapshots(t, before, snapshotDir(t, config.Dir()))
+			if _, err := os.Stat(filepath.Join(config.Dir(), "authorized_keys")); !os.IsNotExist(err) {
+				t.Errorf("authorized_keys was written: %v", err)
+			}
+		})
+	}
+}
+
+// TestUnsealProfileSkipsLegacyTerraformArtefacts: bundles sealed before the
+// Terraform cache split still unseal; the excluded artefacts are dropped.
+func TestUnsealProfileSkipsLegacyTerraformArtefacts(t *testing.T) {
+	t.Setenv("TW_CONFIG_DIR", t.TempDir())
+	bundle := buildSealedBundle(t, map[string]string{
+		"config.yaml":                        "mode: relay\n",
+		"relay/main.tf":                      "tf",
+		"relay/.terraform/providers/x/p.bin": "bin",
+		"relay/terraform.tfstate.backup":     "{}",
+	})
+	if err := unsealProfile(bundle); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(config.RelayDir(), "main.tf")); err != nil {
+		t.Errorf("relay/main.tf missing: %v", err)
+	}
+	for _, p := range []string{".terraform", "terraform.tfstate.backup"} {
+		if _, err := os.Stat(filepath.Join(config.RelayDir(), p)); !os.IsNotExist(err) {
+			t.Errorf("relay/%s restored from bundle: %v", p, err)
+		}
+	}
+}

@@ -18,7 +18,7 @@ tw server user invite
 tw server user invite carol -m 5432:5432 --ttl 1h
 ```
 
-A port mapping is `clientPort:serverPort` — the client listens on `localhost:clientPort`, the server forwards to `127.0.0.1:serverPort`. Usernames are alphanumeric with dashes and underscores.
+A port mapping is `clientPort:serverPort` — the client listens on `localhost:clientPort`, the server forwards to `127.0.0.1:serverPort`. Usernames may contain only letters, digits, `-` and `_` (`[A-Za-z0-9_-]+`). Every command and dashboard/API route that takes a user name checks this rule, so a name like `..` is refused with `user name must contain only letters, numbers, dashes, and underscores` (the dashboard API answers `400 invalid user name`).
 
 The command mints a one-time invite code carrying the user's port mappings and blocks, waiting for them to redeem it. Read the code to them over any channel — it's a [SPAKE2](https://en.wikipedia.org/wiki/Password-authenticated_key_agreement) password, not a bearer credential. On their machine:
 
@@ -29,7 +29,7 @@ sudo tw join relay.example.com <code>
 Both terminals then show a short authentication string (SAS); the enrollee reads theirs aloud and you approve only on an exact match. On approval:
 
 - the client machine generates its own ed25519 SSH key pair **and** a certificate signing request locally — neither private key ever transits;
-- the server signs the CSR with its CA, registers a fresh Xray UUID on the relay, and appends the public key to `authorized_keys` with `permitopen` restrictions;
+- the server signs the CSR with its CA, registers the client's Xray UUID on the relay, and appends the public key to `authorized_keys` with `permitopen` restrictions. The UUID must be in canonical lowercase form (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, as `tw join` generates it); any other form is refused and the enrollment denied, so a malformed UUID never reaches the relay's shared Xray config;
 - the signed certificate and the granted coordinates come back over the encrypted channel, and the client machine stores a ready, mode-signed **client** context — activated immediately on a fresh machine.
 
 There's no bundle file to send and nothing to protect in transit beyond the code itself, which the SAS check already covers. The server keeps only public material under `users/<name>/`.
@@ -54,7 +54,7 @@ permitopen="127.0.0.1:5432",permitopen="127.0.0.1:8080" ssh-ed25519 AAAA... alic
 This is the actual access-control record: the embedded SSH server only allows this key to forward to the listed localhost ports. Port forwarding to anything else is rejected.
 
 !!! note "Revocation is live"
-    The SSH server re-reads `authorized_keys` on **every** authentication attempt — no restart needed. Deleting or unregistering a user takes effect on their next connection attempt.
+    The SSH server re-reads `authorized_keys` on **every** authentication attempt, and again before **every** forwarding channel it opens, so no restart is needed. A key that was removed, or whose `permitopen` no longer covers the target, cannot open new channels even on a connection that is already established. Deleting a user also closes that user's live SSH sessions (see [Deleting a User](#deleting-a-user)). The file is always replaced atomically (`0600`), so the server never reads a half-written file.
 
 ### Single-session enforcement
 
@@ -82,7 +82,7 @@ You can also toggle it from the dashboard: go to the user's detail page in the *
 tw server user list
 ```
 
-Shows each user's UUID and tunnel mappings. The dashboard's **Users** page additionally shows online status, relay registration, and tunnel counts.
+Shows each user's UUID and tunnel mappings. UUIDs are shown, and sent to the relay, in lowercase, even if a user's stored config has them in uppercase. The dashboard's **Users** page additionally shows online status, relay registration, and tunnel counts.
 
 ## Changing Port Mappings
 
@@ -105,7 +105,9 @@ tw server user apply              # all users
 tw server user apply alice bob    # specific users
 ```
 
-Registers the users' UUIDs on the relay and refreshes each user's stored config with the current relay settings. Use it after re-provisioning or switching relays, or when `user invite` warned that the relay update failed.
+Registers the users' UUIDs on the relay and refreshes each user's stored config with the current relay settings. Use it after re-provisioning or switching relays, or when `user invite` warned that the relay update failed. A UUID that is not in canonical lowercase form is refused (`refusing to register non-canonical UUID ...`).
+
+An enrolled server has no shell on the relay. It adds and removes its users' UUIDs through the relay's tenant request handler, which only touches this server's own inbound (see [Tenants](../relay/tenants.md#tenant-accounts-on-the-relay)). If the relay has not been migrated yet, this fails with a hint for the relay admin to run `tw relay sync-tenants`.
 
 ## Unregistering a User
 
@@ -113,7 +115,7 @@ Registers the users' UUIDs on the relay and refreshes each user's stored config 
 tw server user unregister alice
 ```
 
-Removes the user's UUID from the relay but keeps all local files — a temporary revocation. Restore access with `tw server user apply alice`.
+Removes the user's UUID from the relay but keeps all local files — a temporary revocation. Restore access with `tw server user apply alice`. On an enrolled server the relay's tenant handler also removes the UUID from the running Xray through its API, so new relay connections with it are refused at once. If that live update fails, `tw` warns you, and the removal takes effect at the relay's next Xray restart.
 
 ## Deleting a User
 
@@ -121,4 +123,6 @@ Removes the user's UUID from the relay but keeps all local files — a temporary
 tw server user delete alice
 ```
 
-Removes the user's UUID from the relay, their key from `authorized_keys`, and their local files. Takes effect on the user's next connection attempt.
+Removes the user's UUID from the relay, their key from `authorized_keys`, and their local files, in that order. Then it closes every SSH session the user still has open on the running server, so access ends immediately, not on the next connection attempt. When the daemon is running, the CLI deletes through it. Even if a session is not closed (for example because the deleting process does not run the SSH server), the per-channel `authorized_keys` check stops it from opening new forwards.
+
+If removing the key from `authorized_keys` fails, the command fails and leaves the user's files in place, so you can simply run it again. A user whose public key file is already gone is removed from `authorized_keys` by its `<name>@tw` comment. A failure to remove the UUID from the relay is only logged as a warning.

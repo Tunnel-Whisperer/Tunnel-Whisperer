@@ -647,10 +647,25 @@ func (o *Ops) saveCaddyCerts(ctx context.Context, progress ProgressFunc) {
 	}
 }
 
+// destroyCredKeys are the only creds keys DestroyRelay passes to terraform:
+// the AWS provider's environment credentials. Other providers' tokens live in
+// the relay's terraform.tfvars, written at provisioning.
+var destroyCredKeys = map[string]bool{
+	"AWS_ACCESS_KEY_ID":     true,
+	"AWS_SECRET_ACCESS_KEY": true,
+}
+
 // DestroyRelay tears down the relay infrastructure.
 func (o *Ops) DestroyRelay(ctx context.Context, creds map[string]string, progress ProgressFunc) error {
 	if progress == nil {
 		progress = func(ProgressEvent) {}
+	}
+	// creds become terraform's environment; anything beyond the provider
+	// credentials (LD_PRELOAD, TF_CLI_ARGS, proxies) would steer the child.
+	for k := range creds {
+		if !destroyCredKeys[k] {
+			return fmt.Errorf("unsupported relay credential %q (allowed: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)", k)
+		}
 	}
 
 	relayDir := config.RelayDir()
@@ -801,6 +816,23 @@ func (o *Ops) TestRelay(progress ProgressFunc) {
 		return
 	}
 	progress(ProgressEvent{Step: 3, Total: 3, Label: "Xray + SSH", Status: "running"})
+	if !isRelayAdminProfile(cfg) {
+		// A server's relay account has no shell; it can only talk to the
+		// tenant request handler, so exercise that instead of `echo ok`.
+		var ids []string
+		err = withRelaySSH(cfg, func(client *gossh.Client) error {
+			var lerr error
+			ids, lerr = relayTenantList(client)
+			return lerr
+		})
+		if err != nil {
+			progress(ProgressEvent{Step: 3, Total: 3, Label: "Xray + SSH", Status: "failed", Error: err.Error()})
+		} else {
+			progress(ProgressEvent{Step: 3, Total: 3, Label: "Xray + SSH", Status: "completed",
+				Message: fmt.Sprintf("tunnel and tenant request channel working (%d client ids on this server's inbound)", len(ids))})
+		}
+		return
+	}
 	err = withRelaySSH(cfg, func(client *gossh.Client) error {
 		session, err := client.NewSession()
 		if err != nil {
@@ -918,8 +950,10 @@ func (o *Ops) CloseRelaySSH(progress ProgressFunc) error {
 
 	// Re-pin the admin key to loopback: an --ssh-open provision wrote it
 	// unpinned so it could authenticate over the open port; closing must
-	// restore the tunnel-only invariant. Full rewrite from the tenant list,
-	// same as enroll/un-enroll.
+	// restore the tunnel-only invariant. Full rewrite, same as
+	// enroll/un-enroll: the tenant sync gives a relay whose servers still
+	// log in as the admin account their own accounts, then rewrites the
+	// admin's authorized_keys (admin key only).
 	adminPubKey, err := os.ReadFile(filepath.Join(config.Dir(), "id_ed25519.pub"))
 	if err != nil {
 		progress(ProgressEvent{Step: 2, Total: 3, Label: "Closing SSH port 22", Status: "failed", Error: err.Error()})
@@ -930,17 +964,20 @@ func (o *Ops) CloseRelaySSH(progress ProgressFunc) error {
 		progress(ProgressEvent{Step: 2, Total: 3, Label: "Closing SSH port 22", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("listing registered servers: %w", err)
 	}
-	akContent := renderRelayAuthorizedKeys(string(adminPubKey), servers, false)
-	sshUser := o.Config().Server.RelaySSHUser
-	akPath := fmt.Sprintf("/home/%s/.ssh/authorized_keys", sshUser)
-	akB64 := base64.StdEncoding.EncodeToString([]byte(akContent))
+	akContent := renderRelayAuthorizedKeys(string(adminPubKey), false)
+	tenantSync, err := renderTenantSync(o.Config().Server.RelaySSHUser, akContent, servers)
+	if err != nil {
+		progress(ProgressEvent{Step: 2, Total: 3, Label: "Closing SSH port 22", Status: "failed", Error: err.Error()})
+		return fmt.Errorf("rendering relay tenant accounts: %w", err)
+	}
 
 	err = sshFn(func(client *gossh.Client) error {
+		if err := runRelayTenantSync(client, tenantSync); err != nil {
+			return err
+		}
 		cmds := []string{
 			"sudo ufw deny 22/tcp",
 			"sudo sed -i 's/^ListenAddress 0.0.0.0/ListenAddress 127.0.0.1/' /etc/ssh/sshd_config.d/99-tw-localhost.conf",
-			fmt.Sprintf("echo %s | base64 -d | sudo tee %s >/dev/null && sudo chown %s:%s %s && sudo chmod 600 %s",
-				akB64, akPath, sshUser, sshUser, akPath, akPath),
 			"sudo systemctl restart ssh 2>/dev/null || sudo systemctl restart sshd 2>/dev/null || true",
 		}
 		for _, cmd := range cmds {

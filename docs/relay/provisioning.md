@@ -92,7 +92,14 @@ relay only shuffles encrypted bytes and needs almost no resources.
 The VM is configured entirely by cloud-init (rendered at provision time on the
 admin machine — the relay never generates anything itself):
 
-- An SSH user (`ubuntu` by default) holding the tw-managed `authorized_keys`
+- An SSH admin user (`ubuntu` by default, passwordless sudo) holding the
+  tw-managed `authorized_keys` with the admin key only
+- The **tenant request handler** (`/usr/local/lib/tw/`, the
+  `tw-tenant@.socket`/`.service` units, and the sshd drop-in
+  `98-tw-tenants.conf`). No tenant accounts exist yet: each enroll creates
+  one locked-down account per server (see
+  [Tenants](tenants.md#tenant-accounts-on-the-relay)). The handler runs on
+  `python3`, which Ubuntu cloud images already include
 - **Caddy** from the official apt repository — TLS/ACME termination with
   `client_auth verify_if_given` against the per-tenant CA trust pool (a bare
   handshake is allowed so unenrolled invitees can reach `/enroll`; every
@@ -160,6 +167,9 @@ it on the same VM is the supported way to repair a relay or to change the
 per-tenant CA certs in `/etc/caddy/ca/`, the Caddyfile, the Xray install and
 config, the tw sshd drop-in, and all firewall rules (including a stale
 `allow 22` from an earlier `--ssh-open` run) — then installs everything fresh.
+It installs `python3` along with the other packages, and runs the tenant
+setup. That installs the tenant request handler and removes any `twt-*`
+tenant accounts left from earlier enrollments.
 
 What it deliberately does **not** touch:
 
@@ -191,8 +201,11 @@ the other roles):
    invitees need to reach `/enroll`), so without a cert to present this step
    confirms only that Caddy answers — routing to a tenant still requires the
    cert.
-3. **Xray + SSH** — a full tunnel is established. On the relay and server, a
-   real SSH command is executed on the relay. On the client, an SSH publickey
+3. **Xray + SSH** — a full tunnel is established. On the relay, a real SSH
+   command is executed on the relay as the admin account. On a server, it
+   logs in as the server's tenant account and sends a `list` request to the
+   tenant handler (expect "tunnel and tenant request channel working"); a
+   tenant account cannot run commands. On the client, an SSH publickey
    handshake authenticates against the server's embedded SSH through the tunnel
    (no command execution).
 

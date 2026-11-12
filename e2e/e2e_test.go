@@ -39,6 +39,7 @@ func TestE2E(t *testing.T) {
 		{"ServerJoin", testServerJoin},
 		{"MTLSGate", testMTLSGate},
 		{"UserLifecycle", testUserLifecycle},
+		{"TenantLockdown", testTenantLockdown},
 		{"APIAuth", testAPIAuth},
 		{"PortOverride", testPortOverride},
 		{"PermitOpen", testPermitOpen},
@@ -48,6 +49,7 @@ func TestE2E(t *testing.T) {
 		{"Contexts", testContexts},
 		{"SecondTenant", testSecondTenant},
 		{"CrossTenantCert", testCrossTenantCert},
+		{"TenantMigration", testTenantMigration},
 		{"InviteBurn", testInviteBurn},
 		{"SelfEnroll", testSelfEnroll},
 		{"AdminMigration", testAdminMigration},
@@ -123,6 +125,7 @@ func testContexts(t *testing.T) {
 		"tw config get-contexts shows ID/ROLE/USER/RELAY; the client's context row shows USER alice and an 8-hex ID",
 		"tw config new-context creates and switches to a fresh empty context (the admin's original is preserved)",
 		"tw config use-context <id> switches back by the short ID alone",
+		"the switch back re-creates the profile's relay/ provisioning dir owner-only: dirs 0700, files 0600 (C3)",
 		"tw config rename-context and delete-context clean up the scratch context",
 		"tw config current-context reflects each switch",
 		"tab completion: tw __complete config use-context offers the context name and its short ID",
@@ -178,6 +181,13 @@ func testContexts(t *testing.T) {
 	execIn(t, "admin", "tw config use-context "+id)
 	if cur := execIn(t, "admin", "tw config current-context"); !strings.Contains(cur, name) {
 		fatalf(t, "use-context %s did not switch back to %q:\n%s", id, name, cur)
+	}
+	// C3: the switch back re-created relay/ (provisioning secrets) from the
+	// sealed bundle owner-only — dirs 0700, files 0600 — not world-readable.
+	execIn(t, "admin", "test -n \"$(ls -A /etc/tw-test/relay)\"")
+	if loose := strings.TrimSpace(execIn(t, "admin",
+		`find /etc/tw-test/relay \( \( -type d ! -perm 0700 \) -o \( -type f ! -perm 0600 \) \) -printf '%m %p\n'`)); loose != "" {
+		fatalf(t, "relay/ re-created by use-context is not owner-only (C3):\n%s", loose)
 	}
 
 	// Rename and delete the scratch context; the listing must end clean.

@@ -44,15 +44,9 @@ func runRelayUnenrollServer(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	servers, err := o.ListServers()
+	target, err := o.LookupServer(serverID)
 	if err != nil {
 		return err
-	}
-	var target *ops.RegisteredServer
-	for i := range servers {
-		if servers[i].ServerID == serverID {
-			target = &servers[i]
-		}
 	}
 	if target == nil {
 		return fmt.Errorf("server %q is not enrolled", serverID)

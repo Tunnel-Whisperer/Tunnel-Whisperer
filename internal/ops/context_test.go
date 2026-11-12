@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
@@ -465,5 +466,159 @@ func TestExportContextUnchangedWhenClean(t *testing.T) {
 	}
 	if !bytes.Equal(out, stored) {
 		t.Error("a bundle with nothing to exclude must be exported byte-for-byte")
+	}
+}
+
+// TestContextNamesMustBeSinglePathComponent: a context name is joined into
+// contexts/<name>.twctx, so names that traverse ("evil/../relay-admin",
+// "../../../dropped") are refused by every entry point — including names
+// already poisoning the index — and never touch another context's bundle or
+// a file outside the config dir.
+func TestContextNamesMustBeSinglePathComponent(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("TW_CONFIG_DIR", filepath.Join(root, "etc", "tw"))
+	o := newOpsForTest(t)
+	if _, err := config.EnsureContextIndex(); err != nil {
+		t.Fatal(err)
+	}
+	seedContext(t, "relay-admin", "relay", "victim-relay.example", "")
+	victim, err := os.ReadFile(config.ContextBundlePath("relay-admin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob := buildSealedBundle(t, map[string]string{"config.yaml": "mode: client\nxray:\n  relay_host: evil.example\n"})
+
+	for _, bad := range []string{"evil/../relay-admin", "../../../dropped"} {
+		if _, err := o.ImportContext(blob, bad, false); err == nil {
+			t.Errorf("ImportContext(%q) accepted", bad)
+		}
+		if err := o.NewContext(bad); err == nil {
+			t.Errorf("NewContext(%q) accepted", bad)
+		}
+		if err := o.RenameContext("relay-admin", bad); err == nil {
+			t.Errorf("RenameContext to %q accepted", bad)
+		}
+		if err := o.ReapplyContext(bad, nil); err == nil {
+			t.Errorf("ReapplyContext(%q) accepted", bad)
+		}
+
+		// A name that already sits in the index (e.g. stored by an older,
+		// unfixed version) is refused too.
+		idx, err := config.LoadContextIndex()
+		if err != nil {
+			t.Fatal(err)
+		}
+		idx.Contexts[bad] = config.ContextMeta{Role: "client"}
+		if err := config.SaveContextIndex(idx); err != nil {
+			t.Fatal(err)
+		}
+		if err := o.UseContext(bad, nil); err == nil {
+			t.Errorf("UseContext(%q) accepted", bad)
+		}
+		if _, err := o.ExportContext(bad); err == nil {
+			t.Errorf("ExportContext(%q) accepted", bad)
+		}
+		if err := o.RenameContext(bad, "renamed"); err == nil {
+			t.Errorf("RenameContext from %q accepted", bad)
+		}
+		// Deleting it only drops the index entry (no path is ever built
+		// from the name) — the way out of a poisoned index.
+		if err := o.DeleteContext(bad); err != nil {
+			t.Errorf("DeleteContext(%q) = %v, want the index entry dropped", bad, err)
+		}
+		if idx, _ := config.LoadContextIndex(); idx != nil {
+			if _, ok := idx.Contexts[bad]; ok {
+				t.Errorf("DeleteContext(%q) left the index entry", bad)
+			}
+		}
+	}
+
+	got, err := os.ReadFile(config.ContextBundlePath("relay-admin"))
+	if err != nil {
+		t.Fatalf("relay-admin bundle gone: %v", err)
+	}
+	if !bytes.Equal(got, victim) {
+		t.Error("relay-admin bundle was overwritten")
+	}
+	if _, err := os.Stat(filepath.Join(root, "dropped.twctx")); !os.IsNotExist(err) {
+		t.Errorf("bundle written outside the config dir: %v", err)
+	}
+	if _, err := o.ListContexts(); err != nil {
+		t.Errorf("ListContexts with poisoned index: %v", err)
+	}
+}
+
+// TestInvalidCurrentContextCanBeEscaped: an unsafe CurrentContext stored by an
+// older version blocks switching with an error naming the escape, and
+// delete-context on it drops only the index entry — no file is touched, the
+// live profile is kept and adopted under a fresh name that does not clobber
+// an existing context.
+func TestInvalidCurrentContextCanBeEscaped(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("TW_CONFIG_DIR", filepath.Join(root, "etc", "tw"))
+	o := newOpsForTest(t)
+	writeFile(t, config.FilePath(), "mode: client\nxray:\n  relay_host: r.example\nclient:\n  ssh_user: bob\n")
+	if err := o.ReloadConfig(); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := config.EnsureContextIndex()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adopted := idx.CurrentContext // the live profile's default name
+	seedContext(t, "other", "relay", "o.example", "")
+	victim, err := os.ReadFile(config.ContextBundlePath("other"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A bundle sitting at the path the bad name would resolve to.
+	bad := "../../dropped"
+	writeFile(t, filepath.Join(root, "dropped.twctx"), "KEEP")
+
+	idx, _ = config.LoadContextIndex()
+	delete(idx.Contexts, adopted)
+	idx.Contexts[bad] = config.ContextMeta{Role: "client"}
+	idx.CurrentContext = bad
+	// An existing context already owns the live profile's default name.
+	idx.Contexts[adopted] = config.ContextMeta{Role: "client"}
+	if err := os.WriteFile(config.ContextBundlePath(adopted), victim, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SaveContextIndex(idx); err != nil {
+		t.Fatal(err)
+	}
+
+	err = o.UseContext("other", nil)
+	if err == nil || !strings.Contains(err.Error(), "tw config delete-context") {
+		t.Fatalf("UseContext with invalid current = %v, want an error naming delete-context", err)
+	}
+	liveBefore := snapshotDir(t, config.Dir())
+
+	if err := o.DeleteContext(bad); err != nil {
+		t.Fatalf("DeleteContext(invalid current) = %v", err)
+	}
+	if b, err := os.ReadFile(filepath.Join(root, "dropped.twctx")); err != nil || string(b) != "KEEP" {
+		t.Fatalf("file at the invalid name's path touched: %q, %v", b, err)
+	}
+	liveAfter := snapshotDir(t, config.Dir())
+	delete(liveBefore, "contexts.yaml")
+	delete(liveAfter, "contexts.yaml")
+	diffSnapshots(t, liveBefore, liveAfter)
+
+	idx, err = config.EnsureContextIndex()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := idx.Contexts[bad]; ok {
+		t.Fatal("invalid entry still indexed")
+	}
+	if idx.CurrentContext == "" || idx.CurrentContext == adopted || idx.CurrentContext == "other" {
+		t.Fatalf("live profile adopted as %q, want a fresh name", idx.CurrentContext)
+	}
+	if err := o.UseContext("other", nil); err != nil {
+		t.Fatalf("switching after the escape: %v", err)
+	}
+	if got, _ := os.ReadFile(config.ContextBundlePath(adopted)); !bytes.Equal(got, victim) {
+		t.Error("the existing context sharing the default name was overwritten")
 	}
 }

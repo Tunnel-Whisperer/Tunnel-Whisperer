@@ -42,7 +42,7 @@ A server enrolled on a relay, with two users, has this layout:
 ├── contexts/                # Sealed non-active contexts (*.twctx)
 ├── id_ed25519               # Server identity key (reverse tunnel auth)
 ├── id_ed25519.pub
-├── authorized_keys          # SSH authorized keys (seeded with the server's own key; one entry per user, re-read on every auth)
+├── authorized_keys          # SSH authorized keys (seeded with the server's own key; one entry per user, re-read on every auth and channel, rewritten atomically 0600)
 ├── ssh_host_ed25519_key     # Embedded SSH server host key (generated on first `tw server start`)
 ├── ca.crt                   # Per-server CA certificate (PEM); public cert shipped to the relay trust pool
 ├── ca.key                   # Per-server CA private key (PEM); never leaves the server
@@ -174,6 +174,13 @@ server-id is stored in `config.yaml` (see
 [Relay Authentication](../security/relay-authentication.md#stored-server-id)),
 a bundle imported on a host with a different hostname or OS keeps its
 identity.
+
+This list is also an allowlist. Activating a bundle that contains any other
+entry fails before anything is written, and activation replaces the whole
+profile set, so files the bundle does not carry are removed. Restored files
+are `0600` (only `*.crt`/`*.pub` outside `relay/` are `0644`), and
+directories are `0700`. See
+[Contexts → What activating a bundle does](../global/contexts.md#what-activating-a-bundle-does).
 
 !!! note "Not part of a context"
     `authorized_keys` and `ssh_host_ed25519_key` are **not** sealed into

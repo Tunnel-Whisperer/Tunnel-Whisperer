@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +27,12 @@ type ReverseTunnel struct {
 	RemotePort int
 	// Local address to forward to (e.g. "127.0.0.1:2222").
 	LocalAddr string
+	// FallbackUser, when set and different from User, is tried once per
+	// connection attempt after the server rejects the key for User.
+	// OnUserSwitch is called once FallbackUser authenticated; from then on
+	// it is the tunnel's User.
+	FallbackUser string
+	OnUserSwitch func(user string)
 
 	mu            sync.Mutex
 	client        *gossh.Client
@@ -149,31 +156,21 @@ func (rt *ReverseTunnel) connect() error {
 		return fmt.Errorf("parsing private key: %w", err)
 	}
 
-	config := &gossh.ClientConfig{
-		User: rt.User,
-		Auth: []gossh.AuthMethod{
-			gossh.PublicKeys(signer),
-		},
-		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
-		Timeout:         10 * time.Second,
+	sshConn, chans, reqs, err := rt.handshake(signer, rt.User)
+	if err != nil && rt.FallbackUser != "" && rt.FallbackUser != rt.User &&
+		strings.Contains(err.Error(), "unable to authenticate") {
+		slog.Warn("relay rejected the key for the configured user; retrying with the fallback user",
+			"user", rt.User, "fallback_user", rt.FallbackUser)
+		sshConn, chans, reqs, err = rt.handshake(signer, rt.FallbackUser)
+		if err == nil {
+			rt.User, rt.FallbackUser = rt.FallbackUser, ""
+			if rt.OnUserSwitch != nil {
+				rt.OnUserSwitch(rt.User)
+			}
+		}
 	}
-
-	slog.Debug("reverse tunnel connecting", "remote", rt.RemoteAddr, "user", rt.User)
-
-	conn, err := net.DialTimeout("tcp", rt.RemoteAddr, 10*time.Second)
 	if err != nil {
-		return fmt.Errorf("dialing %s: %w", rt.RemoteAddr, err)
-	}
-
-	if tc, ok := conn.(*net.TCPConn); ok {
-		tc.SetKeepAlive(true)
-		tc.SetKeepAlivePeriod(30 * time.Second)
-	}
-
-	sshConn, chans, reqs, err := gossh.NewClientConn(conn, rt.RemoteAddr, config)
-	if err != nil {
-		conn.Close()
-		return fmt.Errorf("SSH handshake: %w", err)
+		return err
 	}
 
 	kaStop := make(chan struct{})
@@ -218,6 +215,37 @@ func (rt *ReverseTunnel) connect() error {
 
 		go rt.forward(remote)
 	}
+}
+
+// handshake dials RemoteAddr and completes the SSH handshake as user.
+func (rt *ReverseTunnel) handshake(signer gossh.Signer, user string) (gossh.Conn, <-chan gossh.NewChannel, <-chan *gossh.Request, error) {
+	config := &gossh.ClientConfig{
+		User: user,
+		Auth: []gossh.AuthMethod{
+			gossh.PublicKeys(signer),
+		},
+		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+		Timeout:         10 * time.Second,
+	}
+
+	slog.Debug("reverse tunnel connecting", "remote", rt.RemoteAddr, "user", user)
+
+	conn, err := net.DialTimeout("tcp", rt.RemoteAddr, 10*time.Second)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("dialing %s: %w", rt.RemoteAddr, err)
+	}
+
+	if tc, ok := conn.(*net.TCPConn); ok {
+		tc.SetKeepAlive(true)
+		tc.SetKeepAlivePeriod(30 * time.Second)
+	}
+
+	sshConn, chans, reqs, err := gossh.NewClientConn(conn, rt.RemoteAddr, config)
+	if err != nil {
+		conn.Close()
+		return nil, nil, nil, fmt.Errorf("SSH handshake: %w", err)
+	}
+	return sshConn, chans, reqs, nil
 }
 
 // keepalive sends periodic SSH keepalive requests to detect dead connections.

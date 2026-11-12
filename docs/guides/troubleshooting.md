@@ -28,7 +28,9 @@ Runs a 3-step diagnostic:
 
 1. **DNS resolution** — verifies the domain resolves correctly
 2. **HTTPS/Caddy** — confirms TLS certificate is valid and Caddy responds
-3. **Xray + SSH** — establishes a full tunnel and opens an SSH session
+3. **Xray + SSH** — establishes a full tunnel and opens an SSH session (on a
+   server, `tw server test` instead sends a `list` request to the relay's
+   tenant handler and reports "tunnel and tenant request channel working")
 
 ## Log Levels
 
@@ -157,6 +159,122 @@ Terraform call after importing (e.g. `tw relay destroy`, which runs
 `terraform init` first) deletes that directory and rebuilds the cache under
 `<config-dir>/cache/terraform/<context-id>/`, and `tw config export` never
 includes it, so any re-export is small. See [File Layout](../reference/file-layout.md#the-cache-directory).
+
+### "if the relay predates per-tenant accounts, its admin must run 'tw relay sync-tenants'"
+
+```text
+relay tenant request "add" failed: ... — if the relay predates per-tenant accounts, its admin must run 'tw relay sync-tenants'
+```
+
+A server tried to add or remove a user's UUID on a relay that has no tenant
+request handler yet.
+
+**Fix:** the relay admin runs `tw relay sync-tenants` once. Then retry, for
+example with `tw server user apply`. See
+[Tenants → Migrating](../relay/tenants.md#migrating-to-per-tenant-relay-accounts).
+
+### `relay refused "add" request: ...`
+
+The relay's tenant handler rejected the request. The reason follows the
+colon. For what each reason means, and how to check the handler on the
+relay (`systemctl status tw-tenant@<account>.socket`,
+`journalctl -u 'tw-tenant@*'`), see
+[Tenants → Troubleshooting](../relay/tenants.md#troubleshooting-tenant-accounts).
+
+### Server Tunnel Down After the Relay Was Migrated
+
+The server's log shows `unable to authenticate` for the reverse tunnel
+after the relay admin ran `tw relay sync-tenants` (or enrolled or
+un-enrolled another server). The server runs an older `tw` that still logs
+in as the relay admin account.
+
+**Fix:** upgrade `tw` on the server and restart it. It retries with its own
+tenant account and logs `relay ssh user migrated to the server's tenant
+account`.
+
+### `syncing relay tenant accounts: ... (output: ...)`
+
+An enroll, un-enroll, close-SSH or `tw relay sync-tenants` failed while
+setting up tenant accounts on the relay. The relay-side output says why:
+
+- `tw: python3 is required on the relay`: run `apt-get install -y python3`
+  on the relay and retry.
+- `tw: account twt-... exists but is not a tw tenant account`: a non-tw
+  user already has the name. Remove or rename it.
+- `tw: sshd rejected its config with the tenant drop-in (removed it
+  again)`: fix the reported sshd configuration problem and retry.
+- The `Match User twt-*` block is not in effect for the tenant accounts:
+  something else in the relay's sshd configuration keeps it from applying.
+  Fix that and retry (see [Tenants → Troubleshooting](../relay/tenants.md#troubleshooting-tenant-accounts)).
+
+### Enrollment Fails After Registration
+
+```text
+applying relay config (tenant <id> stays registered; remove it with 'tw relay un-enroll-server <id>'): ...
+```
+
+The relay may already carry part of the new tenant, so the registry entry is
+kept. Fix the cause, then run the `tw relay un-enroll-server` command from
+the message and invite again. A failure *before* the relay was touched
+removes the registry entry automatically.
+
+### "invalid enrollment offer: join request ..." / "issuer denied the enrollment"
+
+The admin side rejected the server's join request. The enrollee only sees
+`issuer denied the enrollment (SAS mismatch, expiry, or a burned invite)`.
+The admin sees the reason:
+
+- `server_id is N characters; the limit is 64`: the joining machine's
+  sanitized hostname is longer than 55 characters. Shorten it and get a new
+  invite.
+- `uuid "..." is not a canonical UUID`, `ca_cert_pem must contain exactly
+  one certificate`, `ca_cert_pem must be a CA certificate with path length
+  0`: the request was not made by a stock `tw join`. Deny it.
+
+For client invites, `offer uuid "..." is not a canonical UUID` means the
+same thing.
+
+### "skipping invalid registry entry"
+
+The relay admin's log shows "skipping invalid registry entry; remove it with
+tw relay un-enroll-server" for a file under `<config-dir>/servers/`. The
+entry fails the join-request checks (e.g. it came from an imported bundle or
+was edited by hand), so it is left out of every relay render.
+
+**Fix:** `tw relay un-enroll-server <server-id>` (it still finds the entry),
+then re-enroll the server if it is legitimate.
+
+### "invalid context name" / "the current context cannot be saved"
+
+```text
+the current context cannot be saved: invalid context name "...": must be a single path component without / or \; run `tw config delete-context "..."` to drop it from the index ...
+```
+
+An older version stored a context name with `/`, `\` or `..` in it.
+
+**Fix:** run the `tw config delete-context` command from the message. It only
+removes the index entry, keeps the live profile, and adopts it under a valid
+name. See [Contexts → Context names](../global/contexts.md#context-names).
+
+### "profile bundle contains unexpected entry"
+
+`tw config import --activate` or `tw config use-context` refused a bundle
+that contains files outside the profile set (for example `authorized_keys`,
+`ssh_host_ed25519_key` or `*.token`). Bundles exported by `tw` never contain
+these. Nothing was changed. Do not use the bundle. Ask its source for a
+clean export.
+
+### `user name must contain only letters, numbers, dashes, and underscores`
+
+User commands and the dashboard API (`400 invalid user name`) only accept
+names matching `[A-Za-z0-9_-]+`.
+
+### `unsupported relay credential "..."`
+
+`tw relay destroy` (dashboard or API) accepts only `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY` as credentials. Hetzner and DigitalOcean tokens are
+read from the relay's `terraform.tfvars`. Remove any other key from the
+request.
 
 ### Mode Enforcement Errors
 

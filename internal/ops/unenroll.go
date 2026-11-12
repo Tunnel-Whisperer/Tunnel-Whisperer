@@ -15,9 +15,10 @@ import (
 // killRelayListenerCmd returns a shell command that kills whatever process
 // holds a LISTEN socket on the given port on the relay — in practice the
 // sshd session serving a tenant's reverse tunnel, which survives an
-// authorized_keys rewrite. All tenants (and the admin's own management
-// session) share one SSH user, so the kill targets the listener port, never
-// a process name. Pure coreutils + awk (no ss/fuser): find the LISTEN
+// authorized_keys rewrite. Each tenant has its own relay account now, but a
+// server enrolled before that still logs in as the admin user (as does the
+// admin's own management session), so the kill targets the listener port,
+// never a process name or user. Pure coreutils + awk (no ss/fuser): find the LISTEN
 // socket inode in /proc/net/tcp{,6} (state 0A, hex port), then the pid
 // whose fd table holds that inode. No listener found at the start is
 // success (the tunnel was already down); after a kill the command polls
@@ -34,6 +35,29 @@ func killRelayListenerCmd(port int) string {
 			`left="$inos"; for i in 1 2 3 4 5; do left=$(%s); [ -z "$left" ] && break; sleep 1; done; `+
 			`[ -z "$left" ] || { echo "port %d still listening after kill" >&2; exit 1; }; `+
 			`fi`, find, find, port)
+}
+
+// removeTenantXray hot-removes serverID's inbound and rules from the running
+// relay Xray and writes the re-rendered config xjson, both under the relay's
+// Xray config lock.
+func removeTenantXray(client *gossh.Client, serverID, xjson string) error {
+	release, err := lockRelayXrayConfig(client)
+	if err != nil {
+		return err
+	}
+	defer release()
+	if err := liveRemoveTenant(client, serverID); err != nil {
+		return err
+	}
+	xmerged, err := mergedRelayXrayConfig(client, xjson)
+	if err != nil {
+		return err
+	}
+	xB64 := base64.StdEncoding.EncodeToString(xmerged)
+	if err := runRelayCmd(client, fmt.Sprintf("echo %s | base64 -d | sudo tee %s >/dev/null", xB64, relayXrayConfigPath)); err != nil {
+		return fmt.Errorf("writing relay Xray config: %w", err)
+	}
+	return nil
 }
 
 // excludeServer returns servers without the entry matching serverID,
@@ -73,11 +97,12 @@ func (o *Ops) UnenrollServer(serverID string, progress ProgressFunc) error {
 		progress(ProgressEvent{Step: 1, Total: total, Label: "Resolve server", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("listing registered servers: %w", err)
 	}
-	var target *RegisteredServer
-	for i := range all {
-		if all[i].ServerID == serverID {
-			target = &all[i]
-		}
+	// LookupServer, not the validated list: an entry that fails validation is
+	// already left out of every render, but un-enroll must still remove it.
+	target, err := o.LookupServer(serverID)
+	if err != nil {
+		progress(ProgressEvent{Step: 1, Total: total, Label: "Resolve server", Status: "failed", Error: err.Error()})
+		return err
 	}
 	if target == nil {
 		err := fmt.Errorf("server %q is not enrolled", serverID)
@@ -112,8 +137,12 @@ func (o *Ops) UnenrollServer(serverID string, progress ProgressFunc) error {
 		progress(ProgressEvent{Step: 2, Total: total, Label: "Render remaining config", Status: "failed", Error: err.Error()})
 		return fmt.Errorf("reading admin public key: %w", err)
 	}
-	akContent := renderRelayAuthorizedKeys(string(adminPubKey), remaining, o.GetRelayStatus().SSHOpen)
-	sshUser := cfg.Server.RelaySSHUser
+	akContent := renderRelayAuthorizedKeys(string(adminPubKey), o.GetRelayStatus().SSHOpen)
+	tenantSync, err := renderTenantSync(cfg.Server.RelaySSHUser, akContent, remaining)
+	if err != nil {
+		progress(ProgressEvent{Step: 2, Total: total, Label: "Render remaining config", Status: "failed", Error: err.Error()})
+		return fmt.Errorf("rendering relay tenant accounts: %w", err)
+	}
 	progress(ProgressEvent{Step: 2, Total: total, Label: "Render remaining config", Status: "completed",
 		Message: fmt.Sprintf("%d tenants remain (admin + %d servers)", len(tenants), len(remaining))})
 
@@ -121,25 +150,29 @@ func (o *Ops) UnenrollServer(serverID string, progress ProgressFunc) error {
 	// step after the Caddy reload needs a fresh TLS handshake.
 	progress(ProgressEvent{Step: 3, Total: total, Label: "Remove from relay", Status: "running"})
 	err = o.RelaySSH(func(client *gossh.Client) error {
-		// (a) Block re-auth: rewrite authorized_keys without the target.
-		akPath := fmt.Sprintf("/home/%s/.ssh/authorized_keys", sshUser)
-		akB64 := base64.StdEncoding.EncodeToString([]byte(akContent))
-		writeKeys := fmt.Sprintf(
-			"echo %s | base64 -d | sudo tee %s >/dev/null && sudo chown %s:%s %s && sudo chmod 600 %s",
-			akB64, akPath, sshUser, sshUser, akPath, akPath,
-		)
-		if err := runRelayCmd(client, writeKeys); err != nil {
-			return fmt.Errorf("writing authorized_keys: %w", err)
+		// (a) Block re-auth: reconcile the tenant accounts to the remaining
+		// servers — this removes the target's account, mapping and request
+		// socket, and kills every process it still runs (including its
+		// reverse-tunnel session) — then rewrite the admin account's
+		// authorized_keys (admin key only).
+		if err := runRelayTenantSync(client, tenantSync); err != nil {
+			return err
 		}
 
-		// (b) Hot-remove the running inbound + rules; severs the tenant's
-		// established VLESS sessions (server transport and all its clients).
-		if err := liveRemoveTenant(client, serverID); err != nil {
+		// (b) Under the relay's Xray config lock (which the tenant handler
+		// also takes, so no tenant request interleaves): hot-remove the
+		// running inbound + rules, severing the tenant's established VLESS
+		// sessions (server transport and all its clients), and persist the
+		// config for restarts/reboots. The remaining tenants' client-user
+		// UUIDs exist only in the current file; the removed tenant's inbound
+		// (and its users) is dropped with it.
+		if err := removeTenantXray(client, serverID, xjson); err != nil {
 			return err
 		}
 
 		// (c) Kill the reverse-tunnel sshd session still holding the
-		// listener on the tenant's port.
+		// listener on the tenant's port (a pre-migration session under the
+		// admin account survives the account removal in (a)).
 		if err := runRelayCmd(client, killRelayListenerCmd(target.RemotePort)); err != nil {
 			return fmt.Errorf("killing reverse-tunnel session: %w", err)
 		}
@@ -157,19 +190,6 @@ func (o *Ops) UnenrollServer(serverID string, progress ProgressFunc) error {
 		}
 		if err := runRelayCmd(client, fmt.Sprintf("sudo rm -f /etc/caddy/ca/%s.crt", serverID)); err != nil {
 			return fmt.Errorf("removing CA cert: %w", err)
-		}
-
-		// (e) Persist the xray config for restarts/reboots (the running
-		// process was already updated in (b) — no restart). The remaining
-		// tenants' client-user UUIDs exist only in the current file; the
-		// removed tenant's inbound (and its users) is dropped with it.
-		xmerged, err := mergedRelayXrayConfig(client, xjson)
-		if err != nil {
-			return err
-		}
-		xB64 := base64.StdEncoding.EncodeToString(xmerged)
-		if err := runRelayCmd(client, fmt.Sprintf("echo %s | base64 -d | sudo tee /usr/local/etc/xray/config.json >/dev/null", xB64)); err != nil {
-			return fmt.Errorf("writing relay Xray config: %w", err)
 		}
 		return nil
 	})

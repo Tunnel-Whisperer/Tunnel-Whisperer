@@ -85,3 +85,16 @@ func TestDefaultContextName(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateContextName(t *testing.T) {
+	for _, ok := range []string{"relay-admin", "default", "tw", "Prod_EU", "a..b", "server-relay", SanitizeName("evil/../relay-admin")} {
+		if err := ValidateContextName(ok); err != nil {
+			t.Errorf("ValidateContextName(%q) = %v, want nil", ok, err)
+		}
+	}
+	for _, bad := range []string{"", ".", "..", "evil/../relay-admin", "../../../dropped", "a/b", `a\b`, `..\x`, "a\x00b"} {
+		if err := ValidateContextName(bad); err == nil {
+			t.Errorf("ValidateContextName(%q) = nil, want error", bad)
+		}
+	}
+}

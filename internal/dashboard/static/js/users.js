@@ -44,13 +44,13 @@ async function relayUsersRequest(endpoint, body) {
       renderProgressEvent(log, event);
     }, (err) => {
       if (err) {
-        log.innerHTML += `<div class="progress-step failed"><span class="step-label">Error: ${err.message}</span></div>`;
+        appendFailedStep(log, 'Error: ' + err.message);
       } else {
         setTimeout(() => { window.location.reload(); }, 1000);
       }
     });
   } catch (err) {
-    log.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+    showAlert(log, err.message);
   }
 }
 
@@ -158,19 +158,13 @@ async function relayUsersRequest(endpoint, body) {
       return;
     }
 
-    let html = '';
-    html += `<button class="btn btn-sm" ${currentPage <= 1 ? 'disabled' : ''} onclick="goToPage(${currentPage - 1})">&laquo; Prev</button>`;
-    for (let i = 1; i <= totalPages; i++) {
-      html += `<button class="btn btn-sm${i === currentPage ? ' active' : ''}" onclick="goToPage(${i})">${i}</button>`;
-    }
-    html += `<button class="btn btn-sm" ${currentPage >= totalPages ? 'disabled' : ''} onclick="goToPage(${currentPage + 1})">Next &raquo;</button>`;
-    el.innerHTML = html;
+    renderPager(el, currentPage, totalPages, goToPage);
   }
 
-  window.goToPage = function(n) {
+  function goToPage(n) {
     currentPage = n;
     filterAndPaginate();
-  };
+  }
 
   searchInput.addEventListener('input', () => {
     currentPage = 1;

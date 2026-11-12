@@ -98,6 +98,6 @@ Beyond the encryption layers, the relay VM itself is hardened:
 - The relay firewall (UFW) allows **only ports 80 and 443** by default. Port 22 is opened only when the relay is deliberately provisioned with `--ssh-open`
 - Caddy verifies any **presented client certificate** (`client_auth verify_if_given`) and requires a matching, verified certificate CN on every tunnel route, so untrusted callers never reach a tenant's upstream — a bare handshake only ever gets as far as the enrollment endpoint or a 404
 - Without `--ssh-open`, SSH on the relay listens on **127.0.0.1 only** — accessible exclusively through the encrypted tunnel; tw's own management key is additionally pinned `from="127.0.0.1"` so it can never authenticate from the internet
-- Enrolled servers' relay SSH access is forwarding-only (`restrict`, no shell), scoped to their own allocated port — see [Access Control](access-control.md)
+- Enrolled servers log in to the relay as their own `twt-*` accounts with a forced command: no shell, no sudo, reverse forwarding only to their own allocated ports, and UUID changes only on their own inbound — see [Access Control](access-control.md)
 - All management operations (user provisioning, relay configuration) happen through the encrypted tunnel, never over unprotected channels
 - Password authentication is **disabled** on the relay SSH daemon

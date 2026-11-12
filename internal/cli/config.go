@@ -284,7 +284,8 @@ func runConfigDeleteContext(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	cur, _ := o.CurrentContext()
 	list, _ := o.ListContexts()
-	resetting := name == cur && len(list) == 1
+	// An invalid stored name is only dropped from the index (no reset).
+	resetting := name == cur && len(list) == 1 && config.ValidateContextName(name) == nil
 	if resetting {
 		// A running daemon holds files in the config dir open; on Windows the
 		// wipe would only partially succeed and orphan the config. Refuse before

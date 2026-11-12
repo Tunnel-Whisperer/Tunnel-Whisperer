@@ -227,11 +227,44 @@ func testPermitOpen(t *testing.T) {
 func testRevocation(t *testing.T) {
 	scenario(t, "revoking a user takes effect live, with no server restart",
 		"tw server user unregister + delete removes alice",
+		"unregister (through server-1's relay tenant request channel) drops alice's UUID from the relay's xray config.json — from server-1's own inbound, and it is in no other inbound",
+		"deleting alice while her tw client connect is LIVE ends that session: the server logs 'disconnected user sessions' for alice and her still-running client stops forwarding (no echo across a 20s poll) — C4",
 		"a fresh tw client connect for alice never opens its tunnel port across a full 30s poll — proving authorized_keys is re-read on every auth attempt (no restart needed)")
+
+	// Her live session (since UserLifecycle) forwards before the revocation.
+	echo := "printf 'hello-tw-revoke' | nc -w 5 127.0.0.1 " + userPort + " 2>&1"
+	waitFor(t, "alice's live session forwards before revocation", 60*time.Second, func() (bool, string) {
+		out, err := execInOK("client", echo)
+		return err == nil && strings.TrimSpace(out) == "hello-tw-revoke", out
+	})
+	aliceUUID := userUUIDOn(t, "server", "alice")
+	sid := serverIDOf(t, "server")
+	if tags := inboundsHolding(relayInboundClients(t), aliceUUID); len(tags) != 1 || tags[0] != "vless-in-"+sid {
+		fatalf(t, "before unregister, alice's UUID %s is in inbounds %v, want exactly [vless-in-%s]", aliceUUID, tags, sid)
+	}
+	disconnectsBefore := strings.TrimSpace(execIn(t, "server", "grep -c 'disconnected user sessions.*tw_user=alice' /var/log/tw-server.log || true"))
 
 	// Unregister from the relay, then delete. Both prompt [y/N].
 	execIn(t, "server", "printf 'y\\n' | tw server user unregister alice")
+	if tags := inboundsHolding(relayInboundClients(t), aliceUUID); len(tags) != 0 {
+		fatalf(t, "alice's UUID %s is still in relay inbounds %v after unregister", aliceUUID, tags)
+	}
 	execIn(t, "server", "printf 'y\\n' | tw server user delete alice")
+
+	// C4: the delete ends her established session, not just future handshakes.
+	disconnectsAfter := strings.TrimSpace(execIn(t, "server", "grep -c 'disconnected user sessions.*tw_user=alice' /var/log/tw-server.log || true"))
+	if disconnectsAfter == disconnectsBefore {
+		out, _ := execInOK("server", "tail -20 /var/log/tw-server.log")
+		fatalf(t, "server did not log closing alice's live session on delete (count %s before and after):\n%s", disconnectsBefore, out)
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		if out, err := execInOK("client", echo); err == nil && strings.TrimSpace(out) == "hello-tw-revoke" {
+			logOut, _ := execInOK("client", "tail -20 /var/log/tw-client.log")
+			fatalf(t, "deleted alice's still-running session still forwards (C4 is back):\n%s", logOut)
+		}
+		time.Sleep(2 * time.Second)
+	}
 
 	// Kill the client's live connection, then prove a fresh connect fails
 	// WITHOUT any server restart (authorized_keys re-read per auth attempt).
@@ -243,7 +276,7 @@ func testRevocation(t *testing.T) {
 	// happens to land in that startup window would pass the test for the
 	// wrong reason. Poll explicitly for 30s and require the port to NEVER
 	// answer during that window; fail immediately if it ever does.
-	deadline := time.Now().Add(30 * time.Second)
+	deadline = time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		if _, err := execInOK("client", "nc -z 127.0.0.1 "+userPort); err == nil {
 			out, _ := execInOK("client", "tail -20 /var/log/tw-client-revoked.log")

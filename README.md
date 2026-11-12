@@ -163,6 +163,7 @@ Structured by role — with dynamic tab completion for contexts, users, and serv
 | `tw relay invite` / `add-server` | Enroll a joining server over a one-time code (SAS-confirmed) / self-enroll this machine |
 | `tw relay get-servers` | List tenants with live TUNNEL up/down state |
 | `tw relay un-enroll-server <id>` | Totally remove a tenant — config and live connections |
+| `tw relay sync-tenants` | Give every enrolled server its own locked-down relay account (one-time migration for older relays) |
 | `tw relay ssh` / `test` / `status` / `destroy` | Shell over the tunnel, 3-step diagnostic, status, teardown |
 | **Server** | |
 | `tw join <relay-host> <code>` | Redeem an admin's invite — becomes a server or client per the issuer's grant |
@@ -194,8 +195,8 @@ Structured by role — with dynamic tab completion for contexts, users, and serv
 - **Mutual-TLS admission** — a per-tenant CA-issued client certificate gates the relay at the TLS handshake
 - **Zero plaintext** leaves the local network
 - **No signing keys** on the relay — it holds only public CA certificates; compromise does not expose user data
-- **Least privilege** — each user can only forward to explicitly allowed ports; tenant keys on the relay are forwarding-only (no shell), pinned to the tunnel
-- **Dynamic keys** — add/revoke users without restarting the server (authorized_keys re-read on every auth)
+- **Least privilege** — each user can only forward to explicitly allowed ports; each enrolled server has its own relay account with a forced command (no shell, no sudo), pinned to the tunnel
+- **Dynamic keys** — add/revoke users without restarting the server (authorized_keys re-read on every auth and every forwarded channel; deleting a user ends their live sessions)
 - **Signed roles** — each machine's mode (relay/server/client) is ed25519-signed by its issuer; tampering is detected
 - **SSH your way** — relay SSH is tunnel-only by default; `--ssh-open` deliberately opens port 22 for the admin key, closable later from the dashboard
 

@@ -80,7 +80,7 @@ func testRelayResilience(t *testing.T) {
 	// reconnect loops must bring both tunnels back.
 	waitFor(t, "server reverse tunnel recovery", 120*time.Second, func() (bool, string) {
 		out, err := execInOK("server", "tw server test")
-		return err == nil && strings.Contains(out, "tunnel and shell working"), out
+		return err == nil && strings.Contains(out, "tunnel and tenant request channel working"), out
 	})
 	waitFor(t, "client echo round-trip recovery", 120*time.Second, func() (bool, string) {
 		out, err := execInOK("client", "printf 'hello-tw-resilience' | nc -w 5 127.0.0.1 "+bobPort+" 2>&1")

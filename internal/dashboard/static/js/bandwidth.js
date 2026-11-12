@@ -1,11 +1,6 @@
 // ── Bandwidth page — sorting, search, pagination, live polling ───────────────
 
 (function() {
-  // Escape a value before it goes into innerHTML — a username is user-supplied,
-  // so concatenating it raw would allow stored XSS (finding SP-16).
-  const esc = (v) => String(v).replace(/[&<>"']/g, (c) => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-  ));
   const PAGE_SIZE = 10;
   let currentPage = 1;
   let sortCol = 'sent';
@@ -91,18 +86,17 @@
     if (page.length === 0) {
       tbody.innerHTML = '<tr><td colspan="6" class="text-dim">No data</td></tr>';
     } else {
-      let html = '';
-      page.forEach(s => {
-        html += '<tr>' +
-          '<td><a href="/users/' + encodeURIComponent(s.user) + '">' + esc(s.user) + '</a></td>' +
-          '<td class="text-mono">' + s.port + '</td>' +
-          '<td class="text-mono">' + formatBytes(s.bytes_sent) + '</td>' +
-          '<td class="text-mono">' + formatBytes(s.bytes_recv) + '</td>' +
-          '<td class="text-mono">' + s.active_connections + '</td>' +
-          '<td class="text-mono">' + s.total_connections + '</td>' +
-          '</tr>';
-      });
-      tbody.innerHTML = html;
+      tbody.replaceChildren(...page.map(s => {
+        const tr = document.createElement('tr');
+        const userTd = document.createElement('td');
+        const link = makeEl('a', '', s.user);
+        link.href = '/users/' + encodeURIComponent(s.user);
+        userTd.appendChild(link);
+        tr.appendChild(userTd);
+        [s.port, formatBytes(s.bytes_sent), formatBytes(s.bytes_recv), s.active_connections, s.total_connections]
+          .forEach(v => tr.appendChild(makeEl('td', 'text-mono', v)));
+        return tr;
+      }));
     }
 
     renderPagination(matching.length, totalPages);
@@ -117,19 +111,13 @@
       return;
     }
 
-    let html = '';
-    html += '<button class="btn btn-sm" ' + (currentPage <= 1 ? 'disabled' : '') + ' onclick="bwGoToPage(' + (currentPage - 1) + ')">&laquo; Prev</button>';
-    for (let i = 1; i <= totalPages; i++) {
-      html += '<button class="btn btn-sm' + (i === currentPage ? ' active' : '') + '" onclick="bwGoToPage(' + i + ')">' + i + '</button>';
-    }
-    html += '<button class="btn btn-sm" ' + (currentPage >= totalPages ? 'disabled' : '') + ' onclick="bwGoToPage(' + (currentPage + 1) + ')">Next &raquo;</button>';
-    el.innerHTML = html;
+    renderPager(el, currentPage, totalPages, goToPage);
   }
 
-  window.bwGoToPage = function(n) {
+  function goToPage(n) {
     currentPage = n;
     renderTable();
-  };
+  }
 
   searchInput.addEventListener('input', () => {
     currentPage = 1;

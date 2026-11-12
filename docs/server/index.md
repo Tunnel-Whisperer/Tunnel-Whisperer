@@ -27,7 +27,7 @@ Setting up a server is three steps, in order:
 
     ```bash
     tw server start
-    tw server test        # verify: tunnel and shell working
+    tw server test        # verify: tunnel and tenant request channel working
     ```
 
 ## What runs on a server

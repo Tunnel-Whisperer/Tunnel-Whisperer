@@ -38,17 +38,17 @@ Both the forward tunnel (client) and reverse tunnel (server) implement exponenti
 
 ## Dynamic User Management
 
-The SSH server re-reads `authorized_keys` on every authentication attempt. This means:
+The SSH server re-reads `authorized_keys` on every authentication attempt and before every `direct-tcpip` channel. This means:
 
 - `tw server user invite` takes effect immediately -- no need to restart the running server
-- Revoking a user (removing their key from `authorized_keys`) takes effect on the next connection attempt
+- Revoking a user (removing their key from `authorized_keys`) blocks the next connection attempt and the next channel on an already established connection; `tw server user delete` also closes the user's live connections
 - Each key entry can have independent `permitopen` restrictions (and an optional `single-session` flag)
 
 ---
 
 ## Permitopen Enforcement
 
-When the SSH server authenticates a client, it parses `permitopen` options from the matching `authorized_keys` entry and stores them in `gossh.Permissions.Extensions["permitopen"]`. On every `direct-tcpip` channel request, the server checks the target `host:port` against the permitted list. If no `permitopen` options are set (e.g., the server's own key), all destinations are allowed. A custom `single-session` option, enforced in `checkAuthorizedKey`, rejects a second concurrent connection for the same user.
+When the SSH server authenticates a client, it parses `permitopen` options from the matching `authorized_keys` entry and stores them in `gossh.Permissions.Extensions["permitopen"]`. On every `direct-tcpip` channel request, the server checks the target `host:port` against the permitted list, then looks the connection's key up again in the current `authorized_keys` (by SHA256 fingerprint) and rejects the channel if the entry is gone, belongs to another user, or no longer permits the target. `DeleteUser` also closes the user's live connections (`Server.DisconnectUser`). If no `permitopen` options are set, the channel is rejected (fail-closed). A custom `single-session` option, enforced in `checkAuthorizedKey`, rejects a second concurrent connection for the same user.
 
 ---
 
@@ -58,33 +58,33 @@ When the SSH server authenticates a client, it parses `permitopen` options from 
 sequenceDiagram
     participant S as Server (tw)
     participant TX as Temp Xray (management tunnel)
-    participant R as Relay (SSH)
+    participant R as Relay sshd (tenant account)
+    participant H as tw-tenant-handler (root)
     participant XR as Relay Xray
 
     S ->> TX: Start temporary Xray instance (presents mTLS client cert)
-    S ->> R: SSH through temp tunnel
-    S ->> R: sudo cat /usr/local/etc/xray/config.json
-    R -->> S: JSON config
-    S ->> S: Parse JSON, check duplicate UUID,<br/>add client to vless-in-#lt;server-id#gt;
-    S ->> R: sudo tee config.json (updated)
-    S ->> XR: gRPC AlterInbound / AddUserOperation (:10085)
-    alt gRPC fails
-        S ->> R: sudo systemctl restart xray
-    end
+    S ->> R: SSH through temp tunnel as twt-#lt;hash#gt;
+    S ->> R: "add #lt;uuid#gt;" on stdin (forced tw-tenant-request)
+    R ->> H: request line on /run/tw/tenant/#lt;account#gt;.sock
+    H ->> H: identify tenant (socket path + peer uid),<br/>lock, add client to vless-in-#lt;server-id#gt;, write config.json
+    H ->> XR: xray api adu (:10085)
+    Note over H,XR: no Xray restart: if the API call fails,<br/>the saved change applies at the next restart
+    H -->> S: "ok added, applied via xray api"
     S ->> TX: Stop temporary Xray
     Note over TX: Tunnel destroyed (expected)
 ```
 
-`tw server user invite` (and delete/unregister) updates the relay's Xray config remotely:
+`tw server user invite` (and delete/unregister/apply) updates the relay's Xray config remotely. An enrolled server has no shell on the relay, so it goes through the relay's tenant request handler:
 
 1. Starts a temporary Xray instance (dokodemo-door on `server.temp_xray_port+1`, default 59001, falling back to any free loopback port — separate from a running `tw server start`)
-2. SSHs into the relay through the temporary tunnel using the server's SSH key
-3. Reads `/usr/local/etc/xray/config.json` via `sudo cat`
-4. Parses the JSON, checks for duplicate UUID, adds the new client entry to this server's own `vless-in-<server-id>` inbound
-5. Writes the updated config via `sudo tee /usr/local/etc/xray/config.json` (persistence)
-6. Hot-adds the UUID via the Xray gRPC API (`AlterInbound` / `AddUserOperation` on loopback `:10085`, forwarded over the SSH connection); falls back to `systemctl restart xray` if the API call fails
+2. SSHs into the relay through the temporary tunnel as the server's own tenant account (`twt-` followed by 24 hex characters derived from the server-id) with the server's SSH key. If the stored relay user rejects the key (a server enrolled before tenant accounts), it retries once as the tenant account and saves it as `server.relay_ssh_user`
+3. Sends one request line per UUID (`add <uuid>` / `remove <uuid>`, or `list`) on the session's stdin. sshd forces `/usr/local/lib/tw/tw-tenant-request` for every tenant session, which hands the line to the account's own socket `/run/tw/tenant/<account>.sock`
+4. systemd starts `tw-tenant-handler` as root for that connection. It identifies the tenant from the socket path and `SO_PEERCRED`, maps the account to its server-id via the root-owned `/etc/tw/tenants/<account>`, and, under the lock `/usr/local/etc/xray/.tw-config.lock`, edits only that tenant's `vless-in-<server-id>` inbound and writes `config.json` atomically
+5. Hot-applies the change with `xray api adu` / `rmu` and replies `ok ...` or `err <reason>`. The handler never restarts Xray: if the live apply fails, the change is already saved and takes effect at the next Xray restart, and `tw` shows a warning. A tenant inbound holds at most 1000 clients
 
-Relay-side *tenant* changes (server enroll / un-enroll) follow the same live-update philosophy but at a bigger granularity: the admin re-renders the Caddyfile, `authorized_keys`, and Xray `config.json` wholesale from the registry, then live-adds (`AddInbound` + `AddRule`) or live-removes the affected tenant via the same gRPC API — no Xray restart. One thing is deliberately *not* re-rendered: client-user UUIDs are owned by their servers and exist only in the relay's `config.json` (the admin's registry never sees them), so enroll and un-enroll read the current file and carry each surviving `vless-in-<server-id>` inbound's extra clients over into the rewritten one (`mergeRelayClients`, `internal/ops/relaymerge.go`); a removed tenant's inbound, users included, is dropped. Enroll and un-enroll are serialized by a local file lock (`internal/ops/oplock.go`).
+UUIDs must be canonical lowercase (`isCanonicalUUID`, `internal/ops/uuidcheck.go`); tw refuses to send anything else and the handler checks the same rule. The relay admin's own profile still edits `config.json` directly over its sudo account (`sudo cat` / `sudo tee`, gRPC `AlterInbound`), under the same lock. The relay-side pieces live in `internal/relay/tenant` and are installed by provisioning and by every tenant sync (`tw relay sync-tenants`, enroll, un-enroll, close-SSH).
+
+Relay-side *tenant* changes (server enroll / un-enroll) follow the same live-update philosophy but at a bigger granularity: the admin re-renders the Caddyfile, the tenant accounts (one `twt-*` account per registered server, reconciled by a root script, `relaytenant.RenderSync`), then the admin account's `authorized_keys` (admin key only), and Xray `config.json` wholesale from the registry, then live-adds (`AddInbound` + `AddRule`) or live-removes the affected tenant via the same gRPC API — no Xray restart. One thing is deliberately *not* re-rendered: client-user UUIDs are owned by their servers and exist only in the relay's `config.json` (the admin's registry never sees them), so enroll and un-enroll read the current file and carry each surviving `vless-in-<server-id>` inbound's extra clients over into the rewritten one (`mergeRelayClients`, `internal/ops/relaymerge.go`); a removed tenant's inbound, users included, is dropped. Enroll and un-enroll are serialized by a local file lock (`internal/ops/oplock.go`).
 
 ---
 
@@ -206,7 +206,8 @@ The server tracks which client users are currently connected by polling the rela
 2. **Primary method**: Queries `QueryStats` with pattern `"online"` looking for `user>>>{UUID}>>>online` stats entries (Xray `statsUserOnline` feature).
 3. **Fallback**: If no online stats are available, falls back to traffic-based detection: queries `user>>>` pattern with `Reset_: true`, and any UUID with non-zero `traffic>>>uplink` or `traffic>>>downlink` since the last poll is considered online. The server's own UUID is excluded.
 4. **Caching**: Results are cached with a 20-second TTL (`onlinePoll` timestamp). Concurrent refresh attempts return the stale cache instead of blocking.
-5. **Relay setup**: freshly provisioned relays already carry `stats`, `StatsService`, and the stats `policy` in the rendered Xray config (`relayconfig.json.tmpl`). `EnsureRelayStats()` still runs in the background at server startup to patch legacy relays that predate the template; if patching occurs, Xray is restarted on the relay.
+5. **Relay setup**: relays rendered by `tw` carry `stats`, `StatsService`, and the stats `policy` in the Xray config (`relayconfig.json.tmpl`). The server no longer patches older relays at startup (`EnsureRelayStats` was removed), so a hand-managed relay whose Xray config lacks them reports no online users.
+6. **Host key**: `sshThroughServerTunnel` dials the server's Xray port (`serverXrayPort`: `server.xray_port`, else SSHPort+1) and verifies the relay's SSH host key against the pinned key when one is recorded. Relays provisioned before host-key pinning are still accepted without a host-key check here; the mTLS-authenticated tunnel is their only relay authentication.
 
 The dashboard's users page calls `/api/users/online` which returns the online map. Online users are shown with a badge in the UI.
 

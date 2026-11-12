@@ -78,7 +78,7 @@ The nav bar shows the pages for the current role, plus the **current context nam
 - **Search box and pagination** (client-side filtering)
 - **Enrollment happens in the CLI** — `tw server user invite <name> -m <port:port>` mints the code and does the client's key/cert exchange in one step; the dashboard manages the resulting users
 - **Apply/Unregister** — batch relay registration
-- **Delete** — remove the user and revoke access
+- **Delete** — remove the user, revoke access and close the user's live SSH sessions
 
 ### Apps Page
 
@@ -123,7 +123,7 @@ Available in relay and server mode under **Relay**:
 - **Test Connectivity** — runs the multi-step relay diagnostic
 - **Provision/Destroy** — relay lifecycle with step-by-step progress
 - **Close Port 22** — shown when the relay was provisioned with public SSH open; closes it so SSH is reachable only through the tunnel again
-- **SSH Terminal** — interactive terminal to the relay via WebSocket + xterm.js
+- **SSH Terminal** — interactive terminal to the relay via WebSocket + xterm.js (relay admin only: an enrolled server's relay account has no shell, see [Tenants](../relay/tenants.md#tenant-accounts-on-the-relay))
 
 ### SSH Terminal
 
@@ -153,7 +153,7 @@ The stored [contexts](contexts.md) as a table with a **search box and role filte
 
 ## Live Updates
 
-Long-running operations (provisioning, starting, stopping, enrolling) stream real-time step-by-step progress over **Server-Sent Events**, each step labeled running/completed/failed. Status indicators, online-user badges, and the log console update live the same way — no manual refresh needed.
+Long-running operations (provisioning, starting, stopping, enrolling) stream real-time step-by-step progress over **Server-Sent Events**, each step labeled running/completed/failed. Step messages and errors (which can contain text from the relay, e.g. an SSH disconnect message) are always shown as plain text, never parsed as HTML. Status indicators, online-user badges, and the log console update live the same way — no manual refresh needed.
 
 ## Running as a System Service
 

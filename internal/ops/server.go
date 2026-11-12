@@ -119,10 +119,7 @@ func (m *serverManager) Start(o *Ops, progress ProgressFunc) error {
 		if err != nil {
 			return fail(step, total, "Xray tunnel", err)
 		}
-		xrayListenPort := cfg.Server.SSHPort + 1
-		if cfg.Server.XrayPort > 0 {
-			xrayListenPort = cfg.Server.XrayPort
-		}
+		xrayListenPort := serverXrayPort(cfg)
 		if err := xrayInstance.Start(xrayListenPort, cfg.Server.RelaySSHPort, cfg.Proxy); err != nil {
 			return fail(step, total, "Xray tunnel", err)
 		}
@@ -137,9 +134,14 @@ func (m *serverManager) Start(o *Ops, progress ProgressFunc) error {
 		rt := &twssh.ReverseTunnel{
 			RemoteAddr: fmt.Sprintf("127.0.0.1:%d", xrayListenPort),
 			User:       cfg.Server.RelaySSHUser,
-			KeyPath:    privPath,
-			RemotePort: cfg.Server.RemotePort,
-			LocalAddr:  fmt.Sprintf("127.0.0.1:%d", cfg.Server.SSHPort),
+			// A server enrolled before per-tenant relay accounts still has
+			// the admin's account stored; the relay now only accepts its key
+			// on its own account.
+			FallbackUser: tenantRelayUserFallback(cfg),
+			OnUserSwitch: o.adoptTenantRelayUser,
+			KeyPath:      privPath,
+			RemotePort:   cfg.Server.RemotePort,
+			LocalAddr:    fmt.Sprintf("127.0.0.1:%d", cfg.Server.SSHPort),
 		}
 		go func() {
 			if err := rt.Run(); err != nil {
@@ -156,10 +158,28 @@ func (m *serverManager) Start(o *Ops, progress ProgressFunc) error {
 	m.state = StateRunning
 	m.mu.Unlock()
 
-	// Patch relay stats config in the background if needed.
-	go o.EnsureRelayStats()
-
 	return nil
+}
+
+// serverXrayPort is the loopback port of the server's long-running Xray
+// dokodemo-door: server.xray_port when set, otherwise SSHPort+1.
+func serverXrayPort(cfg *config.Config) int {
+	if cfg.Server.XrayPort > 0 {
+		return cfg.Server.XrayPort
+	}
+	return cfg.Server.SSHPort + 1
+}
+
+// DisconnectUser closes the in-process SSH server's live connections for
+// twUser. It is a no-op when this process is not running the server.
+func (m *serverManager) DisconnectUser(twUser string) int {
+	m.mu.Lock()
+	srv := m.sshSrv
+	m.mu.Unlock()
+	if srv == nil {
+		return 0
+	}
+	return srv.DisconnectUser(twUser)
 }
 
 // Stop shuts down all server components in reverse order.

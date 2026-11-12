@@ -6,10 +6,13 @@ package terraform
 import (
 	"bytes"
 	_ "embed"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
 	"text/template"
+
+	relaytenant "github.com/tunnelwhisperer/tw/internal/relay/tenant"
 )
 
 //go:embed cloud-init.yaml.tmpl
@@ -50,6 +53,21 @@ type Config struct {
 	XrayConfigB64 string // base64 of the fully-rendered relay Xray config.json
 	HostKeyB64    string // base64 of the relay's ed25519 SSH host PRIVATE key (OpenSSH PEM); the admin pins the matching public key on the direct port-22 channel
 	HostKeyPub    string // the relay's ed25519 SSH host public key (authorized-key line)
+	// TenantSetupB64 is base64 of the root script that installs the tenant
+	// request handler (relaytenant.RenderSync with no tenants yet); populated
+	// automatically.
+	TenantSetupB64 string
+}
+
+// withTenantSetup fills the fields every relay render derives itself.
+func withTenantSetup(cfg Config) (Config, error) {
+	cfg.XrayVersion = XrayVersion
+	script, err := relaytenant.RenderSync(nil, nil)
+	if err != nil {
+		return cfg, fmt.Errorf("rendering tenant setup: %w", err)
+	}
+	cfg.TenantSetupB64 = base64.StdEncoding.EncodeToString([]byte(script))
+	return cfg, nil
 }
 
 var providerTemplates = map[string]string{
@@ -60,7 +78,10 @@ var providerTemplates = map[string]string{
 
 // Generate renders cloud-init.yaml and the selected provider's main.tf into dir.
 func Generate(dir string, cfg Config) error {
-	cfg.XrayVersion = XrayVersion
+	cfg, err := withTenantSetup(cfg)
+	if err != nil {
+		return err
+	}
 	// 0700 dir + 0600 files: the rendered cloud-init carries the relay's SSH
 	// host private key and the VLESS UUID, and terraform will drop its state
 	// (also secret-bearing) here — none of it should be world-readable on the
@@ -96,7 +117,10 @@ func Generate(dir string, cfg Config) error {
 
 // GenerateInstallScript renders the manual install bash script with the given config.
 func GenerateInstallScript(cfg Config) (string, error) {
-	cfg.XrayVersion = XrayVersion
+	cfg, err := withTenantSetup(cfg)
+	if err != nil {
+		return "", err
+	}
 	return render("install-script.sh", installScriptTmpl, cfg)
 }
 

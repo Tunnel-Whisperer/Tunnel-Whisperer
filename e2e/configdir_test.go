@@ -36,7 +36,9 @@ func testConfigDirSafety(t *testing.T) {
 		"tw --config-dir /tmp/twbadcfg join fails locally with a 'not writable' error, and the issuer log shows no SAS exchange yet — nothing reached the network",
 		"the SAME invite code still works afterwards: tw --config-dir ./twcarol join (a RELATIVE path, run from /tmp/carolwork) completes the SAS dance and creates the client context",
 		"tw --config-dir ./twcarol client test (same relative flag, same cwd) fully succeeds and never mentions /usr/local/bin — proving xray-core loaded the client cert via the absolutized path",
-		"the client's main profile (bob's, from RelayResilience) is untouched throughout")
+		"the client's main profile (bob's, from RelayResilience) is untouched throughout",
+		"C10: on the live server daemon, dashboard DELETE /api/users/%2e%2e (and %2E%2E, and PUT …/%2e%2e/single-session) answers 400, a raw /api/users/.. is not accepted, tw server user delete .. is refused by the name check, and /etc/tw-test is unchanged",
+		"C5: tw join --name ../evil and tw config import --name ../evil (or ../../tmp/evil) are refused with 'invalid context name' and write no file outside the contexts store")
 
 	beforeCtx := execIn(t, "client", "tw config current-context")
 
@@ -157,5 +159,73 @@ func testConfigDirSafety(t *testing.T) {
 	afterCtx := execIn(t, "client", "tw config current-context")
 	if strings.TrimSpace(afterCtx) != strings.TrimSpace(beforeCtx) {
 		fatalf(t, "client's main current-context changed across ConfigDirSafety: before %q, after %q", beforeCtx, afterCtx)
+	}
+
+	assertDotDotUserRejected(t)
+	assertUnsafeContextNameRejected(t)
+}
+
+// assertDotDotUserRejected is the C10 regression on the live server daemon:
+// a user name of ".." (raw or percent-encoded) never reaches DeleteUser's
+// filepath.Join(UsersDir(), name) — the dashboard API answers 400 (or the
+// mux's own path-clean redirect for a raw ".."), the CLI refuses it, and the
+// config dir is unchanged.
+func assertDotDotUserRejected(t *testing.T) {
+	t.Helper()
+	listing := "ls -A /etc/tw-test | sort"
+	before := execIn(t, "server", listing)
+	for _, req := range []struct{ method, path, body string }{
+		{"DELETE", "/api/users/%2e%2e", ""},
+		{"DELETE", "/api/users/%2E%2E", ""},
+		{"PUT", "/api/users/%2e%2e/single-session", `{"enabled":true}`},
+	} {
+		cmd := "curl -s -o /dev/null -w '%{http_code}'" + bearer + "--path-as-is -X " + req.method
+		if req.body != "" {
+			cmd += ` -H 'Content-Type: application/json' -d '` + req.body + `'`
+		}
+		code := strings.TrimSpace(execIn(t, "server", cmd+" http://127.0.0.1:8080"+req.path))
+		if code != "400" {
+			fatalf(t, "dashboard %s %s answered HTTP %s, want 400 (invalid user name)", req.method, req.path, code)
+		}
+	}
+	code := strings.TrimSpace(execIn(t, "server",
+		"curl -s -o /dev/null -w '%{http_code}'"+bearer+"--path-as-is -X DELETE http://127.0.0.1:8080/api/users/.."))
+	if strings.HasPrefix(code, "2") {
+		fatalf(t, "dashboard DELETE /api/users/.. was accepted (HTTP %s)", code)
+	}
+	if out, err := execInOK("server", "printf 'y\\n' | tw server user delete .. 2>&1"); err == nil ||
+		!strings.Contains(out, "user name must contain only") {
+		fatalf(t, "tw server user delete .. was not refused by the name check (err=%v):\n%s", err, out)
+	}
+	if after := execIn(t, "server", listing); after != before {
+		fatalf(t, "server config dir changed across the '..' delete attempts:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+	execIn(t, "server", "test -f /etc/tw-test/config.yaml && test -d /etc/tw-test/users")
+	execIn(t, "server", "tw server user list")
+}
+
+// assertUnsafeContextNameRejected is the C5 regression at its CLI edges, in a
+// scratch --config-dir on the client: a context name that is not a single
+// path component is refused by tw join (before the code is even parsed, so
+// nothing reaches the network) and by tw config import, and no bundle is
+// written outside the contexts store. The issuer-supplied-username vector
+// itself needs a modified issuer and is covered by the unit tests.
+func assertUnsafeContextNameRejected(t *testing.T) {
+	t.Helper()
+	const dir = "/tmp/twc5"
+	execIn(t, "client", "rm -rf "+dir+" /tmp/evil.twctx && mkdir -p "+dir)
+	defer execIn(t, "client", "rm -rf "+dir)
+	for _, cmd := range []string{
+		"tw --config-dir " + dir + " join " + domain + " not-a-real-code --name ../evil",
+		"tw --config-dir " + dir + " config import /shared/tw_relay-tw-test.twctx --name ../evil",
+		"tw --config-dir " + dir + " config import /shared/tw_relay-tw-test.twctx --name ../../tmp/evil",
+	} {
+		out, err := execInOK("client", cmd+" 2>&1")
+		if err == nil || !strings.Contains(out, "invalid context name") {
+			fatalf(t, "%q was not refused with 'invalid context name' (err=%v):\n%s", cmd, err, out)
+		}
+	}
+	if stray := strings.TrimSpace(execIn(t, "client", "find /tmp -maxdepth 3 -name 'evil*' -print")); stray != "" {
+		fatalf(t, "an unsafe context name still wrote a file:\n%s", stray)
 	}
 }

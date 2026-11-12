@@ -247,3 +247,61 @@ func TestRescueGrantBothFallbacksFail(t *testing.T) {
 		t.Fatalf("want the both-fallbacks-failed message, got: %v", err)
 	}
 }
+
+// TestClientJoinSanitizesIssuerUsername: with no --name, the context name of a
+// client join comes from the issuer's RoleOffer.Username. A malicious issuer
+// must not be able to make it a path that overwrites another context's
+// bundle or lands outside the config dir.
+func TestClientJoinSanitizesIssuerUsername(t *testing.T) {
+	if got := clientContextName("work", "evil/../relay-admin"); got != "work" {
+		t.Errorf("explicit --name not kept: %q", got)
+	}
+	for _, username := range []string{"evil/../relay-admin", "../../../dropped"} {
+		t.Run(username, func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("TW_CONFIG_DIR", filepath.Join(root, "etc", "tw"))
+			o := newOpsForTest(t)
+			if _, err := config.EnsureContextIndex(); err != nil {
+				t.Fatal(err)
+			}
+			seedContext(t, "relay-admin", "relay", "victim-relay.example", "")
+			victim, err := os.ReadFile(config.ContextBundlePath("relay-admin"))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			name := clientContextName("", username)
+			if err := config.ValidateContextName(name); err != nil {
+				t.Fatalf("derived name %q is not a safe context name: %v", name, err)
+			}
+
+			var c clientMaterial
+			if _, err := c.makeOffer(username); err != nil {
+				t.Fatal(err)
+			}
+			caCert, caKey, _ := pki.GenerateCA("srv-1")
+			certPEM, err := pki.SignClientCSR(caCert, caKey, c.csrPEM, "srv-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			grant, _ := json.Marshal(enroll.ClientGrant{
+				RelayHost: "evil.example", RelayPort: 443, Path: "/tw/x",
+				SSHUser: "mallory", ServerSSHPort: 20000, ClientCertPEM: string(certPEM),
+			})
+			res, err := o.applyClientGrant(&c, grant, name, JoinUI{})
+			if err != nil {
+				t.Fatalf("applyClientGrant: %v", err)
+			}
+			if _, err := os.Stat(config.ContextBundlePath(res.ContextName)); err != nil {
+				t.Errorf("client context not stored as %q: %v", res.ContextName, err)
+			}
+			got, err := os.ReadFile(config.ContextBundlePath("relay-admin"))
+			if err != nil || string(got) != string(victim) {
+				t.Errorf("relay-admin bundle was overwritten (err=%v)", err)
+			}
+			if _, err := os.Stat(filepath.Join(root, "dropped.twctx")); !os.IsNotExist(err) {
+				t.Errorf("bundle written outside the config dir: %v", err)
+			}
+		})
+	}
+}

@@ -3,7 +3,7 @@
 Tunnel Whisperer enforces access control at three scopes. **Relay admission** is per-server, decided at the TLS handshake by a mutual-TLS client certificate. **User authorization** is per-user, decided on the server by the SSH public key and its port restrictions. **Relay SSH** is a separate, tightly restricted management surface. A connection must clear the certificate gate to reach the relay at all, and then clear the SSH key check to do anything on the server.
 
 !!! abstract "Two guarantees that set this apart from mesh VPNs (Tailscale, NetBird, ZeroTier, Twingate, Cloudflare Access, …)"
-    - **Identity is on your server, not in a control plane.** Every tunnel user's authorization is an entry in the on-prem server's `authorized_keys` — an SSH public key plus its `permitopen` port rules, re-read on every connection attempt. There is no cloud or third-party coordination/management plane that brokers or stores who your users are. The relay holds only public CA certs and forwarding-only public keys; it has no user directory, no signing keys, and never sees plaintext.
+    - **Identity is on your server, not in a control plane.** Every tunnel user's authorization is an entry in the on-prem server's `authorized_keys` — an SSH public key plus its `permitopen` port rules, re-read on every connection attempt and every forwarded channel. There is no cloud or third-party coordination/management plane that brokers or stores who your users are. The relay holds only public CA certs and the servers' public keys, each locked to a no-shell account; it has no user directory, no signing keys, and never sees plaintext.
     - **You grant ports, not networks.** A user is authorized for exactly the `host:port` targets you list — never a subnet, an overlay IP, or the server's network. There is no routable virtual network to move laterally on: a granted user can reach only the services you opened. Compare mesh VPNs, whose default unit is a device/network on an overlay (narrowable to ports via control-plane ACLs, but network-first by design).
 
 ---
@@ -91,11 +91,13 @@ An entry may additionally carry the custom `single-session` option. The embedded
 
 ## Dynamic Authorization
 
-The embedded SSH server **re-reads `authorized_keys` on every authentication attempt**. This means:
+The embedded SSH server **re-reads `authorized_keys` on every authentication attempt, and again for every `direct-tcpip` channel**. Each channel is checked against the connection's key entry as it is now (looked up by key fingerprint), not against the handshake-time snapshot. This means:
 
 - Adding a new user takes effect immediately — no restart of the server required
-- Revoking a user's key takes effect on the next connection attempt
-- There is no cached state that could allow a revoked key to authenticate
+- Revoking a user's key, or narrowing its `permitopen`, takes effect on the next channel, even on a connection that is already established
+- There is no cached state that could allow a revoked key to authenticate or open a forward
+
+`tw` rewrites `authorized_keys` atomically (temp file, `fsync`, rename, mode `0600`), so the server never reads a truncated file.
 
 This design ensures that access control changes are applied in real time, without service interruption.
 
@@ -103,9 +105,9 @@ This design ensures that access control changes are applied in real time, withou
 
 ## Relay SSH access control
 
-The relay's own SSH daemon serves only two kinds of principals, both written into the relay's `authorized_keys` by `tw` (the file is fully re-rendered on every enroll/un-enroll, so it self-heals):
+The relay's own SSH daemon serves only two kinds of principals, and they use **separate accounts**. `tw` fully re-renders both on every enroll, un-enroll, close-SSH and `tw relay sync-tenants`, so they self-heal.
 
-**The admin key** (the relay owner's `id_ed25519.pub`):
+**The admin key** (the relay owner's `id_ed25519.pub`) is the only key in the admin account's `authorized_keys`. The admin account has passwordless sudo:
 
 ```
 from="127.0.0.1" ssh-ed25519 AAAA... 
@@ -115,17 +117,20 @@ from="127.0.0.1" ssh-ed25519 AAAA...
 - **Exception:** a relay provisioned with `--ssh-open` leaves the admin line unpinned, because the pin would reject logins over the deliberately opened port 22. Re-provisioning without `--ssh-open` re-pins it.
 - The admin key is otherwise unrestricted — only the admin can open a shell (`tw relay ssh`) or forward to relay loopback services.
 
-**Tenant (enrolled server) keys** — one line per enrolled server:
+**Tenant (enrolled server) keys** — each enrolled server has its own relay account (`twt-` followed by 24 hex characters derived from the server-id), without sudo, whose `authorized_keys` holds exactly one line:
 
 ```
-from="127.0.0.1",restrict,port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:20000",permitlisten="127.0.0.1:40000" ssh-ed25519 AAAA...
+from="127.0.0.1",restrict,command="/usr/local/lib/tw/tw-tenant-request",port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:20000",permitlisten="127.0.0.1:40000" ssh-ed25519 AAAA...
 ```
 
 - `from="127.0.0.1"` — tunnel-only, always (regardless of `--ssh-open`).
-- `restrict` — no shell, no exec, no agent/X11 forwarding.
-- `port-forwarding` — re-enables forwarding (which `restrict` alone denies); forwarding is all a tenant may do.
+- `restrict` — no forwarding, no agent/X11 forwarding, no PTY. On its own it does **not** stop exec or shell requests.
+- `command="/usr/local/lib/tw/tw-tenant-request"` — every session runs the tenant request program, whatever the tenant asked for. The sshd drop-in `98-tw-tenants.conf` repeats this as `ForceCommand` for every `twt-*` account. The only thing a tenant can ask for is to add, remove or list client UUIDs on its own Xray inbound. A root handler carries that out, and it identifies the tenant by the kernel-reported peer uid, never by the request.
+- `port-forwarding` — re-enables forwarding (which `restrict` alone denies).
 - `permitlisten="127.0.0.1:<port>"` (appears twice) — the reverse (`-R`) forwards are limited to the tenant's **own** two allocated ports: its tunnel port, and the tunnel port + 20000 (the enroll port `tw server user invite` publishes its client-enrollment listener on).
 - `permitopen="127.0.0.1:1"` — local (`-L`) forwarding is pinned to a dead sentinel port, so a tenant cannot reach the relay's loopback services (e.g. the Xray gRPC API on `127.0.0.1:10085`) or other tenants' ports.
+
+Relays set up by older `tw` versions kept all tenant keys in the admin account, where a tenant could run commands with sudo. `tw relay sync-tenants`, or the next enroll or un-enroll, moves them to their own accounts (see [Tenants → Migrating](../relay/tenants.md#migrating-to-per-tenant-relay-accounts)).
 
 ---
 
@@ -145,7 +150,7 @@ Removes the user's UUID from the relay's Xray configuration.
 tw server user delete <name>
 ```
 
-Removes the UUID from the relay, deletes the user's directory (keys, config), and removes their `authorized_keys` entry — blocking SSH authentication on the next attempt.
+Removes the UUID from the relay, removes their `authorized_keys` entry, deletes the user's directory (keys, config), and closes the user's live SSH sessions on the running server.
 
 **Revoke a whole server** (relay admin):
 
@@ -153,10 +158,10 @@ Removes the UUID from the relay, deletes the user's directory (keys, config), an
 tw relay un-enroll-server <server-id>
 ```
 
-Removes the server's CA from the relay trust pool, its `authorized_keys` line, and its Xray tenant, and kills its live connections.
+Removes the server's CA from the relay trust pool, its relay account, and its Xray tenant, and kills its live connections.
 
 !!! warning "Defense-in-depth"
-    Removing either the SSH key or the UUID is sufficient to block a user; `tw server user delete` does both. Revocation takes effect on the **next connection attempt** — an existing SSH session is not force-terminated, but it fails on reconnection.
+    Removing either the SSH key or the UUID is sufficient to block a new connection; `tw server user delete` does both. Deleting a user also ends that user's established SSH sessions, and the per-channel `authorized_keys` check stops any surviving connection from opening new forwards. `tw server user unregister` only removes the UUID, so an established tunnel may keep working until it disconnects.
 
 ---
 
@@ -183,7 +188,7 @@ The relay stores only Xray UUIDs (transport identifiers), SSH **public** keys, a
 
 ### Principle of least privilege
 
-Each user can only forward traffic to the specific `127.0.0.1:<port>` targets explicitly listed in their `permitopen` directives; each enrolled server can only use the relay for forwarding, scoped to its own port. There is no broad network access — every principal is scoped to the minimum required services.
+Each user can only forward traffic to the specific `127.0.0.1:<port>` targets explicitly listed in their `permitopen` directives; each enrolled server can only publish its own ports on the relay and manage the client UUIDs on its own inbound, from an account with no shell and no sudo. There is no broad network access — every principal is scoped to the minimum required services.
 
 ### Audit trail via configurable logging
 

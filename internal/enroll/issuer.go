@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -19,7 +20,9 @@ type Handler struct {
 
 	mu        sync.Mutex
 	sess      *Session
-	offer     []byte // decrypted offer payload
+	offer     []byte // decrypted offer plaintext, as the SAS covers it
+	payload   []byte // offer with the v2 marker removed, for AwaitOffer
+	offerV2   bool   // the first valid offer announced result proofs
 	grant     []byte // sealed grant box
 	denied    bool
 	collected bool
@@ -109,8 +112,14 @@ func (h *Handler) handleOffer(w http.ResponseWriter, r *http.Request) {
 	}
 	plain, err := sess.Open(box)
 	if err != nil {
-		// Wrong key = wrong code or tamper. The invite is already burned.
-		h.Deny()
+		// Wrong key = wrong code or tamper; the invite is already burned. Once
+		// a valid offer is in, a failing box proves nothing about the
+		// enrollee (the route token is not secret), so it must not deny.
+		h.mu.Lock()
+		if h.offer == nil {
+			h.denied = true
+		}
+		h.mu.Unlock()
 		http.Error(w, "rejected", http.StatusGone)
 		return
 	}
@@ -118,6 +127,7 @@ func (h *Handler) handleOffer(w http.ResponseWriter, r *http.Request) {
 	first := h.offer == nil && !h.denied
 	if first {
 		h.offer = plain
+		h.payload, h.offerV2 = unmarkOfferV2(plain)
 	}
 	h.mu.Unlock()
 	if first {
@@ -131,14 +141,25 @@ func (h *Handler) handleResult(w http.ResponseWriter, r *http.Request) {
 	// a single critical section: reading `collected` in one lock and setting
 	// it in a later, separate lock would let two concurrent /result polls
 	// both observe collected==false and both call close(h.collectCh).
+	//
+	// Only a poll that proves the session key counts as collection: anyone
+	// who knows the route token can GET /result, and the sealed grant is
+	// useless to them, but they must not be able to tell the issuer the
+	// enrollee has it. An enrollee that predates the proof never sends one;
+	// its first valid offer lacks the v2 marker, and only then does an
+	// unproven poll still count.
+	proven := h.provesSession(r.Header.Get(resultProofHeader))
 	h.mu.Lock()
 	grant, denied := h.grant, h.denied
 	expired := h.invite.Expired()
-	firstCollect := grant != nil && !h.collected
+	firstCollect := grant != nil && !h.collected && (proven || !h.offerV2)
 	if firstCollect {
 		h.collected = true
 	}
 	h.mu.Unlock()
+	if firstCollect && !proven {
+		slog.Warn("enrollee predates the result proof; counting an unauthenticated /result poll as grant collection")
+	}
 	switch {
 	case denied || expired && grant == nil:
 		http.Error(w, "denied", http.StatusGone)
@@ -153,6 +174,30 @@ func (h *Handler) handleResult(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// provesSession reports whether proof is a box sealed under this exchange's
+// session key carrying resultProofPlaintext.
+func (h *Handler) provesSession(proof string) bool {
+	if proof == "" {
+		return false
+	}
+	h.mu.Lock()
+	sess := h.sess
+	h.mu.Unlock()
+	box, err := base64.StdEncoding.DecodeString(proof)
+	if sess == nil || err != nil {
+		return false
+	}
+	plain, err := sess.Open(box)
+	return err == nil && string(plain) == resultProofPlaintext
+}
+
+// Denied reports whether the exchange has been denied.
+func (h *Handler) Denied() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.denied
+}
+
 // AwaitOffer blocks until the enrollee's decrypted offer payload arrives.
 func (h *Handler) AwaitOffer(ctx context.Context) ([]byte, error) {
 	expire := time.NewTimer(time.Until(h.invite.Expires))
@@ -161,7 +206,7 @@ func (h *Handler) AwaitOffer(ctx context.Context) ([]byte, error) {
 	case <-h.offerCh:
 		h.mu.Lock()
 		defer h.mu.Unlock()
-		return h.offer, nil
+		return h.payload, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-expire.C:
@@ -183,6 +228,9 @@ func (h *Handler) Grant(plaintext []byte) error {
 	defer h.mu.Unlock()
 	if h.sess == nil {
 		return fmt.Errorf("no session")
+	}
+	if h.denied {
+		return fmt.Errorf("enrollment was denied")
 	}
 	box, err := h.sess.Seal(plaintext)
 	if err != nil {

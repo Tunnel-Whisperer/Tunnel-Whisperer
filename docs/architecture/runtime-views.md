@@ -46,13 +46,14 @@ Credentials are stored as:
 
 The cloud-init / install script on the relay:
 
-1. Creates the SSH user with the admin's public key (pinned `from="127.0.0.1"` unless `--ssh-open`) and passwordless sudo
+1. Creates the SSH admin user with the admin's public key (pinned `from="127.0.0.1"` unless `--ssh-open`) and passwordless sudo
 2. Installs Caddy from the official apt repo, Xray via the official install script pinned to `terraform.XrayVersion`
 3. Writes the rendered Xray config (`api-in` on `127.0.0.1:10085`; the admin's own `vless-in-<id>` inbound on `127.0.0.1:<remote-port>+10000` with XHTTP; freedom outbound restricted to loopback via `finalRules`; per-tenant allow/deny routing rules)
 4. Writes the admin's CA public certificate to `/etc/caddy/ca/<server-id>.crt` (base64 in cloud-init)
 5. Writes the rendered Caddyfile — the mutual-TLS gate (`client_auth verify_if_given` against the CA trust pool, TLS 1.3 only) plus a per-tenant `handle` matching `/tw/<server-id>*` and cert `CN=<server-id>`, proxying h2c to the tenant's VLESS inbound, plus a certless `@enroll_<server-id>` handle for `/enroll/<tok>/*`
 6. Locks down SSH to `127.0.0.1` only (`0.0.0.0` with `--ssh-open`), disables password authentication
 7. Configures firewall: deny all incoming, allow 80/tcp + 443/tcp (+ 22/tcp with `--ssh-open`)
+8. Runs the tenant setup (`relaytenant.RenderSync` with no tenants): installs the tenant request handler, its systemd units and the `98-tw-tenants.conf` sshd drop-in (the manual script also installs `python3`)
 
 The Caddyfile, Xray config, and CA certificate are **rendered by tw** at provisioning
 time (`internal/relay/{caddy,xray}` → `internal/ops/relay.go`) and embedded as base64,
@@ -117,15 +118,19 @@ Key properties:
   redeems first burns the invite, so the real operator's join fails
   "already used" — the detectable tell.
 - **Non-disruptive** — existing tenants' tunnels stay up: Caddy reloads gracefully, and the new Xray inbound + routing rules are added live over the gRPC API; the full `config.json` is written only for restart persistence.
-- **Full-rewrite philosophy** — the Caddyfile, relay `authorized_keys`, and relay Xray config are re-rendered from the complete registry on every enroll/un-enroll, so stale or corrupted state self-heals.
+- **Full-rewrite philosophy** — the Caddyfile, the admin account's `authorized_keys`, the tenant accounts, and relay Xray config are re-rendered from the complete registry on every enroll/un-enroll, so stale or corrupted state self-heals. Registry entries are validated again when they are loaded (`ListServers`); an invalid one is skipped and never rendered.
+- **Rollback before the relay is touched** — if enrollment fails before any relay change, the new registry entry is removed again. Once the relay may carry the tenant, the entry stays and the error names the `tw relay un-enroll-server` command that removes it.
 - **Serialized** — enroll and un-enroll take a local file lock (`internal/ops/oplock.go`), so concurrent admin operations cannot interleave.
-- **Tenant confinement** — each server's `authorized_keys` line carries
-  `from="127.0.0.1",restrict,port-forwarding,permitopen=<dead sentinel>` plus
-  **two** `permitlisten` entries: its tunnel port (`remote_port`) and its
-  enroll port (`remote_port + 20000`, `enrollPort()` in `identity.go`) — it
-  can publish exactly these two reverse listeners and nothing else (no shell,
-  no reaching the relay's gRPC API).
-- **Un-enroll** (`tw relay un-enroll-server <id>`) reverses everything *and* severs live state: rewrites `authorized_keys` first (blocks re-auth), removes the tenant's routing rules and inbound via gRPC, kills the sshd session holding its reverse listener, removes its Caddy handle and CA cert, then forgets the registry entry.
+- **Tenant confinement** — each server gets its own relay account
+  (`twt-` followed by 24 hex characters derived from the server-id, returned as `ssh_user` in the
+  grant). Its single `authorized_keys` line carries
+  `from="127.0.0.1",restrict,command="/usr/local/lib/tw/tw-tenant-request",port-forwarding,permitopen=<dead sentinel>`
+  plus **two** `permitlisten` entries: its tunnel port (`remote_port`) and its
+  enroll port (`remote_port + 20000`, `enrollPort()` in `identity.go`). It
+  can publish exactly these two reverse listeners and send add/remove/list
+  UUID requests for its own inbound, nothing else (no shell, no sudo, no
+  reaching the relay's gRPC API).
+- **Un-enroll** (`tw relay un-enroll-server <id>`) reverses everything *and* severs live state: rewrites the admin `authorized_keys` and removes the tenant's account first (kills its processes, blocks re-auth), removes the tenant's routing rules and inbound via gRPC, kills the sshd session holding its reverse listener, removes its Caddy handle and CA cert, then forgets the registry entry.
 - **Two-phase delivery** (`internal/ops/invite.go`) — the grant is handed
   over on the same connection that served the offer where possible, but a
   second Caddy reload landing mid-exchange can kill that connection first;
@@ -174,11 +179,12 @@ There is no other creation path and no bundle file.
 **Relay update mechanism** (`addUUIDToRelay` via `withRelaySSH`):
 
 1. Starts a temporary management Xray instance (dokodemo-door on `server.temp_xray_port+1`, default 59001, falling back to any free loopback port) so it never conflicts with a running `tw server start`
-2. SSHs into the relay through the temporary tunnel using the server's private key (the tunnel presents the server's mTLS client cert)
-3. Reads `/usr/local/etc/xray/config.json` via `sudo cat`
-4. Parses the JSON, adds the new UUID to the clients of this server's own `vless-in-<server-id>` inbound
-5. Writes the updated config via `sudo tee` (persistence across Xray restarts)
-6. Hot-adds the UUID via the Xray gRPC API (`AlterInbound` / `AddUserOperation` on `:10085`); falls back to `systemctl restart xray` if the API call fails
+2. SSHs into the relay through the temporary tunnel as the server's tenant account, using the server's private key (the tunnel presents the server's mTLS client cert)
+3. Sends `add <uuid>` on stdin; the forced `tw-tenant-request` hands it to the root `tw-tenant-handler` over the account's own Unix socket
+4. The handler adds the UUID to the clients of this server's own `vless-in-<server-id>` inbound (never any other; at most 1000 clients) and writes `config.json` (persistence across Xray restarts)
+5. The handler hot-adds the UUID via `xray api adu` and replies `ok ...` or `err <reason>`. It never restarts Xray: if the live apply fails, the saved change takes effect at the next Xray restart and `tw` shows a warning
+
+The UUID must be canonical lowercase; tw refuses anything else before contacting the relay. See [Cross-cutting → Relay Config Updates](cross-cutting.md#relay-config-updates).
 
 **Server-side files** in `<config_dir>/users/<name>/`:
 

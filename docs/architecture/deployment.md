@@ -194,13 +194,12 @@ flowchart TD
 3. Generates an ed25519 SSH key pair (`id_ed25519` / `id_ed25519.pub`), an ed25519 host key (`ssh_host_ed25519_key`), and the per-server CA + mTLS client certificate if missing; seeds `authorized_keys` with the server's own public key
 4. Saves `config.FileHash()` as `cfgHash` for change detection
 5. Starts the **embedded SSH server** on the configured port (default `:2222`)
-    - Dynamic `authorized_keys` -- re-read on every authentication attempt
+    - Dynamic `authorized_keys` -- re-read on every authentication attempt and every `direct-tcpip` channel
     - `permitopen` / `single-session` enforcement per client key
 6. If `xray.relay_host` is set:
     - Generates UUID if missing and saves to config
     - Starts **Xray** in-process (dokodemo-door on `sshPort+1`, or `server.xray_port` -> VLESS/XHTTP/mTLS to relay on `/tw/<server-id>`)
-    - Opens an **SSH reverse tunnel** through Xray to the relay (`-R remote_port:localhost:ssh_port`)
-    - Kicks off a background check that the relay's Xray stats policy is in place (`EnsureRelayStats`)
+    - Opens an **SSH reverse tunnel** through Xray to the relay (`-R remote_port:localhost:ssh_port`) as the server's tenant account; if the stored relay user is rejected, it retries once as `twt-<hash of server-id>` and saves that user
 7. Starts the **gRPC API server** on the configured port (default `:50051`)
 
 ## What `tw client connect` Starts

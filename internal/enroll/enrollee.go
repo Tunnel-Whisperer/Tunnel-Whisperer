@@ -67,6 +67,9 @@ func RunEnrollee(ctx context.Context, httpc *http.Client, baseURL, code, tok str
 	if err != nil {
 		return role, nil, err
 	}
+	if offer, err = markOfferV2(offer); err != nil {
+		return role, nil, err
+	}
 	offerBox, err := sess.Seal(offer)
 	if err != nil {
 		return role, nil, err
@@ -77,8 +80,13 @@ func RunEnrollee(ctx context.Context, httpc *http.Client, baseURL, code, tok str
 	}
 	cb.ShowSAS(sess.SAS(offer))
 
+	proofBox, err := sess.Seal([]byte(resultProofPlaintext))
+	if err != nil {
+		return role, nil, err
+	}
+	proof := base64.StdEncoding.EncodeToString(proofBox)
 	for {
-		grant, done, err := pollResult(ctx, httpc, baseURL+"/result")
+		grant, done, err := pollResult(ctx, httpc, baseURL+"/result", proof)
 		if err != nil {
 			return role, nil, err
 		}
@@ -124,11 +132,12 @@ func postJSON(ctx context.Context, httpc *http.Client, url string, body []byte, 
 // pollResult returns (grantBox, true, nil) when granted, (nil, false, nil) to
 // keep polling — including on transient transport errors — and a terminal
 // error on denial.
-func pollResult(ctx context.Context, httpc *http.Client, url string) ([]byte, bool, error) {
+func pollResult(ctx context.Context, httpc *http.Client, url, proof string) ([]byte, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, false, err
 	}
+	req.Header.Set(resultProofHeader, proof)
 	resp, err := httpc.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {

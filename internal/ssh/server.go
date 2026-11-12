@@ -32,6 +32,11 @@ const (
 	// blunting a connection flood. Legitimate handshakes are brief, so this is
 	// far above real concurrency; the slot is released as soon as auth settles.
 	maxConcurrentHandshakes = 64
+
+	// pubkeyFingerprintExt records the authenticated key's SHA256 fingerprint
+	// in gossh.Permissions so each direct-tcpip channel can be re-authorized
+	// against the current authorized_keys instead of the handshake snapshot.
+	pubkeyFingerprintExt = "pubkey-fp"
 )
 
 // Server is an embedded SSH server used for relay-to-server connectivity.
@@ -47,7 +52,8 @@ type Server struct {
 	handshakeSem   chan struct{} // bounds concurrent pre-auth handshakes
 
 	connMu       sync.Mutex
-	connectedMap map[string]int // tw_user → active session count
+	connectedMap map[string]int                            // tw_user → active session count
+	liveConns    map[string]map[*gossh.ServerConn]struct{} // tw_user → open connections
 }
 
 func NewServer(port int, hostKeyDir, authorizedKeys string) (*Server, error) {
@@ -57,6 +63,7 @@ func NewServer(port int, hostKeyDir, authorizedKeys string) (*Server, error) {
 		AuthorizedKeys: authorizedKeys,
 		config:         &gossh.ServerConfig{},
 		connectedMap:   make(map[string]int),
+		liveConns:      make(map[string]map[*gossh.ServerConn]struct{}),
 		handshakeSem:   make(chan struct{}, maxConcurrentHandshakes),
 	}
 
@@ -92,12 +99,45 @@ func (s *Server) loadAuthorizedKeys() error {
 // given public key is allowed. It also parses permitopen options for
 // port forwarding restrictions.
 func (s *Server) checkAuthorizedKey(conn gossh.ConnMetadata, key gossh.PublicKey) (*gossh.Permissions, error) {
+	perms, err := s.lookupAuthorizedKey(gossh.FingerprintSHA256(key))
+	if err != nil {
+		return nil, err
+	}
+	if perms == nil {
+		return nil, fmt.Errorf("unknown public key for %q", conn.User())
+	}
+
+	twUser := perms.Extensions["tw_user"]
+	slog.Info("client authenticated", "user", twUser, "ssh_user", conn.User(), "remote", conn.RemoteAddr().String())
+
+	// Fast-path reject if the user already has an active session. This is a
+	// best-effort early check; the AUTHORITATIVE, race-free enforcement is
+	// the atomic check-and-increment under connMu in handleConnection
+	// (finding #8 — the count is only incremented after the handshake, so a
+	// check here alone is a TOCTOU).
+	if perms.Extensions["single-session"] == "1" {
+		s.connMu.Lock()
+		count := s.connectedMap[twUser]
+		s.connMu.Unlock()
+		if count > 0 {
+			slog.Warn("single-session: rejecting duplicate connection", "tw_user", twUser)
+			return nil, fmt.Errorf("user %q already has an active session (single-session enabled)", twUser)
+		}
+	}
+
+	return perms, nil
+}
+
+// lookupAuthorizedKey reads the current authorized_keys file and returns the
+// permissions of the first entry whose key has the given SHA256 fingerprint,
+// or nil if no entry matches. The fingerprint is recorded in the returned
+// permissions so later per-channel checks can re-resolve the same entry.
+func (s *Server) lookupAuthorizedKey(fingerprint string) (*gossh.Permissions, error) {
 	data, err := os.ReadFile(s.AuthorizedKeys)
 	if err != nil {
 		return nil, fmt.Errorf("reading authorized_keys: %w", err)
 	}
 
-	keyBytes := key.Marshal()
 	rest := data
 	for len(rest) > 0 {
 		pub, comment, options, r, parseErr := gossh.ParseAuthorizedKey(rest)
@@ -106,17 +146,15 @@ func (s *Server) checkAuthorizedKey(conn gossh.ConnMetadata, key gossh.PublicKey
 		}
 		rest = r
 
-		if string(pub.Marshal()) != string(keyBytes) {
+		if gossh.FingerprintSHA256(pub) != fingerprint {
 			continue
 		}
 
 		// Extract TW username from comment (format: "username@tw").
 		twUser := strings.TrimSuffix(comment, "@tw")
 
-		slog.Info("client authenticated", "user", twUser, "ssh_user", conn.User(), "remote", conn.RemoteAddr().String())
-
 		perms := &gossh.Permissions{
-			Extensions: map[string]string{},
+			Extensions: map[string]string{pubkeyFingerprintExt: fingerprint},
 		}
 
 		if twUser != "" {
@@ -145,25 +183,10 @@ func (s *Server) checkAuthorizedKey(conn gossh.ConnMetadata, key gossh.PublicKey
 			perms.Extensions["single-session"] = "1"
 		}
 
-		// Fast-path reject if the user already has an active session. This is a
-		// best-effort early check; the AUTHORITATIVE, race-free enforcement is
-		// the atomic check-and-increment under connMu in handleConnection
-		// (finding #8 — the count is only incremented after the handshake, so a
-		// check here alone is a TOCTOU).
-		if singleSession && twUser != "" {
-			s.connMu.Lock()
-			count := s.connectedMap[twUser]
-			s.connMu.Unlock()
-			if count > 0 {
-				slog.Warn("single-session: rejecting duplicate connection", "tw_user", twUser)
-				return nil, fmt.Errorf("user %q already has an active session (single-session enabled)", twUser)
-			}
-		}
-
 		return perms, nil
 	}
 
-	return nil, fmt.Errorf("unknown public key for %q", conn.User())
+	return nil, nil
 }
 
 func (s *Server) loadOrGenerateHostKey() error {
@@ -317,12 +340,20 @@ func (s *Server) handleConnection(conn net.Conn) {
 		}
 		s.connectedMap[twUser]++
 		count := s.connectedMap[twUser]
+		if s.liveConns[twUser] == nil {
+			s.liveConns[twUser] = make(map[*gossh.ServerConn]struct{})
+		}
+		s.liveConns[twUser][sshConn] = struct{}{}
 		s.connMu.Unlock()
 		slog.Debug("session tracked", "user", twUser, "sessions", count, "remote", sshConn.RemoteAddr().String())
 		defer func() {
 			s.connMu.Lock()
 			s.connectedMap[twUser]--
 			remaining := s.connectedMap[twUser]
+			delete(s.liveConns[twUser], sshConn)
+			if len(s.liveConns[twUser]) == 0 {
+				delete(s.liveConns, twUser)
+			}
 			if remaining <= 0 {
 				delete(s.connectedMap, twUser)
 				remaining = 0
@@ -427,6 +458,14 @@ func (s *Server) handleDirectTCPIP(newChan gossh.NewChannel, perms *gossh.Permis
 		newChan.Reject(gossh.Prohibited, "port forwarding to this destination is not permitted")
 		return
 	}
+	// Re-authorize against the current authorized_keys: a key removed or
+	// narrowed since the handshake must not keep opening channels on an
+	// established connection (the revoking process may not own this server).
+	if err := s.recheckPermitOpen(perms, d.DestHost, d.DestPort); err != nil {
+		slog.Warn("direct-tcpip denied, authorization revoked", "origin", fmt.Sprintf("%s:%d", d.OriginHost, d.OriginPort), "dest", dest, "error", err)
+		newChan.Reject(gossh.Prohibited, "port forwarding to this destination is no longer permitted")
+		return
+	}
 
 	slog.Debug("direct-tcpip forwarding", "origin", fmt.Sprintf("%s:%d", d.OriginHost, d.OriginPort), "dest", dest)
 
@@ -508,6 +547,52 @@ func isPortAllowed(perms *gossh.Permissions, host string, port uint32) bool {
 		}
 	}
 	return false
+}
+
+// recheckPermitOpen resolves the connection's key in the current
+// authorized_keys and returns an error unless that entry still exists, still
+// belongs to the same tw_user, and still permits host:port.
+func (s *Server) recheckPermitOpen(perms *gossh.Permissions, host string, port uint32) error {
+	fp := perms.Extensions[pubkeyFingerprintExt]
+	if fp == "" {
+		return fmt.Errorf("connection has no recorded key fingerprint")
+	}
+	cur, err := s.lookupAuthorizedKey(fp)
+	if err != nil {
+		return err
+	}
+	if cur == nil {
+		return fmt.Errorf("key %s is no longer in authorized_keys", fp)
+	}
+	if cur.Extensions["tw_user"] != perms.Extensions["tw_user"] {
+		return fmt.Errorf("key %s now belongs to a different user", fp)
+	}
+	if !isPortAllowed(cur, host, port) {
+		return fmt.Errorf("key %s no longer permits %s", fp, net.JoinHostPort(host, fmt.Sprintf("%d", port)))
+	}
+	return nil
+}
+
+// DisconnectUser closes every established SSH connection authenticated as
+// twUser and returns how many were closed. Used when a user is deleted, since
+// removing the authorized_keys line only blocks future handshakes.
+func (s *Server) DisconnectUser(twUser string) int {
+	s.connMu.Lock()
+	conns := make([]*gossh.ServerConn, 0, len(s.liveConns[twUser]))
+	for c := range s.liveConns[twUser] {
+		conns = append(conns, c)
+	}
+	s.connMu.Unlock()
+
+	for _, c := range conns {
+		if err := c.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			slog.Warn("closing SSH connection for disconnected user", "tw_user", twUser, "error", err)
+		}
+	}
+	if len(conns) > 0 {
+		slog.Info("disconnected user sessions", "tw_user", twUser, "sessions", len(conns))
+	}
+	return len(conns)
 }
 
 // ConnectedUsers returns a snapshot of tw_user → active session count.

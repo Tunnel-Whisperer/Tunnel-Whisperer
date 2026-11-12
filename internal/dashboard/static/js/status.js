@@ -12,12 +12,12 @@ async function serverStart() {
     const { session_id } = await api.post('/api/server/start', {});
     connectSSE(session_id, (ev) => renderProgressEvent(log, ev), (err) => {
       if (err) {
-        log.innerHTML += `<div class="progress-step failed"><span class="step-label">${err.message}</span></div>`;
+        appendFailedStep(log, err.message);
       }
       setTimeout(() => window.location.reload(), 1000);
     });
   } catch (e) {
-    log.innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+    showAlert(log, e.message);
     if (btn) btn.disabled = false;
   }
 }
@@ -36,7 +36,7 @@ async function serverStop() {
       setTimeout(() => window.location.reload(), 1000);
     });
   } catch (e) {
-    log.innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+    showAlert(log, e.message);
     if (btn) btn.disabled = false;
   }
 }
@@ -53,12 +53,12 @@ async function serverRestart() {
     const { session_id } = await api.post('/api/server/restart', {});
     connectSSE(session_id, (ev) => renderProgressEvent(log, ev), (err) => {
       if (err) {
-        log.innerHTML += `<div class="progress-step failed"><span class="step-label">${err.message}</span></div>`;
+        appendFailedStep(log, err.message);
       }
       setTimeout(() => window.location.reload(), 1000);
     });
   } catch (e) {
-    log.innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+    showAlert(log, e.message);
     if (btn) btn.disabled = false;
   }
 }
@@ -77,12 +77,12 @@ async function clientStart() {
     const { session_id } = await api.post('/api/client/start', {});
     connectSSE(session_id, (ev) => renderProgressEvent(log, ev), (err) => {
       if (err) {
-        log.innerHTML += `<div class="progress-step failed"><span class="step-label">${err.message}</span></div>`;
+        appendFailedStep(log, err.message);
       }
       setTimeout(() => window.location.reload(), 1000);
     });
   } catch (e) {
-    log.innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+    showAlert(log, e.message);
     if (btn) btn.disabled = false;
   }
 }
@@ -101,7 +101,7 @@ async function clientStop() {
       setTimeout(() => window.location.reload(), 1000);
     });
   } catch (e) {
-    log.innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+    showAlert(log, e.message);
     if (btn) btn.disabled = false;
   }
 }
@@ -118,12 +118,12 @@ async function clientReconnect() {
     const { session_id } = await api.post('/api/client/reconnect', {});
     connectSSE(session_id, (ev) => renderProgressEvent(log, ev), (err) => {
       if (err) {
-        log.innerHTML += `<div class="progress-step failed"><span class="step-label">${err.message}</span></div>`;
+        appendFailedStep(log, err.message);
       }
       setTimeout(() => window.location.reload(), 1000);
     });
   } catch (e) {
-    log.innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+    showAlert(log, e.message);
     if (btn) btn.disabled = false;
   }
 }
@@ -269,12 +269,10 @@ async function clientReconnect() {
   const source = new EventSource('/api/logs');
   source.onmessage = (e) => {
     const entry = JSON.parse(e.data);
-    const line = document.createElement('div');
-    line.className = 'log-line';
-    line.innerHTML =
-      `<span class="log-time">${entry.time}</span>` +
-      `<span class="log-level log-level-${entry.level}">${entry.level}</span>` +
-      `<span class="log-msg">${escapeHtml(entry.msg)}</span>`;
+    const line = makeEl('div', 'log-line');
+    const level = makeEl('span', 'log-level', entry.level);
+    level.classList.add(`log-level-${String(entry.level).replace(/[^a-zA-Z]/g, '')}`);
+    line.append(makeEl('span', 'log-time', entry.time), level, makeEl('span', 'log-msg', entry.msg));
     el.appendChild(line);
     el.scrollTop = el.scrollHeight;
   };
@@ -286,12 +284,6 @@ async function clientReconnect() {
 function clearConsole() {
   const el = $('#console-log');
   if (el) el.innerHTML = '';
-}
-
-function escapeHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
 }
 
 function copyText(text, el) {
@@ -397,19 +389,16 @@ function copyText(text, el) {
     let totalActive = 0;
     users.forEach(u => { totalActive += u.active; });
 
-    let html = '';
-    top.forEach(u => {
-      const total = formatBytes(u.bytes_sent + u.bytes_recv);
-      const activeBadge = u.active > 0
-        ? '<span class="badge badge-green">' + u.active + ' active</span>'
-        : '';
-      html += '<div class="user-row">' +
-        '<a href="/users/' + u.user + '">' + u.user + '</a>' +
-        '<span>' + activeBadge +
-        ' <span class="text-dim text-mono">' + total + '</span></span>' +
-        '</div>';
-    });
-    list.innerHTML = html;
+    list.replaceChildren(...top.map(u => {
+      const row = makeEl('div', 'user-row');
+      const link = makeEl('a', '', u.user);
+      link.href = '/users/' + encodeURIComponent(u.user);
+      const right = document.createElement('span');
+      if (u.active > 0) right.appendChild(makeEl('span', 'badge badge-green', u.active + ' active'));
+      right.append(' ', makeEl('span', 'text-dim text-mono', formatBytes(u.bytes_sent + u.bytes_recv)));
+      row.append(link, right);
+      return row;
+    }));
     return totalActive;
   }
 
@@ -418,19 +407,17 @@ function copyText(text, el) {
     snaps.sort((a, b) => (b.bytes_sent + b.bytes_recv) - (a.bytes_sent + a.bytes_recv));
 
     let totalActive = 0;
-    let html = '<div class="kv">';
+    const kv = makeEl('div', 'kv');
     snaps.forEach(s => {
       totalActive += s.active_connections;
-      const sent = formatBytes(s.bytes_sent);
-      const recv = formatBytes(s.bytes_recv);
-      const activeBadge = s.active_connections > 0
-        ? ' <span class="badge badge-green">' + s.active_connections + '</span>'
-        : '';
-      html += '<span class="kv-label">:' + s.port + activeBadge + '</span>' +
-        '<span class="kv-value text-mono">' + sent + ' / ' + recv + '</span>';
+      const label = makeEl('span', 'kv-label', ':' + s.port);
+      if (s.active_connections > 0) {
+        label.append(' ', makeEl('span', 'badge badge-green', s.active_connections));
+      }
+      kv.append(label,
+        makeEl('span', 'kv-value text-mono', formatBytes(s.bytes_sent) + ' / ' + formatBytes(s.bytes_recv)));
     });
-    html += '</div>';
-    list.innerHTML = html;
+    list.replaceChildren(kv);
     return totalActive;
   }
 
@@ -467,26 +454,29 @@ function copyText(text, el) {
 
 /* ── Tunnel local-port overrides (client mode) ─────────────────────── */
 
-function tunnelNotice(html, isError) {
+function tunnelNotice(text, isError) {
   const box = $('#tunnel-override-notice');
-  if (!box) return;
+  if (!box) return null;
   box.classList.remove('hidden');
-  box.innerHTML = `<div class="alert${isError ? ' alert-error' : ''}">${html}</div>`;
+  showAlert(box, text, isError);
+  return box.firstElementChild;
 }
 
 async function submitTunnelOverride(body, okMessage) {
   try {
     await api.post('/api/client/port-override', body);
-    tunnelNotice(`${okMessage} — takes effect on next reconnect. ` +
-      `<a href="#" id="tunnel-reconnect-now">Reconnect now</a>`, false);
+    const alertEl = tunnelNotice(`${okMessage} — takes effect on next reconnect. `, false);
     const reloadTimer = setTimeout(() => window.location.reload(), 1500);
-    const reconnectLink = $('#tunnel-reconnect-now');
-    if (reconnectLink) {
-      reconnectLink.onclick = (ev) => {
+    if (alertEl) {
+      const reconnectLink = makeEl('a', '', 'Reconnect now');
+      reconnectLink.href = '#';
+      reconnectLink.id = 'tunnel-reconnect-now';
+      reconnectLink.addEventListener('click', (ev) => {
         ev.preventDefault();
         clearTimeout(reloadTimer);
         clientReconnect();
-      };
+      });
+      alertEl.appendChild(reconnectLink);
     }
   } catch (e) {
     let msg = e.message;
@@ -505,11 +495,17 @@ function editTunnelPort(serverPort) {
   const current = label.textContent.replace('localhost:', '');
   label.classList.add('hidden');
   const editor = document.createElement('span');
-  editor.innerHTML =
-    `<input type="number" min="1" max="65535" value="${current}" class="input-inline" style="width:7em">` +
-    ` <a href="#" class="tunnel-action">save</a> <a href="#" class="tunnel-action">cancel</a>`;
-  const [saveLink, cancelLink] = editor.querySelectorAll('a');
-  const input = editor.querySelector('input');
+  const input = makeEl('input', 'input-inline');
+  input.type = 'number';
+  input.min = '1';
+  input.max = '65535';
+  input.value = current;
+  input.style.width = '7em';
+  const saveLink = makeEl('a', 'tunnel-action', 'save');
+  saveLink.href = '#';
+  const cancelLink = makeEl('a', 'tunnel-action', 'cancel');
+  cancelLink.href = '#';
+  editor.append(input, ' ', saveLink, ' ', cancelLink);
   saveLink.onclick = (ev) => {
     ev.preventDefault();
     const port = parseInt(input.value, 10);

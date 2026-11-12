@@ -51,6 +51,32 @@ Deleting a context also removes its Terraform provider cache (`cache/terraform/<
 sudo tw join relay2.example.com <code> --name relay2
 ```
 
+### Context names
+
+A context name is used as a file name (`contexts/<name>.twctx`), so it must
+be a single path component: not empty, not `.` or `..`, and without `/`,
+`\` or NUL. `new-context`, `rename-context`, `use-context`, `export`,
+`import --name` and `tw join --name` all refuse anything else with `invalid
+context name "<name>": must be a single path component without / or \`.
+Derived default names are always valid. For a client join, the name derived
+from the issuer-supplied username is sanitized first, so an invite cannot
+pick a path.
+
+Older versions could store such a name in the index (e.g. from a username
+like `evil/../relay-admin`). Switching away from it then fails with `the
+current context cannot be saved`. Remove the entry with:
+
+```bash
+tw config delete-context '<invalid-name>'
+```
+
+For an invalid name this only drops the index entry. It never deletes a
+file and never runs the full reset, even for the last context. If it was the
+current context, the live profile stays in place, and the next command
+adopts it under a fresh valid name (the default derived name, with `-2`,
+`-3`, … appended if that is taken). Check the result with `tw config
+get-contexts` and rename it if you like.
+
 ## One Person, All Roles
 
 Running relay admin and server (or client) as one person on one machine is a
@@ -109,6 +135,38 @@ tw config import <bundle.twctx> --force         # replace an existing same-name 
 
 If a context of the same name already exists, `tw` asks before replacing it. Declining keeps the existing context but the command exits non-zero, so a script can tell nothing was imported; when stdin is closed (a non-interactive caller) the collision is an error outright — pass `--force` to replace without asking. Re-importing a bundle for the **active** context refreshes the live profile in place.
 
+### What activating a bundle does
+
+Activating a context (`use-context`, `import --activate`, the reapply after
+re-importing the active context, or `tw join` on a fresh machine) unseals its
+bundle into the config dir:
+
+- **The bundle replaces the live profile.** The profile is the flat files
+  `config.yaml`, `ca.crt`, `ca.key`, `client.crt`, `client.key`,
+  `id_ed25519(.pub)` and `relay_host_ed25519(.pub)`, plus the `relay/`,
+  `users/` and `servers/` directories. Afterwards it holds exactly what the
+  bundle carries. A file the bundle does not contain is removed, so nothing
+  from one context leaks into the next (for example a `servers/<id>.json`
+  that would otherwise be resealed into the context you switch back to).
+- **Only profile entries are accepted.** A bundle that contains anything
+  else (e.g. `authorized_keys`, `ssh_host_ed25519_key`, `api.token`,
+  `dashboard.token`, the contexts store or a path outside the config dir) is
+  rejected with `profile bundle contains unexpected entry "<name>"`, before
+  anything is written. Terraform cache entries in bundles sealed by older
+  versions are skipped silently.
+- **Restrictive modes.** Directories are created `0700`. Files are written
+  `0600`, except `*.crt` and `*.pub` outside `relay/`, which are `0644`.
+  Everything under `relay/` (cloud-init with the relay host key,
+  `terraform.tfvars` with the cloud API token, the Terraform state) is
+  `0600`, and existing directories are tightened as well.
+- **All or nothing.** The new profile is staged first. If moving it into
+  place fails partway, the moves already done are rolled back.
+
+The relay registry (`servers/`) inside a bundle is checked again when it is
+read: an entry that fails the [join-request checks](../server/join-relay.md#security)
+is skipped with an error in the log and never rendered onto the relay. `tw
+relay un-enroll-server <id>` still removes it.
+
 ### Default context names
 
 When `--name` is omitted, the name is derived from the bundle:
@@ -119,7 +177,9 @@ When `--name` is omitted, the name is derived from the bundle:
 | relay | `relay-<first label of domain>` (e.g. `relay-example`) |
 | server | the relay domain (sanitized) |
 
-Names are sanitized to lowercase alphanumerics and dashes.
+Derived names are sanitized to lowercase alphanumerics and dashes. A name
+given with `--name` is used as is, but must be a valid
+[context name](#context-names).
 
 ## Issuing Client Identities: `tw server user invite`
 

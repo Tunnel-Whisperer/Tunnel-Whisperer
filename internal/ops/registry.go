@@ -3,6 +3,7 @@ package ops
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -27,7 +28,13 @@ type RegisteredServer struct {
 // RegistryDir holds one JSON file per enrolled server.
 func RegistryDir() string { return filepath.Join(config.Dir(), "servers") }
 
-// ListServers reads all registered servers.
+// ListServers reads all registered servers. Every entry is validated as
+// DecodeJoinRequest validates a join request, because the registry is part of
+// the profile and can arrive in an imported bundle: an invalid entry is
+// skipped (logged), so it is never rendered into the relay's authorized_keys,
+// Xray config or Caddy trust pool. Skipping rather than failing keeps enroll
+// and un-enroll working — LookupServer still finds the bad entry, so
+// `tw relay un-enroll-server <id>` can remove it.
 func (o *Ops) ListServers() ([]RegisteredServer, error) {
 	entries, err := os.ReadDir(RegistryDir())
 	if os.IsNotExist(err) {
@@ -41,16 +48,65 @@ func (o *Ops) ListServers() ([]RegisteredServer, error) {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(RegistryDir(), e.Name()))
+		p := filepath.Join(RegistryDir(), e.Name())
+		data, err := os.ReadFile(p)
 		if err != nil {
 			return nil, err
 		}
 		var s RegisteredServer
-		if json.Unmarshal(data, &s) == nil {
-			out = append(out, s)
+		if json.Unmarshal(data, &s) != nil {
+			continue
 		}
+		if err := validateRegisteredServer(&s, e.Name()); err != nil {
+			slog.Error("skipping invalid registry entry; remove it with `tw relay un-enroll-server`",
+				"file", p, "server_id", s.ServerID, "error", err)
+			continue
+		}
+		out = append(out, s)
 	}
 	return out, nil
+}
+
+// validateRegisteredServer checks a registry entry loaded from fileName and
+// canonicalizes its CA PEM and ssh key in place.
+func validateRegisteredServer(s *RegisteredServer, fileName string) error {
+	ca, key, err := validateServerIdentity(s.ServerID, s.UUID, s.CACertPEM, s.SSHPubkey)
+	if err != nil {
+		return err
+	}
+	if fileName != s.ServerID+".json" {
+		return fmt.Errorf("file name %q does not match server_id %q", fileName, s.ServerID)
+	}
+	if s.RemotePort < 1 || s.RemotePort > 65535 {
+		return fmt.Errorf("remote_port %d out of range", s.RemotePort)
+	}
+	s.CACertPEM, s.SSHPubkey = ca, key
+	return nil
+}
+
+// LookupServer returns the registry entry for serverID, or nil if there is
+// none. Unlike ListServers it also returns an entry that fails validation, so
+// un-enroll can remove it.
+func (o *Ops) LookupServer(serverID string) (*RegisteredServer, error) {
+	if !joinServerIDRe.MatchString(serverID) || len(serverID) > maxServerIDLen {
+		return nil, nil
+	}
+	data, err := os.ReadFile(filepath.Join(RegistryDir(), serverID+".json"))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading registry entry %s: %w", serverID, err)
+	}
+	var s RegisteredServer
+	if err := json.Unmarshal(data, &s); err != nil {
+		slog.Warn("registry entry is not valid JSON", "server_id", serverID, "error", err)
+		s = RegisteredServer{}
+	} else if err := validateRegisteredServer(&s, serverID+".json"); err != nil {
+		slog.Warn("registry entry is invalid", "server_id", serverID, "error", err)
+	}
+	s.ServerID = serverID
+	return &s, nil
 }
 
 // AddServer registers a joining server, allocating a unique RemotePort.
@@ -80,15 +136,16 @@ func (o *Ops) AddServer(req *JoinRequest) (RegisteredServer, error) {
 	if err != nil {
 		return RegisteredServer{}, err
 	}
-	// Store only the canonical single-line key, so a poisoned key can never
-	// reach renderRelayAuthorizedKeys through the registry.
-	pubKey, err := canonicalAuthorizedKey(req.SSHPubkey)
+	// Store only what ListServers accepts back (canonical single-line key,
+	// single canonical CA PEM), so a poisoned identity can never reach the
+	// relay renders through the registry.
+	caPEM, pubKey, err := validateServerIdentity(req.ServerID, req.UUID, req.CACertPEM, req.SSHPubkey)
 	if err != nil {
-		return RegisteredServer{}, fmt.Errorf("server %q has an invalid ssh_pubkey: %w", req.ServerID, err)
+		return RegisteredServer{}, fmt.Errorf("server %q: %w", req.ServerID, err)
 	}
 	s := RegisteredServer{
 		ServerID: req.ServerID, UUID: req.UUID, Hostname: req.Hostname,
-		RemotePort: port, CACertPEM: req.CACertPEM, SSHPubkey: pubKey,
+		RemotePort: port, CACertPEM: caPEM, SSHPubkey: pubKey,
 		EnrolledAt: time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := os.MkdirAll(RegistryDir(), 0o755); err != nil {

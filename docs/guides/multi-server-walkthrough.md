@@ -86,7 +86,7 @@ Both terminals now show a short authentication string (SAS). Read yours aloud to
 
 ```bash
 tw server start          # foreground; use `sudo tw service install && sudo tw service start` to run on boot
-tw server test           # expect "tunnel and shell working"
+tw server test           # expect "tunnel and tenant request channel working"
 ```
 
 ## Step 3 — Enroll server2

@@ -1,0 +1,45 @@
+# Installed by tw (tw relay sync-tenants); do not edit.
+# Spawned by tw-tenant@<account>.socket for each connection (Accept=yes, so
+# this template must carry the socket's name). Runs as root because it edits
+# /usr/local/etc/xray/config.json; the sandbox below leaves it write access to
+# that directory only, loopback for the Xray API, and two capabilities:
+# CAP_CHOWN to give the rewritten config.json its previous owner, and
+# CAP_DAC_OVERRIDE to read and replace it should the admin have made it or
+# its directory owned by another account. Everything else it does (peer
+# credentials, the root-owned mapping and lock files, flock, running
+# `xray api` against 127.0.0.1) needs no capability.
+[Unit]
+Description=Tunnel Whisperer tenant request handler
+
+[Service]
+ExecStart=/usr/bin/python3 -I /usr/local/lib/tw/tw-tenant-handler
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+RuntimeMaxSec=60
+TasksMax=32
+MemoryMax=256M
+UMask=0077
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/usr/local/etc/xray
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectProc=invisible
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service

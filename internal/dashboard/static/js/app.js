@@ -77,7 +77,11 @@ function renderProgressEvent(container, event) {
       el = document.createElement('div');
       el.className = 'progress-step';
       el.dataset.step = event.step;
-      el.innerHTML = `<span class="step-num">[${event.step}/${event.total}]</span><span class="step-label"></span><span class="step-msg"></span>`;
+      el.append(
+        makeEl('span', 'step-num', `[${event.step}/${event.total}]`),
+        makeEl('span', 'step-label'),
+        makeEl('span', 'step-msg'),
+      );
       container.appendChild(el);
     }
     el.className = `progress-step ${event.status}`;
@@ -93,6 +97,40 @@ function renderProgressEvent(container, event) {
 
   // Auto-scroll.
   container.scrollTop = container.scrollHeight;
+}
+
+// ── Safe DOM builders ───────────────────────────────────────────────────────
+// Server, error, and user-derived strings must only reach the DOM as text.
+
+function makeEl(tag, className, text) {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (text !== undefined && text !== null) el.textContent = String(text);
+  return el;
+}
+
+function appendFailedStep(container, text) {
+  const step = makeEl('div', 'progress-step failed');
+  step.appendChild(makeEl('span', 'step-label', text));
+  container.appendChild(step);
+}
+
+function showAlert(container, text, isError = true) {
+  container.replaceChildren(makeEl('div', isError ? 'alert alert-error' : 'alert', text));
+}
+
+function renderPager(el, currentPage, totalPages, goTo) {
+  const btn = (label, page, disabled, active) => {
+    const b = makeEl('button', 'btn btn-sm' + (active ? ' active' : ''), label);
+    b.disabled = disabled;
+    b.addEventListener('click', () => goTo(page));
+    return b;
+  };
+  el.replaceChildren(btn('« Prev', currentPage - 1, currentPage <= 1, false));
+  for (let i = 1; i <= totalPages; i++) {
+    el.appendChild(btn(String(i), i, false, i === currentPage));
+  }
+  el.appendChild(btn('Next »', currentPage + 1, currentPage >= totalPages, false));
 }
 
 // ── Utility ─────────────────────────────────────────────────────────────────

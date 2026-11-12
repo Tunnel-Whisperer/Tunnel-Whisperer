@@ -77,7 +77,7 @@ func (o *Ops) ListContexts() ([]ContextInfo, error) {
 				idx.Contexts[name] = m
 				dirty = true
 			}
-			if id == "" {
+			if id == "" && config.ValidateContextName(name) == nil {
 				// Backfill entries written before user/id existed by reading the
 				// stored bundle once (bundles carry no passphrase).
 				if bundle, rerr := os.ReadFile(config.ContextBundlePath(name)); rerr == nil {
@@ -129,6 +129,12 @@ func (o *Ops) RenameContext(oldName, newName string) error {
 	if err != nil {
 		return err
 	}
+	if err := config.ValidateContextName(oldName); err != nil {
+		return err
+	}
+	if err := config.ValidateContextName(newName); err != nil {
+		return err
+	}
 	meta := idx.Contexts[oldName]
 	if _, exists := idx.Contexts[newName]; exists {
 		return fmt.Errorf("context already exists: %s", newName)
@@ -158,6 +164,17 @@ func (o *Ops) DeleteContext(name string) error {
 	name, err = resolveContextName(name, idx.Contexts)
 	if err != nil {
 		return err
+	}
+	if config.ValidateContextName(name) != nil {
+		// An unsafe name stored by an older version: drop the index entry
+		// only — its name must never be joined into a path. If it was the
+		// current context, the live profile stays in place and the next
+		// EnsureContextIndex adopts it under a fresh valid name.
+		delete(idx.Contexts, name)
+		if idx.CurrentContext == name {
+			idx.CurrentContext = ""
+		}
+		return config.SaveContextIndex(idx)
 	}
 	if idx.CurrentContext == name {
 		if len(idx.Contexts) > 1 {
@@ -217,6 +234,9 @@ func (o *Ops) ImportContext(bundle []byte, name string, replace bool) (string, e
 			name = "tw"
 		}
 	}
+	if err := config.ValidateContextName(name); err != nil {
+		return "", err
+	}
 	if _, exists := idx.Contexts[name]; exists && !replace {
 		return name, fmt.Errorf("%w: %s", ErrContextExists, name)
 	}
@@ -251,6 +271,9 @@ func (o *Ops) ExportContext(name string) ([]byte, error) {
 	}
 	name, err = resolveContextName(name, idx.Contexts)
 	if err != nil {
+		return nil, err
+	}
+	if err := config.ValidateContextName(name); err != nil {
 		return nil, err
 	}
 	data, err := os.ReadFile(config.ContextBundlePath(name))
@@ -327,6 +350,9 @@ func (o *Ops) UseContext(name string, progress ProgressFunc) error {
 	if name == idx.CurrentContext {
 		return nil // already active
 	}
+	if err := config.ValidateContextName(name); err != nil {
+		return err
+	}
 	// Capture the departing context's metadata (from its live config) before we
 	// unseal the target over it, so the index stays in sync.
 	oldCur := idx.CurrentContext
@@ -397,6 +423,9 @@ func (o *Ops) ReapplyContext(name string, progress ProgressFunc) error {
 	if progress == nil {
 		progress = func(ProgressEvent) {}
 	}
+	if err := config.ValidateContextName(name); err != nil {
+		return err
+	}
 	bundle, err := os.ReadFile(config.ContextBundlePath(name))
 	if err != nil {
 		return fmt.Errorf("reading context %q: %w", name, err)
@@ -428,6 +457,9 @@ func (o *Ops) ReapplyContext(name string, progress ProgressFunc) error {
 // changed since it was sealed. Bundles carry no passphrase, so this always
 // succeeds — there is nothing to prompt for.
 func (o *Ops) resealCurrent(cur string) error {
+	if err := config.ValidateContextName(cur); err != nil {
+		return fmt.Errorf("the current context cannot be saved: %w; run `tw config delete-context %q` to drop it from the index (the live profile is kept and adopted under a valid name), then retry", err, cur)
+	}
 	existing, readErr := os.ReadFile(config.ContextBundlePath(cur))
 	if readErr != nil {
 		// No existing snapshot.
@@ -456,6 +488,9 @@ func liveProfileEmpty() bool {
 // EMPTY context and switches to it. The new context is unconfigured — the caller
 // sets it up next (e.g. `tw join <relay-host> <code>`). Bundles carry no passphrase.
 func (o *Ops) NewContext(name string) error {
+	if err := config.ValidateContextName(name); err != nil {
+		return err
+	}
 	idx, err := config.EnsureContextIndex()
 	if err != nil {
 		return err
@@ -494,6 +529,9 @@ func (o *Ops) NewContext(name string) error {
 }
 
 func (o *Ops) writeSealedProfile(name string) error {
+	if err := config.ValidateContextName(name); err != nil {
+		return err
+	}
 	blob, err := sealProfile()
 	if err != nil {
 		return fmt.Errorf("re-sealing current context: %w", err)

@@ -57,12 +57,14 @@ From the dashboard's Relay page, **Close Port 22** reverts the relay to
 tunnel-only (it connects over direct SSH if possible, else through the
 tunnel):
 
-1. `ufw deny 22/tcp`,
-2. `sshd` back to `ListenAddress 127.0.0.1`,
-3. `authorized_keys` rewritten with the admin key **re-pinned**
-   `from="127.0.0.1"` — restoring the tunnel-only invariant, not just the
-   firewall rule,
-4. sshd restarted; local metadata updated so status reflects the change.
+1. tenant accounts synced with the registry (the same sync as
+   [`tw relay sync-tenants`](tenants.md#migrating-to-per-tenant-relay-accounts)),
+2. `ufw deny 22/tcp`,
+3. `sshd` back to `ListenAddress 127.0.0.1`,
+4. the admin account's `authorized_keys` rewritten with the admin key
+   **re-pinned** `from="127.0.0.1"`. This restores the tunnel-only
+   invariant, not just the firewall rule,
+5. sshd restarted; local metadata updated so status reflects the change.
 
 Re-running the install script without `--ssh-open` achieves the same end state
 (it resets firewall rules and the sshd drop-in on every run — see the
@@ -70,16 +72,32 @@ Re-running the install script without `--ssh-open` achieves the same end state
 
 ## Anatomy of the relay's `authorized_keys`
 
-All access — admin and tenants — goes through **one** SSH user on the relay
-(`ubuntu` by default). Authorization is entirely per-key, in a single
-tw-managed `authorized_keys` file that is **rewritten in full** from the
-tenant registry on every enroll, un-enroll, and close-SSH operation. Its
-shape:
+The admin and the tenants log in as **different** relay accounts. Every
+`authorized_keys` file below is tw-managed and **rewritten in full** from the
+tenant registry on every enroll, un-enroll, close-SSH operation and
+`tw relay sync-tenants`.
+
+The **admin account** (`ubuntu` by default, passwordless sudo) holds only
+the admin key:
 
 ```text
-from="127.0.0.1" ssh-ed25519 AAAA... admin-key        # pin absent on --ssh-open relays
-from="127.0.0.1",restrict,port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:20000",permitlisten="127.0.0.1:40000" ssh-ed25519 AAAA... tenant-1
-from="127.0.0.1",restrict,port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:20001",permitlisten="127.0.0.1:40001" ssh-ed25519 AAAA... tenant-2
+from="127.0.0.1" ssh-ed25519 AAAA...        # pin absent on --ssh-open relays
+```
+
+The admin line has no `restrict`: the admin gets a shell, sudo, and
+unrestricted forwarding (needed, among other things, to reach the relay
+Xray's management API for live tenant changes). Its only constraint is the
+`from="127.0.0.1"` pin — present by default, absent only on `--ssh-open`
+relays, restored when SSH is closed. Relays set up by older versions also
+kept every tenant's key here. The first sync removes them (see
+[Tenants](tenants.md#migrating-to-per-tenant-relay-accounts)).
+
+**Each tenant** has its own account, `twt-` followed by 24 hex characters derived from the server-id,
+whose `authorized_keys` (`/var/lib/tw/tenants/<account>/.ssh/authorized_keys`,
+root-owned) holds exactly one line:
+
+```text
+from="127.0.0.1",restrict,command="/usr/local/lib/tw/tw-tenant-request",port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:20000",permitlisten="127.0.0.1:40000" ssh-ed25519 AAAA...
 ```
 
 The second `permitlisten` (tunnel port + 20000) is the tenant's **enroll
@@ -88,23 +106,24 @@ publishes to serve the client-enrollment PAKE exchange over. It's just
 another reverse forward, confined the same way as the tunnel port: a tenant
 can publish exactly these two ports and nothing else.
 
-**The admin line** (always first) has no `restrict`: the admin gets a shell,
-sudo, and unrestricted forwarding (needed, among other things, to reach the
-relay Xray's management API for live tenant changes). Its only constraint is
-the `from="127.0.0.1"` pin — present by default, absent only on `--ssh-open`
-relays, restored when SSH is closed.
-
-**Tenant lines** are forwarding-only, option by option:
+Tenant lines, option by option:
 
 | Option | Effect |
 | ------ | ------ |
 | `from="127.0.0.1"` | Key only authenticates through the tunnel — never over public port 22, even on `--ssh-open` relays. |
-| `restrict` | Denies everything: shell, exec, agent/X11 forwarding, *and* all port forwarding. |
+| `restrict` | Disables all port forwarding, agent/X11 forwarding, PTY allocation and `~/.ssh/rc`. It does **not** block exec or shell requests on its own. |
+| `command="/usr/local/lib/tw/tw-tenant-request"` | Every session runs the tenant request client instead of what the tenant asked for, so the tenant cannot run commands. |
 | `port-forwarding` | Re-enables just port forwarding (the one thing a tenant needs). |
 | `permitlisten="127.0.0.1:<port>"` (appears twice) | The tenant's reverse (`-R`) forwards may bind only its two allocated ports: the tunnel port and the tunnel port + 20000 (the enroll port used by `tw server user invite`). |
 | `permitopen="127.0.0.1:1"` | Local (`-L`) forwarding is pinned to a dead sentinel port — effectively disabled, so tenants can't dial the relay's loopback services (e.g. the Xray management API). |
 
-Because the file is fully re-rendered each time, hand-edits to tw-managed
+The sshd drop-in `/etc/ssh/sshd_config.d/98-tw-tenants.conf` enforces the
+same on the server side for every `twt-*` account: `ForceCommand` to the
+same program, `AllowTcpForwarding remote`, `PermitTTY no`, and no agent, X11,
+stream-local or tunnel forwarding. The tenant model is described on
+[Tenants](tenants.md#tenant-accounts-on-the-relay).
+
+Because the files are fully re-rendered each time, hand-edits to tw-managed
 lines don't survive the next enroll/un-enroll — and don't need to: the
 rendered state *is* the intended state, and a corrupted file self-heals on the
 next operation.
@@ -121,7 +140,9 @@ layer:
 - *Xray + SSH fails* — the mTLS handshake, the VLESS layer, or SSH auth is
   broken. Verify you're on the admin machine (or one that imported the admin
   bundle): the client certificate and the admin SSH key must match what the
-  relay was rendered with.
+  relay was rendered with. On a server, this step logs in as the server's
+  tenant account and sends a `list` request to the tenant handler instead of
+  running a command.
 
 **Direct `ssh <user>@relay` is refused.** Expected on a default relay: port 22
 is firewalled, sshd only listens on loopback, and the tw key is pinned to the
@@ -140,3 +161,11 @@ just the admin slot; re-enroll servers afterwards (see
 `tw relay get-servers` — if the tenant is missing or `down`, the relay config
 may have been rebuilt (install-script re-run). Re-enroll the tenant; the
 enroll operation rewrites all relay-side state for every registered server.
+If the tunnel went down right after a tenant sync, the server probably runs
+an older `tw` that still logs in as the admin account. Upgrade it (see
+[Tenants](tenants.md#troubleshooting-tenant-accounts)).
+
+**The dashboard's relay terminal gives no shell on a server profile.**
+Expected: a server's relay account has no shell, and every session runs the
+tenant request program. Only the relay admin context (`tw relay ssh`, or the
+terminal in the admin's dashboard) opens a relay shell.

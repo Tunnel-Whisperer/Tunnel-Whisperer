@@ -1,10 +1,13 @@
 package terraform
 
 import (
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	relaytenant "github.com/tunnelwhisperer/tw/internal/relay/tenant"
 )
 
 // TestSSHOpenKeyPin: the tw key line in the relay's authorized_keys is
@@ -171,5 +174,50 @@ func TestInstallScriptRerunSafe(t *testing.T) {
 	}
 	if !strings.Contains(script, "gpg --yes --dearmor") {
 		t.Error("gpg --dearmor must carry --yes so an existing keyring never aborts the run")
+	}
+}
+
+// TestTenantSetupInstalled: both provisioning paths install the tenant
+// request handler (so enrolled servers never need a shell on the relay), and
+// the manual script installs python3, which the handler runs on.
+func TestTenantSetupInstalled(t *testing.T) {
+	base := Config{
+		Domain: "relay.example", UUID: "u-1", XrayPath: "/tw/x", SSHUser: "tw",
+		PublicKey: "ssh-ed25519 AAAA admin@tw", ServerID: "adm-1", Provider: "hetzner",
+		CACertB64: "Zm9v", CaddyfileB64: "Zm9v", XrayConfigB64: "Zm9v",
+	}
+	want, err := relaytenant.RenderSync(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantB64 := base64.StdEncoding.EncodeToString([]byte(want))
+
+	script, err := GenerateInstallScript(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(script, "echo '"+wantB64+"' | base64 -d | sh -s\n") {
+		t.Error("install script does not run the tenant setup")
+	}
+	// A fixed path in /tmp lets a local user pre-create or swap the root
+	// script; it is piped straight into sh instead.
+	if strings.Contains(script, "tw-tenant-setup") {
+		t.Error("install script must not stage the tenant setup in a file")
+	}
+	if !strings.Contains(script, " unzip python3\n") {
+		t.Error("install script must install python3 for the tenant handler")
+	}
+
+	dir := t.TempDir()
+	if err := Generate(dir, base); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "cloud-init.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "path: /root/tw-tenant-setup.sh\n    permissions: \"0700\"\n    encoding: b64\n    content: "+wantB64+"\n") ||
+		!strings.Contains(string(data), "  - sh /root/tw-tenant-setup.sh\n") {
+		t.Error("cloud-init does not install and run the tenant setup")
 	}
 }

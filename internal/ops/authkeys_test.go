@@ -107,7 +107,7 @@ func TestDecodeJoinRequestRejectsInjection(t *testing.T) {
 	evil := genPubKey(t)
 
 	poisoned := &JoinRequest{
-		Version: 1, ServerID: "srv-1", UUID: "u-1",
+		Version: 1, ServerID: "srv-1", UUID: testJoinUUID,
 		CACertPEM: testCAPEM(t, "srv-1"), SSHPubkey: good + "\n" + evil,
 	}
 	b, _ := poisoned.Encode()
@@ -116,7 +116,7 @@ func TestDecodeJoinRequestRejectsInjection(t *testing.T) {
 	}
 
 	clean := &JoinRequest{
-		Version: 1, ServerID: "srv-1", UUID: "u-1",
+		Version: 1, ServerID: "srv-1", UUID: testJoinUUID,
 		CACertPEM: testCAPEM(t, "srv-1"), SSHPubkey: good + " some-comment",
 	}
 	b, _ = clean.Encode()

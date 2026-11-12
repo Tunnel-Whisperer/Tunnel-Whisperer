@@ -1,11 +1,5 @@
 // ── Enrolled servers (relay mode) ───────────────────────────────────────────
 
-function escText(s) {
-  const d = document.createElement('div');
-  d.textContent = s == null ? '' : String(s);
-  return d.innerHTML;
-}
-
 function fmtEnrolled(iso) {
   if (!iso) return '—';
   return iso.replace('T', ' ').replace(/:\d\d(Z|[+-].*)?$/, '');
@@ -56,19 +50,22 @@ function renderServers() {
     rows.innerHTML = '<tr><td colspan="6" class="text-dim">no matches</td></tr>';
     return;
   }
-  rows.innerHTML = shown.map(s => {
-    const badge = s.TunnelUp
-      ? '<span class="badge badge-green">up</span>'
-      : '<span class="badge badge-dim">down</span>';
-    return `<tr>
-      <td>${escText(s.server_id)}</td>
-      <td>${escText(s.Path)}</td>
-      <td>${escText(s.remote_port)}</td>
-      <td>${escText(fmtEnrolled(s.enrolled_at))}</td>
-      <td>${badge}</td>
-      <td><button class="btn btn-danger" onclick="unenrollServer('${escText(s.server_id)}', ${Number(s.remote_port)})">Un-enroll</button></td>
-    </tr>`;
-  }).join('');
+  rows.replaceChildren(...shown.map(s => {
+    const tr = document.createElement('tr');
+    [s.server_id, s.Path, s.remote_port, fmtEnrolled(s.enrolled_at)]
+      .forEach(v => tr.appendChild(makeEl('td', '', v == null ? '' : v)));
+    const badgeTd = document.createElement('td');
+    badgeTd.appendChild(s.TunnelUp
+      ? makeEl('span', 'badge badge-green', 'up')
+      : makeEl('span', 'badge badge-dim', 'down'));
+    tr.appendChild(badgeTd);
+    const actionTd = document.createElement('td');
+    const btn = makeEl('button', 'btn btn-danger', 'Un-enroll');
+    btn.addEventListener('click', () => unenrollServer(s.server_id, Number(s.remote_port)));
+    actionTd.appendChild(btn);
+    tr.appendChild(actionTd);
+    return tr;
+  }));
 }
 
 async function unenrollServer(serverID, port) {

@@ -90,7 +90,18 @@ func ContextsDir() string { return filepath.Join(Dir(), "contexts") }
 // ContextsIndexPath is the plaintext index file.
 func ContextsIndexPath() string { return filepath.Join(Dir(), "contexts.yaml") }
 
-// ContextBundlePath is the encrypted bundle for a named context.
+// ValidateContextName rejects a context name that is not a single safe path
+// component, so ContextBundlePath(name) always names a file directly inside
+// ContextsDir(). Every non-empty SanitizeName result passes.
+func ValidateContextName(name string) error {
+	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\\x00") {
+		return fmt.Errorf("invalid context name %q: must be a single path component without / or \\", name)
+	}
+	return nil
+}
+
+// ContextBundlePath is the encrypted bundle for a named context. Callers must
+// have checked name with ValidateContextName.
 func ContextBundlePath(name string) string {
 	return filepath.Join(ContextsDir(), name+".twctx")
 }
@@ -148,6 +159,15 @@ func EnsureContextIndex() (*ContextIndex, error) {
 	name := DefaultContextName(role, relay, user)
 	if name == "" {
 		name = "default"
+	}
+	// The index can hold other contexts while having no current one (e.g. an
+	// invalid current name was dropped); never adopt the live profile under
+	// one of their names, or the next re-seal would overwrite its bundle.
+	for base, i := name, 2; ; i++ {
+		if _, taken := idx.Contexts[name]; !taken {
+			break
+		}
+		name = fmt.Sprintf("%s-%d", base, i)
 	}
 	idx.CurrentContext = name
 	idx.Contexts[name] = ContextMeta{

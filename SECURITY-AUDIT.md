@@ -6,6 +6,8 @@ _Date: 2026-08-26 · Branch: research/security-audit · Method: automated multi-
 
 ## Remediation status
 
+> **Third audit (2026-11-12, run-1):** 11 new findings (1 HIGH, 4 MEDIUM, 6 LOW), all fixed on `fix/security-audit-run1`. See [Third audit — run-1](#third-audit--run-1-2026-11-12) at the end of this file.
+
 Fixed on `research/security-audit` (build, vet, unit tests, and the full `make e2e` suite green):
 
 - **#1** — forward tunnel now pins the server SSH host key (fail-closed), delivered through enrollment.
@@ -445,3 +447,230 @@ Two findings were rejected on verification (a stale doc comment — since correc
 ### Dependency / SCA scan (`govulncheck`)
 
 The pinned toolchain had drifted behind published security patches: **8 reachable vulnerabilities** (7 Go standard library — `net/url`, `html/template`, `crypto/tls` ×2, `net/http` ×2, `encoding/asn1`; 1 in `google.golang.org/grpc` v1.81.1). Remediated by bumping the toolchain to **`go1.26.6`** and **gRPC to `v1.82.1`**; a re-scan reports **0 reachable vulnerabilities** (the remaining transitive advisories are in code paths tw does not call). `make e2e` 21/21 on the bumped toolchain.
+
+---
+
+# Third audit — run-1 (2026-11-12)
+
+Fresh full-repository audit (profile `standard`, source ref `ba0129e`), run **sandboxed, source-and-local only**: target code executed only inside an unprivileged user+net+mount namespace (loopback only, read-only home, offline Go 1.26.6). No deployed relay, cloud API or other network endpoint was contacted; Caddy, standalone Xray, Terraform and Windows/macOS were not available, so claims depending on them are recorded as `needs_validation`, not confirmed. 57 agents (4 recon, 12 hunters over 3 waves, 4 coverage critics, 37 verifiers); 21 coverage units, final-clean critic clean. **11 confirmed findings (1 HIGH, 4 MEDIUM, 6 LOW), 7 needs-validation leads.**
+
+The core design held (SPAKE2 + SAS enrollment, server host-key pinning on the client, gRPC/dashboard token gates, `permitopen`, per-tenant Xray routing). The weak point was **multi-tenant relay isolation and lifecycle hygiene**: tenants shared the admin's NOPASSWD-sudo relay account, enrollment inputs were under-validated, revocation did not reach live sessions, and context-bundle unsealing loosened permissions.
+
+All 11 findings are fixed on `fix/security-audit-run1`.
+
+## Run-1 status table
+
+| # | Severity | Status | Finding | Location |
+|---|----------|--------|---------|----------|
+| C1 | 🟠 HIGH | ✅ Fixed | Any enrolled tenant can run commands, including NOPASSWD sudo, on the shared relay | `internal/ops/enroll.go`, `internal/relay/terraform/*.tmpl` |
+| C2 | 🟡 MEDIUM | ✅ Fixed | Malicious relay runs script in the tenant's dashboard via SSH error text rendered with `innerHTML` | `internal/dashboard/static/js/users.js:47` |
+| C3 | 🟡 MEDIUM | ✅ Fixed | Context switch/import/reapply recreates `relay/` secrets (cloud token, relay host key, tfstate) world-readable | `internal/ops/profilebundle.go:337` |
+| C4 | 🟡 MEDIUM | ✅ Fixed | Deleting a client user leaves its established SSH session forwarding | `internal/ssh/server.go:425` |
+| C5 | 🟡 MEDIUM | ✅ Fixed | `tw join` uses the issuer-supplied username as an unsanitized context file name (overwrite / write outside config dir) | `internal/ops/context.go:226` |
+| C6 | 🔵 LOW | ✅ Fixed | Anyone with the route token can abort or falsely complete an approved enrollment after the PAKE step | `internal/enroll/issuer.go:143` |
+| C7 | 🔵 LOW | ✅ Fixed | Unvalidated join-request UUID saved to the registry breaks every later enrollment | `internal/ops/enroll.go:201` |
+| C8 | 🔵 LOW | ✅ Fixed | Importing/activating a bundle plants machine-global `authorized_keys`, host key, tokens, cache files | `internal/ops/profilebundle.go:337` |
+| C9 | 🔵 LOW | ✅ Fixed | `DestroyRelay` creds map sets arbitrary env vars (`LD_PRELOAD`, `TF_CLI_ARGS`, proxies) on terraform | `internal/ops/terraform.go:84` |
+| C10 | 🔵 LOW | ✅ Fixed | Authenticated `DELETE /api/users/%2e%2e` recursively deletes the whole config dir | `internal/ops/user.go:251` |
+| C11 | 🔵 LOW | ✅ Fixed | Relay-management SSH dials hardcoded `SSHPort+1` with `InsecureIgnoreHostKey` while Xray may sit on `XrayPort` | `internal/ops/user.go:1164` |
+
+## Run-1 findings
+
+### C1. 🟠 HIGH — Any enrolled tenant can run commands, including NOPASSWD sudo, on the shared relay
+
+> **✅ REMEDIATED** (`fix/security-audit-run1`). Tenants no longer log in as the admin account and can no longer execute anything on the relay.
+
+**What was wrong.** Every enrolled server's key was a line in the admin SSH user's `authorized_keys` with `restrict,port-forwarding,...`. OpenSSH `restrict` disables forwarding/pty/agent/X11/rc but **not** exec or shell, there was no `command=` and no `ForceCommand`, and that shared account has `NOPASSWD:ALL` sudo — so any tenant (malicious or compromised) could become relay root. tw itself depended on it: a tenant's `addUUIDToRelay` ran `sudo cat`/`sudo tee`/`sudo systemctl restart` through the tenant key.
+
+**Fix.**
+- **One Unix account per tenant**, `twt-` followed by 24 hex characters derived from the server id (`tenant.UserName`, a prefix of its SHA-256), created by a root sync script; the admin account's `authorized_keys` now holds the **admin key only**. `EnrollServer` returns the tenant account as `JoinResponse.SSHUser`.
+- The tenant's single `authorized_keys` line forces `command="/usr/local/lib/tw/tw-tenant-request"` on top of `from="127.0.0.1",restrict,port-forwarding,permitopen="127.0.0.1:1",permitlisten=<tunnel port>,permitlisten=<enroll port>`; a drop-in `/etc/ssh/sshd_config.d/98-tw-tenants.conf` repeats it server-side (`Match User twt-*`: `ForceCommand`, `AllowTcpForwarding remote`, no stream-local/agent/X11/TTY/tunnel/user-rc). The sync validates the drop-in with `sshd -t` and removes it again if sshd rejects it, then checks with `sshd -T` that the `Match` block is in effect for tenant accounts and fails otherwise.
+- `tw-tenant-request` reads one request line from stdin (never `SSH_ORIGINAL_COMMAND`, never a shell) and forwards it to the account's own socket `/run/tw/tenant/<account>.sock` (owned by the account, mode 0600). A socket-activated root handler (`tw-tenant@.socket` / `tw-tenant@.service`, systemd-sandboxed, write access only to `/usr/local/etc/xray`) identifies the tenant **only** from the socket path plus `SO_PEERCRED`, maps it to its server id via the root-owned `/etc/tw/tenants/<account>`, and accepts just `add <uuid>`, `remove <uuid>`, `list` on that tenant's own `vless-in-<server-id>` inbound (it refuses to remove the server's own identity and caps an inbound at 1000 clients). It never restarts Xray: a change is applied live through the Xray API, and if that fails it stays saved and takes effect at the next Xray restart, with a warning to the operator.
+- Admin and handler serialize every read-modify-write of the relay `config.json` on one `flock` (`/usr/local/etc/xray/.tw-config.lock`).
+- Migration: `tw relay sync-tenants` (also run by every enroll, un-enroll and Close Port 22). The tenant sync runs **before** the admin `authorized_keys` rewrite, and it terminates every other SSH session of the admin account, so a pre-migration tenant session (which could still exec) does not survive. Fresh relays install the handler at provisioning (cloud-init and the manual install script, which also installs `python3`).
+
+**Where.** `internal/relay/tenant/` (new: `tenant.go`, `tw-tenant-handler.py`, `tw-tenant-request.py`, `tw-tenant@.socket`, `tw-tenant@.service`, `98-tw-tenants.conf`, `sync.sh.tmpl`), `internal/ops/enroll.go`, `internal/ops/unenroll.go`, `internal/ops/relay.go`, `internal/ops/relaymerge.go`, `internal/ops/relaytenantreq.go` (new), `internal/ops/user.go`, `internal/cli/relay_sync_tenants.go` (new), `internal/relay/terraform/{generate.go,cloud-init.yaml.tmpl,install-script.sh.tmpl}`.
+
+**Tests.** `internal/relay/tenant/tenant_test.go` (`TestUserName`, `TestRenderSync`, `TestRenderSyncRejects`, `TestForcedCommandEverywhere`, `TestHandlerUnitHardening`, `TestSSHDDropInHardening`), `internal/relay/tenant/handler_test.go` (`TestHandlerOwnInboundOnly`, `TestHandlerRejectsBadRequests`, `TestHandlerIdentity`, `TestHandlerNeverRestartsXray`, `TestHandlerAPIOutcomes`, `TestHandlerClientCap`, `TestHandlerRechecksRegistrationUnderLock`, `TestHandlerRequestDeadline`, `TestRequestClient`), `internal/relay/tenant/sync_test.go` (`TestRenderSyncAdminKeysLast`, `TestKillAdminSessions`, `TestAdminKeysRewrite`, `TestCheckTenantMatch`, `TestSyncSliceLimits`), e2e `TestE2E/TenantLockdown` and `TestE2E/TenantMigration`, `internal/ops/enroll_test.go` (`TestRenderTenantAuthorizedKeys`, `TestRenderTenantAuthorizedKeysRejectsInjection`, `TestRenderTenantSyncAccounts`, `TestRenderTenantAuthorizedKeysEnrollListen`), `internal/ops/relaytenantreq_test.go` (`TestRelayTenantRequest`, `TestRelayTenantRequestLegacyRelay`), `internal/relay/terraform/generate_test.go` (`TestTenantSetupInstalled`).
+
+---
+
+### C2. 🟡 MEDIUM — A malicious relay can run script in the tenant's dashboard through SSH error text rendered with `innerHTML`
+
+> **✅ REMEDIATED** (`fix/security-audit-run1`). Error, server and user-derived strings reach the DOM only as text.
+
+**What was wrong.** Progress `onDone` handlers interpolated `err.message` into `innerHTML`. For relay operations that message can carry relay-chosen text (an SSH disconnect sent before key exchange, raw relay command output), and the CSP's `script-src 'unsafe-inline'` let an injected inline handler run in the authenticated dashboard origin.
+
+**Fix.** Every dynamic `innerHTML` sink in the dashboard JS was replaced with DOM builders that set `textContent` (`makeEl`, `appendFailedStep`, `showAlert`, `renderPager` in `app.js`); `renderProgressEvent` no longer builds its step markup with `innerHTML` either. A static test fails the build if any `innerHTML`/`outerHTML`/`insertAdjacentHTML` sink takes anything but a literal.
+
+**Where.** `internal/dashboard/static/js/{app,users,relay,status,servers,bandwidth}.js`.
+
+**Tests.** `internal/dashboard/staticjs_sinks_test.go` (`TestStaticJSHTMLSinksTakeOnlyLiterals`).
+
+---
+
+### C3. 🟡 MEDIUM — Context switch/import/reapply recreates `relay/` provisioning secrets world-readable
+
+> **✅ REMEDIATED** (`fix/security-audit-run1`). Unseal is owner-only by default.
+
+**What was wrong.** `unsealProfile` gave 0600 only to a short filename allowlist and 0644 to everything else, creating missing directories 0755. When `relay/` was absent at unseal time (after `NewContext`, a join, or on a second machine), `cloud-init.yaml` (relay host private key), `terraform.tfvars` (cloud API token) and `terraform.tfstate` came back `-rw-r--r--` in a `drwxr-xr-x` dir.
+
+**Fix.** Every restored file is 0600 except `.pub`/`.crt` **outside** `relay/` (0644); everything under `relay/` is 0600. Staged files are explicitly `chmod`ed (umask-proof) and every staged directory is set 0700; because the commit renames whole staged subdirectories into place, existing `relay/`, `users/<name>/`, `servers/` are tightened too.
+
+**Where.** `internal/ops/profilebundle.go`.
+
+**Tests.** `internal/ops/profilebundle_unix_test.go` (`TestUseContextRestoresOwnerOnlyModes`, `TestUnsealProfileTightensExistingDirs`).
+
+---
+
+### C4. 🟡 MEDIUM — Deleting a client user leaves its established SSH session open
+
+> **✅ REMEDIATED** (`fix/security-audit-run1`). Revocation now reaches live sessions.
+
+**What was wrong.** The embedded SSH server decided authorization once, at public-key auth, and reused that snapshot for every later `direct-tcpip` channel; it kept no connection handles, and `DeleteUser` only rewrote `authorized_keys`. A deleted user who stayed connected kept forwarding to its granted services.
+
+**Fix.** (1) The server tracks live connections per `tw_user` (`liveConns`) and `Server.DisconnectUser` closes them; `Ops.DeleteUser` calls it through the server manager after revoking the key. (2) Defence in depth that also covers deletes from another process (CLI/gRPC while the daemon runs the server): the authenticated key's SHA256 fingerprint is recorded in the SSH permissions and every new `direct-tcpip` channel is re-authorized against the **current** `authorized_keys` (`recheckPermitOpen`) — the entry must still exist, belong to the same `tw_user`, and still permit the destination.
+
+**Where.** `internal/ssh/server.go`, `internal/ops/server.go`, `internal/ops/user.go`.
+
+**Tests.** `internal/ssh/server_revoke_test.go` (`TestDirectTCPIPRechecksAuthorizedKeys`, `TestDirectTCPIPRechecksNarrowedPermitOpen`, `TestDisconnectUserClosesLiveConnections`), `internal/ops/user_revoke_test.go` (`TestDeleteUserDisconnectsLiveSession`).
+
+---
+
+### C5. 🟡 MEDIUM — `tw join` uses the issuer-supplied username as an unsanitized context file name
+
+> **✅ REMEDIATED** (`fix/security-audit-run1`). Context names are a single safe path component everywhere.
+
+**What was wrong.** For a client invite without `--name`, the issuer's `RoleOffer.Username` became the context name verbatim and was joined into `contexts/<name>.twctx`. A malicious issuer could overwrite another stored context's bundle (`evil/../relay-admin`) or write a `.twctx` outside the config dir.
+
+**Fix.** `clientContextName` derives the default from the username via `config.DefaultContextName` (sanitized). `config.ValidateContextName` (rejects empty, `.`, `..`, `/`, `\`, NUL) is enforced at every entry point that turns a name into a path: `Join --name`, `ImportContext`, `ExportContext`, `UseContext`, `ReapplyContext`, `RenameContext`, `NewContext`, re-seal, and `ListContexts` backfill.
+
+**Where.** `internal/ops/joinflow.go`, `internal/ops/context.go`, `internal/config/context.go`.
+
+**Tests.** `internal/ops/joinflow_test.go` (`TestClientJoinSanitizesIssuerUsername`), `internal/config/context_test.go` (`TestValidateContextName`), `internal/ops/context_test.go` (`TestContextNamesMustBeSinglePathComponent`).
+
+---
+
+### C6. 🔵 LOW — Anyone who knows the route token can abort, or falsely complete, an approved enrollment
+
+> **✅ REMEDIATED** (`fix/security-audit-run1`). Post-PAKE endpoints are bound to the session.
+
+**What was wrong.** The enroll route token (`first8(UUID)`) is known to every past invitee. After the legitimate offer, a junk `/offer` box made the issuer deny (variant A), and an unauthenticated `GET /result` counted as grant collection, so the issuer reported success while the real enrollee never got the grant (variant B).
+
+**Fix.** A failing `/offer` box denies only **before** a valid offer arrived. The enrollee marks its offer as v2 (a `"tw_enroll_v":2` field inside the PAKE-sealed box) and sends, on every `/result` poll, an `X-TW-Enroll-Proof` header: a box sealed under the session key. For a v2 offer only a poll with a valid proof counts as collection. `Grant` refuses once denied, and `InviteServer`/`InviteUser` check `Denied()` after the SAS before touching the relay or creating the user. Wire-compatible: an old enrollee (no marker) still completes, with an issuer-side warning; an old issuer ignores the marker and header.
+
+**Where.** `internal/enroll/{issuer,enrollee,wire}.go`, `internal/ops/invite.go`.
+
+**Tests.** `internal/enroll/issuer_test.go` (`TestHandlerHappyPath`, `TestHandlerGarbageOfferAfterValidDoesNotDeny`, `TestHandlerWrongKeyOfferBeforeValidDenies`, `TestHandlerUnauthenticatedResultDoesNotComplete`, `TestHandlerLegacyEnrolleeResultCompletes`, `TestHandlerV2OfferCannotBeDowngraded`, `TestMarkOfferV2RoundTrip`).
+
+---
+
+### C7. 🔵 LOW — Unvalidated join-request UUID poisons the relay registry
+
+> **✅ REMEDIATED** (`fix/security-audit-run1`).
+
+**What was wrong.** `DecodeJoinRequest` accepted any non-empty `uuid`; `EnrollServer` saved the registry entry before the Xray render rejected it, so every later enrollment failed on the poisoned entry.
+
+**Fix.** `validateServerIdentity` (shared by `DecodeJoinRequest`, `AddServer` and registry loading) requires a canonical lowercase UUID. `EnrollServer` removes the registry entry it created if it fails before the relay is touched (after that the entry stays, and the error names the `tw relay un-enroll-server` command). `InviteUser` denies a client offer with a non-canonical UUID.
+
+**Where.** `internal/ops/join.go`, `internal/ops/registry.go`, `internal/ops/enroll.go`, `internal/ops/invite.go`, `internal/ops/uuidcheck.go` (new).
+
+**Tests.** `internal/ops/join_test.go` (`TestDecodeJoinRequestRejectsBadUUID`), `internal/ops/enroll_test.go` (`TestEnrollServerRollsBackRegistryBeforeRelay`).
+
+---
+
+### C8. 🔵 LOW — Importing and activating a bundle can plant machine-global files
+
+> **✅ REMEDIATED** (`fix/security-audit-run1`).
+
+**What was wrong.** `unsealProfile` accepted any zip entry inside the config dir except the contexts store, so a third-party `.twctx` could plant `authorized_keys`, the SSH host key, API/dashboard tokens and cache files that persisted into the operator's other contexts.
+
+**Fix.** Entries are allowlisted to exactly what `sealProfile` produces (`isProfileEntry`: the flat profile files plus files under `relay/`, `users/`, `servers/`, canonical forward-slash paths only). Any other entry aborts the unseal before anything is written; legacy Terraform-cache entries are skipped silently.
+
+**Where.** `internal/ops/profilebundle.go`.
+
+**Tests.** `internal/ops/profilebundle_test.go` (`TestUnsealProfileRejectsNonProfileEntry`, `TestUnsealProfileSkipsLegacyTerraformArtefacts`).
+
+---
+
+### C9. 🔵 LOW — `DestroyRelay` creds map sets arbitrary environment variables on terraform
+
+> **✅ REMEDIATED** (`fix/security-audit-run1`).
+
+**What was wrong.** The dashboard/gRPC `creds` map was copied into the root-run terraform child's environment unfiltered (`LD_PRELOAD`, `TF_CLI_ARGS`, proxy variables).
+
+**Fix.** `DestroyRelay` accepts only `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` and errors before any terraform run otherwise; `apiDestroyRelay` returns 400 on a malformed body instead of proceeding.
+
+**Where.** `internal/ops/relay.go`, `internal/dashboard/handlers_api.go`.
+
+**Tests.** `internal/ops/terraform_test.go` (`TestDestroyRelayRejectsNonCredentialEnv`), `internal/dashboard/handlers_api_test.go` (`TestAPIDestroyRelayRejectsMalformedBody`).
+
+---
+
+### C10. 🔵 LOW — `DELETE /api/users/%2e%2e` deletes the whole config directory
+
+> **✅ REMEDIATED** (`fix/security-audit-run1`).
+
+**What was wrong.** `DeleteUser` and `SetUserSingleSession` joined an unvalidated name onto `users/`, so `..` resolved to the config dir itself.
+
+**Fix.** `validateUserName` (`^[A-Za-z0-9_-]+$`, the creation rule) runs inside `DeleteUser` and `SetUserSingleSession`, covering dashboard, gRPC and CLI; the dashboard user routes also reject invalid names with 400.
+
+**Where.** `internal/ops/user.go`, `internal/dashboard/handlers_api.go`.
+
+**Tests.** `internal/ops/user_revoke_test.go` (`TestUserNameFunctionsRejectTraversal`), `internal/dashboard/handlers_api_test.go` (`TestAPIUserActionRejectsInvalidName`).
+
+---
+
+### C11. 🔵 LOW — Relay-management SSH dials `SSHPort+1` with `InsecureIgnoreHostKey`
+
+> **✅ REMEDIATED** (`fix/security-audit-run1`).
+
+**What was wrong.** `sshThroughServerTunnel` always dialed `127.0.0.1:SSHPort+1` without host-key checks, even when the server's Xray listened on `server.xray_port`; a local user binding that port could impersonate the relay (forged stats/online state, a forged config read-back).
+
+**Fix.** One helper, `serverXrayPort`, now gives the port to both the server start-up and the dial. The dial verifies the pinned relay host key when one is recorded (`relayTunnelHostKeyCallback`). The startup `EnsureRelayStats` patcher, the path that read and rewrote the relay config through this dial, was removed (relays rendered by tw already carry the stats config).
+
+**Where.** `internal/ops/server.go`, `internal/ops/user.go`.
+
+**Tests.** `internal/ops/user_revoke_test.go` (`TestServerXrayPort`, `TestRelayTunnelHostKeyCallbackPins`).
+
+## Run-1 hardening (beyond the findings)
+
+- **Single PEM block.** A join request's `ca_cert_pem` must be exactly one `CERTIFICATE` block; it is re-encoded canonically before it reaches the registry or the relay's shared Caddy trust pool. Test `TestDecodeJoinRequestRejectsTrailingPEM`.
+- **CA path length 0.** A tenant CA must have valid basic constraints, `IsCA` and path length 0 (what `pki.GenerateCA` issues), so it cannot sign an intermediate carrying another tenant's name. Test `TestDecodeJoinRequestRequiresPathLenZero`.
+- **Server id length.** `server_id` is capped at 64 characters (the X.509 CommonName limit). Test `TestDecodeJoinRequestServerIDLength`.
+- **Canonical UUIDs.** `isCanonicalUUID` (`internal/ops/uuidcheck.go`, lowercase 8-4-4-4-12) gates the join request, the client invite offer and every add/remove of a UUID on the relay; the relay handler enforces the same rule. `ListUsers` and `DeleteUser` lowercase stored UUIDs. Tests `TestIsCanonicalUUID`, `TestAddUUIDToRelayRejectsNonCanonical`, `TestListUsersLowercasesUUID`.
+
+## Run-1 review follow-ups
+
+- **Unseal replaces the live profile set.** After a switch/import/reapply the profile files are exactly the bundle's: files absent from the bundle (e.g. a planted `servers/<id>.json`) are removed instead of being resealed into the next context. The commit swaps each subdir and flat file and rolls back on a rename failure. Tests `TestUnsealProfileReplacesProfileSet`, `TestPlantedRegistryEntryDoesNotSurviveContextSwitch`, `TestUnsealProfileRollsBackOnCommitFailure`.
+- **Registry entries validated on load.** `ListServers` runs the join-request validation on every entry (file name must match `server_id`, port in range) and skips invalid ones with an error log, so they are never rendered to the relay; `LookupServer` still returns them so `tw relay un-enroll-server <id>` can remove them. Test `TestListServersSkipsInvalidEntries`.
+- **C6 v2 capability.** The v2 marker lives inside the PAKE-sealed offer, so a route-token holder cannot strip it to force the legacy collection rule. Test `TestHandlerV2OfferCannotBeDowngraded`.
+- **Atomic `authorized_keys`.** All server-side `authorized_keys` edits go through one read-modify-write that writes a temp file at 0600, fsyncs and renames, because the SSH server now re-reads the file on every channel. Tests `TestAuthorizedKeysRewriteIsAtomicWithOwnerOnlyMode`, `TestSetUserSingleSessionRewritesUserLine`.
+- **`DeleteUser` order.** The key is revoked **before** the user directory is removed, and a failure is returned instead of logged, so a failed delete can be retried; without a public key the user's lines are removed by their `<name>@tw` comment. Tests `TestDeleteUserFailsWhenKeyRemovalFails`, `TestDeleteUserWithoutPubKeyRemovesByComment`.
+- **Escape for an invalid legacy context name.** `tw config delete-context <name>` on a name that fails validation only drops the index entry (no path is built from it); if it was current, the live profile is kept and adopted under a fresh, non-colliding valid name. Test `TestInvalidCurrentContextCanBeEscaped`.
+- **Tenant account fallback.** A server whose stored relay user is still the admin account retries once with its derived tenant account when the relay rejects its key, and saves it to the profile on success (relay-management dials and the reverse tunnel). Tests `TestDialRelaySSHMigratesTenantUser`, `TestDialRelaySSHAdminNoFallback`, `TestReverseTunnelFallbackUser`.
+
+## Run-1 open leads (needs validation, not confirmed)
+
+These need Caddy, the relay's standalone Xray, or Windows, none of which the sandbox had:
+
+1. **Tenant-chosen UUID prefix duplicates another tenant's `/enroll/<first8>` Caddy route** — unverified whether Caddy keeps source order for equal-length path matchers.
+2. **Extra CA certificates smuggled into the shared Caddy trust pool** — the source-side precondition is closed (single PEM block); whether Caddy's `trust_pool file` loads every block remains unverified.
+3. **Tenant CA without a path-length limit passes another tenant's route check via a forged intermediate** — the source-side precondition is closed (path length 0); the Caddy issuer-placeholder behaviour remains unverified.
+4. **"Unregister from Relay" leaves the user's UUID active in the running relay Xray** — needs a live relay Xray (the tenant path now also hot-removes through the Xray API; the admin path still edits the file only).
+5. **Unvalidated client-enrollee UUID in the shared relay Xray config can stop Xray for every tenant** — closed at source by canonical-UUID validation; the upstream Xray behaviour remains unverified.
+6. **`service install` registers `os.Executable()` as LocalSystem/root without checking that its location is protected (docs point to `C:\tw`)** — needs a Windows DACL check.
+7. **Windows config dir `C:\ProgramData\tw\config` gets POSIX mode bits only, no explicit DACL** — needs a Windows DACL check (same systemic gap as the 2026-08-27 residual).
+
+## Run-1 accepted residual risks
+
+- **CSP keeps `script-src 'unsafe-inline'`.** 69 inline event-handler attributes remain (68 `onclick`/`onchange` in 11 templates under `internal/dashboard/templates/pages/`, 1 generated in `static/js/apps.js`), plus inline `<script>` blocks in 4 templates. C2 is fixed at the sinks and guarded by `TestStaticJSHTMLSinksTakeOnlyLiterals`; dropping `'unsafe-inline'` needs those moved to `addEventListener`.
+- **Host-key checks inside the tunnel.** Relays without a pinned host key (provisioned before pinning) keep `InsecureIgnoreHostKey` for the online-status dial; `withRelaySSH` and the reverse tunnel stay `InsecureIgnoreHostKey` inside the mTLS-authenticated VLESS tunnel, as before (SP-7 rationale).
+- **Migration windows.**
+  - Until the relay admin runs `tw relay sync-tenants` (or the next enroll, un-enroll or Close Port 22), a relay set up by an older tw still has tenant keys on the sudo-capable admin account, so C1 stays exploitable there.
+  - After the sync, tenants still running an older tw lose their reverse tunnel, and can no longer add or remove users on the relay, until they upgrade. Older tw has no fallback to the tenant account.
+  - A new tw tenant on a relay that has not been synced gets a "run 'tw relay sync-tenants'" error when it adds or removes users.
+  - An old enrollee against a new issuer still allows C6 variant B (an unauthenticated `/result` counts as collection). The issuer logs a warning when this happens.
+- **Relays that already hosted an untrusted tenant.** Under the old design C1 gave any tenant root on the relay, so such a relay may already be compromised, and the sync cannot undo a past compromise. Rebuild it (destroy and re-provision, or a fresh VM with the install script), rotate the relay SSH host key and the admin SSH key, and have tenants re-enroll with fresh CAs.
+- **`python3` on relays.** The tenant handler needs it; the manual install script installs it, cloud images ship it, and the sync refuses to run without it.
+- **Hardening notes from the run not addressed here:** Xray installer and Caddy apt key not pinned by hash/fingerprint; release workflow (`contents: write` workflow-wide, actions pinned by tag, no checksums/signatures); unbounded `io.ReadAll` on bundle entries; dashboard has no Origin/Host checks on mutating methods, `GET /logout`, no `ReadTimeout`; settings saved without validation (`SetXraySettings`, `SetClientSettings`); `removeAuthorizedKey` matches by substring (collides on a reused key); `servers/*.json` and `contexts.yaml` 0644; relay host private key in cloud-init user-data; client forward listeners reachable by every local user.

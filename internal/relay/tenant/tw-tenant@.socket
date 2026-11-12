@@ -1,0 +1,17 @@
+# Installed by tw (tw relay sync-tenants); do not edit.
+# One instance per enrolled server: tw-tenant@<account>.socket. The socket is
+# owned by the tenant account and mode 0600, so only that account (and root)
+# can connect; tw-tenant-handler then checks the peer uid against the path.
+[Unit]
+Description=Tunnel Whisperer tenant request socket (%i)
+
+[Socket]
+ListenStream=/run/tw/tenant/%i.sock
+SocketUser=%i
+SocketMode=0600
+DirectoryMode=0755
+Accept=yes
+MaxConnections=4
+
+[Install]
+WantedBy=sockets.target
