@@ -105,9 +105,9 @@ This design ensures that access control changes are applied in real time, withou
 
 ## Relay SSH access control
 
-The relay's own SSH daemon serves only two kinds of principals, and they use **separate accounts**. `tw` fully re-renders both on every enroll, un-enroll, close-SSH and `tw relay sync-tenants`, so they self-heal.
+The relay's own SSH daemon serves only two kinds of principals, and they use **separate accounts**. `tw` re-renders its lines for both on every enroll, un-enroll, close-SSH and `tw relay sync-tenants`, so they self-heal; keys tw does not manage in the admin account are kept.
 
-**The admin key** (the relay owner's `id_ed25519.pub`) is the only key in the admin account's `authorized_keys`. The admin account has passwordless sudo:
+**The admin key** (the relay owner's `id_ed25519.pub`) is the only tw key in the admin account's `authorized_keys`; tw never puts a tenant key there and leaves keys it does not manage (e.g. the operator's maintenance key) in place. The admin account has passwordless sudo:
 
 ```
 from="127.0.0.1" ssh-ed25519 AAAA... 

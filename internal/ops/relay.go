@@ -952,8 +952,8 @@ func (o *Ops) CloseRelaySSH(progress ProgressFunc) error {
 	// unpinned so it could authenticate over the open port; closing must
 	// restore the tunnel-only invariant. Full rewrite, same as
 	// enroll/un-enroll: the tenant sync gives a relay whose servers still
-	// log in as the admin account their own accounts, then rewrites the
-	// admin's authorized_keys (admin key only).
+	// log in as the admin account their own accounts, then updates tw's
+	// lines in the admin's authorized_keys (other keys are kept).
 	adminPubKey, err := os.ReadFile(filepath.Join(config.Dir(), "id_ed25519.pub"))
 	if err != nil {
 		progress(ProgressEvent{Step: 2, Total: 3, Label: "Closing SSH port 22", Status: "failed", Error: err.Error()})

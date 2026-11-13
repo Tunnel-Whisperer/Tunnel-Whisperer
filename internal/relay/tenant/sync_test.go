@@ -194,6 +194,54 @@ tw_kill_admin_sessions() { echo "kill-sessions $1 $2" >> '` + log + `'; }
 	}
 }
 
+// TestAdminKeysKeepsForeignKeys: keys tw does not manage (the operator's own
+// maintenance key) survive the rewrite, and re-rendering only the tw admin
+// line (no tenant line removed) does not end the admin's sessions.
+func TestAdminKeysKeepsForeignKeys(t *testing.T) {
+	script := renderTestSync(t)
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ak := filepath.Join(home, ".ssh", "authorized_keys")
+	maint := "ssh-rsa AAAAmaintenance operator@laptop\n"
+	old := maint + "ssh-ed25519 AAAAadmin\n"
+	if err := os.WriteFile(ak, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(dir, "calls.log")
+	prelude := `getent() { echo "ubuntu:x:1000:1000::` + home + `:/bin/sh"; }
+chown() { echo "chown $1" >> '` + log + `'; }
+tw_kill_admin_sessions() { echo "kill-sessions $1 $2" >> '` + log + `'; }
+`
+	main := "tw_admin_keys ubuntu " + base64.StdEncoding.EncodeToString([]byte(testAdminKeys)) + "\n"
+	if out, err := runShell(t, script, prelude, main, "tw_admin_keys"); err != nil {
+		t.Fatalf("tw_admin_keys: %v\n%s", err, out)
+	}
+	if got, _ := os.ReadFile(ak); string(got) != maint+testAdminKeys {
+		t.Errorf("authorized_keys = %q, want the maintenance key kept and the admin line re-rendered", got)
+	}
+	if calls, _ := os.ReadFile(log); strings.Contains(string(calls), "kill-sessions") {
+		t.Errorf("no tenant line was removed, so no session may be ended:\n%s", calls)
+	}
+
+	tenant := `from="127.0.0.1",restrict,port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:20000" ssh-ed25519 AAAAtenant` + "\n"
+	if err := os.WriteFile(ak, []byte(maint+tenant+testAdminKeys), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(log)
+	if out, err := runShell(t, script, prelude, main, "tw_admin_keys"); err != nil {
+		t.Fatalf("tw_admin_keys (tenant line): %v\n%s", err, out)
+	}
+	if got, _ := os.ReadFile(ak); string(got) != maint+testAdminKeys {
+		t.Errorf("authorized_keys = %q, want the tenant line removed and the maintenance key kept", got)
+	}
+	if calls, _ := os.ReadFile(log); !strings.Contains(string(calls), "kill-sessions ubuntu ") {
+		t.Errorf("removing a tenant line must end the admin's other sessions:\n%s", calls)
+	}
+}
+
 // TestCheckTenantMatch (L5): the sync fails, and removes its drop-in, unless
 // sshd's effective config for a twt-* account carries the Match block.
 func TestCheckTenantMatch(t *testing.T) {

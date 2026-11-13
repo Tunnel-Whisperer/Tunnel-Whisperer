@@ -61,8 +61,8 @@ tunnel):
    [`tw relay sync-tenants`](tenants.md#migrating-to-per-tenant-relay-accounts)),
 2. `ufw deny 22/tcp`,
 3. `sshd` back to `ListenAddress 127.0.0.1`,
-4. the admin account's `authorized_keys` rewritten with the admin key
-   **re-pinned** `from="127.0.0.1"`. This restores the tunnel-only
+4. tw's admin line in the admin account's `authorized_keys` rewritten with
+   the admin key **re-pinned** `from="127.0.0.1"`. This restores the tunnel-only
    invariant, not just the firewall rule,
 5. sshd restarted; local metadata updated so status reflects the change.
 
@@ -72,13 +72,15 @@ Re-running the install script without `--ssh-open` achieves the same end state
 
 ## Anatomy of the relay's `authorized_keys`
 
-The admin and the tenants log in as **different** relay accounts. Every
-`authorized_keys` file below is tw-managed and **rewritten in full** from the
-tenant registry on every enroll, un-enroll, close-SSH operation and
-`tw relay sync-tenants`.
+The admin and the tenants log in as **different** relay accounts. The tw
+lines below are re-rendered from the tenant registry on every enroll,
+un-enroll, close-SSH operation and `tw relay sync-tenants`. A tenant
+account's `authorized_keys` is rewritten in full; in the admin account's
+only tw's lines change, and other keys (e.g. your own maintenance key) are
+kept.
 
-The **admin account** (`ubuntu` by default, passwordless sudo) holds only
-the admin key:
+The **admin account** (`ubuntu` by default, passwordless sudo) holds the
+admin key and never a tenant key:
 
 ```text
 from="127.0.0.1" ssh-ed25519 AAAA...        # pin absent on --ssh-open relays

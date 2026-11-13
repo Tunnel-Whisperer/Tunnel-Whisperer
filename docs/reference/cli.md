@@ -109,9 +109,11 @@ Takes no arguments and no flags. Over the admin's relay SSH connection it:
    `98-tw-tenants.conf` sshd drop-in, and checks with `sshd -T` that the
    drop-in's `Match` block is in effect,
 2. creates, updates or removes one `twt-*` account per enrolled server,
-3. rewrites the relay admin account's `authorized_keys` so it holds the admin
-   key only, and ends every other SSH session of the admin account (a
-   pre-migration tenant session must not survive).
+3. updates the relay admin account's `authorized_keys`: tw's admin line is
+   replaced, tenant lines are removed, and every other key (e.g. your own
+   maintenance key) is kept. Only if tenant lines were removed does it end
+   every other SSH session of the admin account (a pre-migration tenant
+   session must not survive).
 
 Enroll and un-enroll run the same sync. Run this command once to migrate a
 relay whose servers still log in as the admin account. Output:

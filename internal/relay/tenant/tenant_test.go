@@ -147,6 +147,7 @@ func TestHandlerUnitHardening(t *testing.T) {
 		"RuntimeMaxSec=60",
 		"TasksMax=32",
 		"MemoryMax=256M",
+		"CollectMode=inactive-or-failed",
 	} {
 		if !strings.Contains(string(serviceUnit), "\n"+f+"\n") {
 			t.Errorf("service unit lacks %s", f)

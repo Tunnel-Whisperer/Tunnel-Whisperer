@@ -98,7 +98,7 @@ sequenceDiagram
 
     A ->> A: [1] Register server, allocate remote_port (registry under servers/)
     A ->> A: [2] Build FULL tenant list (admin + every registered server)
-    A ->> R: [3] Over relay SSH: write CA certs, re-render + validate +<br/>graceful-reload Caddyfile, rewrite authorized_keys in full,<br/>persist full Xray config.json
+    A ->> R: [3] Over relay SSH: write CA certs, re-render + validate +<br/>graceful-reload Caddyfile, update tw's authorized_keys lines,<br/>persist full Xray config.json
     A ->> R: [4] gRPC live-add (AddInbound + AddRule via :10085<br/>over the SSH tunnel) — no Xray restart
     A ->> S: encrypted grant (relay host, path, remote_port, ssh_user,<br/>+ ed25519 mode signature), via /enroll/tok/result
 
@@ -118,7 +118,7 @@ Key properties:
   redeems first burns the invite, so the real operator's join fails
   "already used" — the detectable tell.
 - **Non-disruptive** — existing tenants' tunnels stay up: Caddy reloads gracefully, and the new Xray inbound + routing rules are added live over the gRPC API; the full `config.json` is written only for restart persistence.
-- **Full-rewrite philosophy** — the Caddyfile, the admin account's `authorized_keys`, the tenant accounts, and relay Xray config are re-rendered from the complete registry on every enroll/un-enroll, so stale or corrupted state self-heals. Registry entries are validated again when they are loaded (`ListServers`); an invalid one is skipped and never rendered.
+- **Full-rewrite philosophy** — the Caddyfile, tw's lines in the admin account's `authorized_keys` (other keys there are kept), the tenant accounts, and relay Xray config are re-rendered from the complete registry on every enroll/un-enroll, so stale or corrupted state self-heals. Registry entries are validated again when they are loaded (`ListServers`); an invalid one is skipped and never rendered.
 - **Rollback before the relay is touched** — if enrollment fails before any relay change, the new registry entry is removed again. Once the relay may carry the tenant, the entry stays and the error names the `tw relay un-enroll-server` command that removes it.
 - **Serialized** — enroll and un-enroll take a local file lock (`internal/ops/oplock.go`), so concurrent admin operations cannot interleave.
 - **Tenant confinement** — each server gets its own relay account

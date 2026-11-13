@@ -92,8 +92,9 @@ relay only shuffles encrypted bytes and needs almost no resources.
 The VM is configured entirely by cloud-init (rendered at provision time on the
 admin machine — the relay never generates anything itself):
 
-- An SSH admin user (`ubuntu` by default, passwordless sudo) holding the
-  tw-managed `authorized_keys` with the admin key only
+- An SSH admin user (`ubuntu` by default, passwordless sudo) whose
+  `authorized_keys` holds the admin key (tw manages only its own lines;
+  other keys, e.g. the cloud provider's, are kept)
 - The **tenant request handler** (`/usr/local/lib/tw/`, the
   `tw-tenant@.socket`/`.service` units, and the sshd drop-in
   `98-tw-tenants.conf`). No tenant accounts exist yet: each enroll creates

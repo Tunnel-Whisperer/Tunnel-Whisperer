@@ -10,6 +10,9 @@
 # `xray api` against 127.0.0.1) needs no capability.
 [Unit]
 Description=Tunnel Whisperer tenant request handler
+# A refused request exits non-zero; collect the per-connection instance anyway
+# so refusals do not pile up as failed units.
+CollectMode=inactive-or-failed
 
 [Service]
 ExecStart=/usr/bin/python3 -I /usr/local/lib/tw/tw-tenant-handler

@@ -10,7 +10,7 @@ import (
 var relaySyncTenantsCmd = &cobra.Command{
 	Use:   "sync-tenants",
 	Short: "Move enrolled servers to their own locked-down relay accounts",
-	Long: "Rewrites the relay admin account's authorized_keys (admin key only), installs or updates\n" +
+	Long: "Updates tw's lines in the relay admin account's authorized_keys (other keys are kept), installs or updates\n" +
 		"the tenant request handler, and creates, updates or removes one relay account per enrolled\n" +
 		"server. Enroll and un-enroll do the same; run this once to migrate a relay whose servers\n" +
 		"still log in as the admin account.",

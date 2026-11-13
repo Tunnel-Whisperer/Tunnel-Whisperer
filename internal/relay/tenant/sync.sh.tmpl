@@ -79,22 +79,38 @@ tw_kill_admin_sessions() {
 	done
 }
 
-# tw_admin_keys <user> <authorized_keys b64>: rewrite the admin account's
-# authorized_keys (admin key only) and, if that changed it, end the admin's
-# other sessions.
+# tw_admin_keys <user> <tw admin lines b64>: bring the admin account's
+# authorized_keys in line without touching keys tw does not manage (e.g. the
+# operator's own maintenance key). Lines carrying a tw admin key body are
+# replaced by the rendered admin lines; tw tenant lines (the only lines tw
+# writes with permitlisten="127.0.0.1:...") are removed. Only removing tenant
+# lines ends the admin's other sessions: a pre-migration session that
+# authenticated with a tenant key could otherwise keep running commands.
 tw_admin_keys() {
 	home=$(getent passwd "$1" | cut -d: -f6)
 	[ -n "$home" ] && [ -d "$home/.ssh" ] || { echo "tw: admin account $1 has no ~/.ssh" >&2; exit 1; }
 	ak="$home/.ssh/authorized_keys"
-	if [ -f "$ak" ] && printf '%s' "$2" | base64 -d | cmp -s - "$ak"; then
+	[ -f "$ak" ] || : > "$ak"
+	want=$(printf '%s' "$2" | base64 -d)
+	bodies=$(printf '%s\n' "$want" | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^AAAA/) { printf "%s ", $i; break } }')
+	tenants=$(grep -cF 'permitlisten="127.0.0.1:' "$ak" || true)
+	tmp=$(mktemp "$ak.tw-XXXXXX")
+	awk -v bodies="$bodies" '
+		BEGIN { n = split(bodies, b, " ") }
+		index($0, "permitlisten=\"127.0.0.1:") { next }
+		{ for (i = 1; i <= n; i++) if (b[i] != "" && index($0, b[i])) next; print }
+	' "$ak" > "$tmp"
+	printf '%s\n' "$want" >> "$tmp"
+	if cmp -s "$tmp" "$ak"; then
+		rm -f "$tmp"
 		return 0
 	fi
-	tmp=$(mktemp "$ak.tw-XXXXXX")
-	printf '%s' "$2" | base64 -d > "$tmp"
 	chown "$1:" "$tmp"
 	chmod 600 "$tmp"
 	mv -f "$tmp" "$ak"
-	tw_kill_admin_sessions "$1" $$
+	if [ "$tenants" -gt 0 ]; then
+		tw_kill_admin_sessions "$1" $$
+	fi
 }
 
 tw_slice_limits() { # <uid>: bound every login session of a tenant account

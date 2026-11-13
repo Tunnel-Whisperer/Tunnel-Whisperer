@@ -153,8 +153,8 @@ func (o *Ops) UnenrollServer(serverID string, progress ProgressFunc) error {
 		// (a) Block re-auth: reconcile the tenant accounts to the remaining
 		// servers — this removes the target's account, mapping and request
 		// socket, and kills every process it still runs (including its
-		// reverse-tunnel session) — then rewrite the admin account's
-		// authorized_keys (admin key only).
+		// reverse-tunnel session) — then update tw's lines in the admin
+		// account's authorized_keys (other keys are kept).
 		if err := runRelayTenantSync(client, tenantSync); err != nil {
 			return err
 		}

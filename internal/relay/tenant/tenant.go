@@ -13,7 +13,7 @@
 //
 // RenderSync renders the idempotent root script that installs all of it,
 // reconciles the tenant accounts with the admin's registry and, given the
-// admin account, rewrites that account's authorized_keys last.
+// admin account, updates tw's lines in that account's authorized_keys last.
 package tenant
 
 import (
@@ -106,11 +106,12 @@ type Account struct {
 	Ports []int
 }
 
-// Admin is the relay admin account whose authorized_keys the sync rewrites
+// Admin is the relay admin account whose authorized_keys the sync updates
 // once every tenant has its own account.
 type Admin struct {
 	User string
-	// AuthorizedKeys is the account's complete authorized_keys content.
+	// AuthorizedKeys is tw's admin line(s) for the account's authorized_keys;
+	// lines the operator added are kept alongside them.
 	AuthorizedKeys string
 }
 
@@ -133,11 +134,12 @@ type accountView struct {
 // server-id mapping rewritten, and twt-* accounts not listed are removed
 // together with their processes, socket and home.
 //
-// With admin set, the script then rewrites the admin account's
+// With admin set, the script then updates the admin account's
 // authorized_keys — after the tenant accounts exist, so a failed sync never
-// locks out a tenant that still logs in as the admin — and, if that changed
-// the file, ends the admin's other sshd sessions: one opened with a tenant
-// key that just left the file must not stay usable. Provisioning passes nil
+// locks out a tenant that still logs in as the admin: tw's admin line is
+// replaced, tenant lines are removed and every other key is kept. Only if
+// tenant lines were removed does it end the admin's other sshd sessions: one
+// opened with a tenant key that just left the file must not stay usable. Provisioning passes nil
 // (it writes the admin's keys itself, and there are no sessions yet).
 func RenderSync(admin *Admin, accounts []Account) (string, error) {
 	var av *adminView

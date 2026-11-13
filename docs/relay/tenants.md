@@ -239,11 +239,13 @@ tw relay sync-tenants
 ```
 
 It installs the tenant request handler and creates one account per
-registered server first. Then it rewrites the admin account's
-`authorized_keys` so it holds only the admin key. During the migration it
-also ends every other SSH session of the admin account, so a pre-migration
-tenant session (which could still run commands) does not survive. Other
-admin sessions, such as an open `tw relay ssh`, are closed too. The command
+registered server first. Then it updates the admin account's
+`authorized_keys`: tw's admin line is replaced, tenant lines are removed, and
+every other key (e.g. your own maintenance key) is kept. If it removed tenant
+lines, it also ends every other SSH session of the admin account, so a
+pre-migration tenant session (which could still run commands) does not
+survive. Other admin sessions, such as an open `tw relay ssh`, are closed
+too. Once migrated, later syncs leave the admin's sessions alone. The command
 is idempotent. Every enroll, un-enroll and **Close Port 22** runs the same
 sync, so a relay also migrates the next time you do any of those.
 

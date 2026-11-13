@@ -27,12 +27,13 @@ func (o *Ops) signServerMode(req *JoinRequest) (sig, issuer string, err error) {
 	return modeauth.Sign(priv, "server", strings.TrimSpace(req.SSHPubkey))
 }
 
-// renderRelayAuthorizedKeys composes the relay admin account's tw-managed
-// authorized_keys file: the admin's key only. Enrolled servers no longer log
-// in as the admin (who has NOPASSWD sudo) — each gets its own tenant account
-// (renderTenantAuthorizedKeys). The file is fully rewritten on every enroll,
-// un-enroll and sync, which also drops tenant lines a pre-migration relay
-// still carries here.
+// renderRelayAuthorizedKeys composes the tw-managed line of the relay admin
+// account's authorized_keys: the admin's key only. Enrolled servers no longer
+// log in as the admin (who has NOPASSWD sudo) — each gets its own tenant
+// account (renderTenantAuthorizedKeys). Every enroll, un-enroll and sync
+// replaces tw's admin line with it and drops the tenant lines a
+// pre-migration relay still carries there; keys tw does not manage (e.g. the
+// operator's maintenance key) are kept.
 //
 // sshOpen: the admin line is pinned from="127.0.0.1" (tunnel-only) UNLESS
 // the relay was provisioned --ssh-open — the pin rejects any non-loopback
@@ -77,7 +78,7 @@ func renderTenantAuthorizedKeys(s RegisteredServer) (string, error) {
 
 // renderTenantSync renders the root script that installs the tenant request
 // handler on the relay, reconciles one tenant account per registered
-// server and then rewrites the admin account sshUser's authorized_keys with
+// server and then updates the admin account sshUser's authorized_keys with
 // akContent (see relaytenant.RenderSync for why in that order). A server
 // whose key fails to canonicalize gets no account (fail closed); registry
 // entries written by AddServer are already canonical, so this only trips on
@@ -178,7 +179,8 @@ func (o *Ops) relayTenantState(registered []RegisteredServer) ([]caddy.Server, [
 //  3. Over RelaySSH:
 //     - writes each CA cert to /etc/caddy/ca/<id>.crt
 //     - re-renders + validates + reloads the Caddyfile (graceful; no xray restart)
-//     - rewrites the admin account's authorized_keys (admin key only)
+//     - updates tw's lines in the admin account's authorized_keys (admin
+//     line current, tenant lines removed, other keys kept)
 //     - installs the tenant request handler and gives every enrolled server
 //     its own locked-down relay account (renderTenantSync)
 //     - writes the full Xray config.json for persistence
@@ -312,9 +314,9 @@ func (o *Ops) EnrollServer(req *JoinRequest, progress ProgressFunc) (_ *JoinResp
 
 		// Give every enrolled server — the new one included — its own
 		// account, which can reach nothing but its reverse-tunnel ports and
-		// the tenant request handler; then (same script) rewrite the admin
-		// account's authorized_keys in full (admin key only; this also drops
-		// the tenant lines a pre-migration relay kept there).
+		// the tenant request handler; then (same script) update the admin
+		// account's authorized_keys (tw's admin line replaced, the tenant
+		// lines a pre-migration relay kept there dropped, other keys kept).
 		if err := runRelayTenantSync(client, tenantSync); err != nil {
 			return err
 		}
@@ -369,8 +371,8 @@ func (o *Ops) EnrollServer(req *JoinRequest, progress ProgressFunc) (_ *JoinResp
 }
 
 // SyncRelayTenants brings the relay's tenant accounts in line with the
-// registry without enrolling anyone: it rewrites the admin account's
-// authorized_keys (admin key only), installs or updates the tenant request
+// registry without enrolling anyone: it updates tw's lines in the admin
+// account's authorized_keys (other keys are kept), installs or updates the tenant request
 // handler, and creates/updates/removes one relay account per registered
 // server. This is how a relay provisioned before per-tenant accounts drops
 // tenant keys from the admin account; enroll and un-enroll run the same sync.
