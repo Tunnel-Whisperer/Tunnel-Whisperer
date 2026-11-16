@@ -127,8 +127,9 @@ func GenerateKeyAndCSR(commonName string) (keyPEM, csrPEM []byte, err error) {
 // SignClientCSR issues a client-auth certificate for the CSR's public key,
 // signed by the CA. The subject CN is FORCED to commonName — the relay's CN
 // matcher admits only the server's own CN — and the CSR's subject is ignored.
-// The private key never appears here: it stays with the requester.
-func SignClientCSR(caCertPEM, caKeyPEM, csrPEM []byte, commonName string) ([]byte, error) {
+// The private key never appears here: it stays with the requester. A zero
+// notAfter keeps the default validity; otherwise it is used verbatim (UTC).
+func SignClientCSR(caCertPEM, caKeyPEM, csrPEM []byte, commonName string, notAfter time.Time) ([]byte, error) {
 	caCert, caKey, err := parseCA(caCertPEM, caKeyPEM)
 	if err != nil {
 		return nil, err
@@ -148,11 +149,14 @@ func SignClientCSR(caCertPEM, caKeyPEM, csrPEM []byte, commonName string) ([]byt
 	if err != nil {
 		return nil, fmt.Errorf("generating serial: %w", err)
 	}
+	if notAfter.IsZero() {
+		notAfter = time.Now().Add(certValidity)
+	}
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
 		Subject:      pkix.Name{CommonName: commonName},
 		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(certValidity),
+		NotAfter:     notAfter.UTC(),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
@@ -161,6 +165,19 @@ func SignClientCSR(caCertPEM, caKeyPEM, csrPEM []byte, commonName string) ([]byt
 		return nil, fmt.Errorf("creating client certificate: %w", err)
 	}
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), nil
+}
+
+// CertNotAfter returns the NotAfter of the first PEM certificate in certPEM.
+func CertNotAfter(certPEM []byte) (time.Time, error) {
+	blk, _ := pem.Decode(certPEM)
+	if blk == nil || blk.Type != "CERTIFICATE" {
+		return time.Time{}, fmt.Errorf("decoding certificate PEM")
+	}
+	cert, err := x509.ParseCertificate(blk.Bytes)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parsing certificate: %w", err)
+	}
+	return cert.NotAfter.UTC(), nil
 }
 
 func parseCA(caCertPEM, caKeyPEM []byte) (*x509.Certificate, *ecdsa.PrivateKey, error) {

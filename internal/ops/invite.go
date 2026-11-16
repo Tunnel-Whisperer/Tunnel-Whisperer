@@ -301,7 +301,7 @@ func (o *Ops) grantClient(cfg config.Config, req CreateUserRequest, off *enroll.
 	if err != nil {
 		return nil, fmt.Errorf("reading CA key: %w", err)
 	}
-	certPEM, err := pki.SignClientCSR(caCert, caKey, []byte(off.CSRPEM), serverID)
+	certPEM, err := pki.SignClientCSR(caCert, caKey, []byte(off.CSRPEM), serverID, time.Time{})
 	if err != nil {
 		return nil, fmt.Errorf("signing client CSR: %w", err)
 	}

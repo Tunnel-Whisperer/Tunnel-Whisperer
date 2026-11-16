@@ -4,6 +4,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"testing"
+	"time"
 )
 
 func TestGenerateCAProducesValidCA(t *testing.T) {
@@ -104,7 +105,7 @@ func TestSignClientCSR(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKeyAndCSR: %v", err)
 	}
-	certPEM, err := SignClientCSR(caCert, caKey, csrPEM, "srv-1")
+	certPEM, err := SignClientCSR(caCert, caKey, csrPEM, "srv-1", time.Time{})
 	if err != nil {
 		t.Fatalf("SignClientCSR: %v", err)
 	}
@@ -130,7 +131,7 @@ func TestSignClientCSR(t *testing.T) {
 		t.Fatal("issued cert does not carry the CSR's public key")
 	}
 	// Garbage CSR is rejected.
-	if _, err := SignClientCSR(caCert, caKey, []byte("not a csr"), "srv-1"); err == nil {
+	if _, err := SignClientCSR(caCert, caKey, []byte("not a csr"), "srv-1", time.Time{}); err == nil {
 		t.Fatal("garbage CSR accepted")
 	}
 }
@@ -162,8 +163,58 @@ func TestSignClientCSRRejectsInvalidSignature(t *testing.T) {
 	tamperedCSRPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der})
 
 	// SignClientCSR must reject the tampered signature
-	_, err = SignClientCSR(caCert, caKey, tamperedCSRPEM, "srv-1")
+	_, err = SignClientCSR(caCert, caKey, tamperedCSRPEM, "srv-1", time.Time{})
 	if err == nil {
 		t.Fatal("tampered CSR accepted; signature verification failed")
+	}
+}
+
+func signFixtures(t *testing.T) (caCert, caKey, csrPEM []byte) {
+	t.Helper()
+	caCert, caKey, err := GenerateCA("srv-1")
+	if err != nil {
+		t.Fatalf("GenerateCA: %v", err)
+	}
+	_, csrPEM, err = GenerateKeyAndCSR("client")
+	if err != nil {
+		t.Fatalf("GenerateKeyAndCSR: %v", err)
+	}
+	return caCert, caKey, csrPEM
+}
+
+func TestSignClientCSRNotAfter(t *testing.T) {
+	caCert, caKey, csrPEM := signFixtures(t)
+	want := time.Date(2027, 3, 1, 12, 0, 0, 0, time.UTC)
+	certPEM, err := SignClientCSR(caCert, caKey, csrPEM, "srv-1", want)
+	if err != nil {
+		t.Fatalf("SignClientCSR: %v", err)
+	}
+	blk, _ := pem.Decode(certPEM)
+	cert, err := x509.ParseCertificate(blk.Bytes)
+	if err != nil {
+		t.Fatalf("parsing issued cert: %v", err)
+	}
+	if !cert.NotAfter.Equal(want) {
+		t.Fatalf("NotAfter = %v, want %v", cert.NotAfter, want)
+	}
+	got, err := CertNotAfter(certPEM)
+	if err != nil || !got.Equal(want) {
+		t.Fatalf("CertNotAfter = %v, %v; want %v", got, err, want)
+	}
+
+	certPEM, err = SignClientCSR(caCert, caKey, csrPEM, "srv-1", time.Time{})
+	if err != nil {
+		t.Fatalf("SignClientCSR default: %v", err)
+	}
+	got, err = CertNotAfter(certPEM)
+	if err != nil {
+		t.Fatalf("CertNotAfter default: %v", err)
+	}
+	if d := time.Until(got) - 5*365*24*time.Hour; d < -time.Minute || d > time.Minute {
+		t.Fatalf("default NotAfter = %v, want about now+5y", got)
+	}
+
+	if _, err := CertNotAfter([]byte("not a cert")); err == nil {
+		t.Fatal("garbage accepted by CertNotAfter")
 	}
 }

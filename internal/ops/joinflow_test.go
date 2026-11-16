@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/enroll"
@@ -85,7 +86,7 @@ func TestApplyClientGrant(t *testing.T) {
 	// Use a REAL cert: sign the material's CSR with a throwaway CA so the
 	// stored context carries a parseable client.crt.
 	caCert, caKey, _ := pki.GenerateCA("srv-1")
-	certPEM, err := pki.SignClientCSR(caCert, caKey, c.csrPEM, "srv-1")
+	certPEM, err := pki.SignClientCSR(caCert, caKey, c.csrPEM, "srv-1", time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +119,7 @@ func TestApplyClientGrantBusyPortResolved(t *testing.T) {
 		t.Fatal(err)
 	}
 	caCert, caKey, _ := pki.GenerateCA("srv-1")
-	certPEM, _ := pki.SignClientCSR(caCert, caKey, c.csrPEM, "srv-1")
+	certPEM, _ := pki.SignClientCSR(caCert, caKey, c.csrPEM, "srv-1", time.Time{})
 	g := enroll.ClientGrant{RelayHost: "r", RelayPort: 443, Path: "/p", SSHUser: "bob",
 		ServerSSHPort: 20000, ClientCertPEM: string(certPEM),
 		Tunnels: []enroll.GrantTunnel{{LocalPort: busy, RemoteHost: "127.0.0.1", RemotePort: 80}}}
@@ -280,7 +281,7 @@ func TestClientJoinSanitizesIssuerUsername(t *testing.T) {
 				t.Fatal(err)
 			}
 			caCert, caKey, _ := pki.GenerateCA("srv-1")
-			certPEM, err := pki.SignClientCSR(caCert, caKey, c.csrPEM, "srv-1")
+			certPEM, err := pki.SignClientCSR(caCert, caKey, c.csrPEM, "srv-1", time.Time{})
 			if err != nil {
 				t.Fatal(err)
 			}
