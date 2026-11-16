@@ -57,7 +57,6 @@ type Ops struct {
 	trafficReset  bool       // true after first traffic stats reset
 }
 
-
 // New loads the configuration and returns a ready Ops instance.
 func New() (*Ops, error) {
 	cfg, err := config.Load()

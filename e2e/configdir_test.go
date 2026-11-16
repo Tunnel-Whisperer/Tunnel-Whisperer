@@ -20,16 +20,16 @@ const carolPort = "18093"
 // entirely inside its own --config-dir so the client's main profile (bob's,
 // live since RelayResilience) is never touched:
 //
-//   A) write-permission preflight (bf9da7d): `tw join` against an unwritable
-//      config dir fails locally BEFORE any network call, so the issuer's
-//      one-time invite is never burned — the same code can still be redeemed
-//      afterwards.
-//   B) relative config-dir resolution (1ee3192): `tw --config-dir <relative>`
-//      works end-to-end, including the xray-core client-cert path. The
-//      reported bug was `client test` step 3 failing with
-//      `open /usr/local/bin/<rel>/client.crt` because xray-core resolves
-//      relative paths against its own executable's directory, not the
-//      process's cwd.
+//	A) write-permission preflight (bf9da7d): `tw join` against an unwritable
+//	   config dir fails locally BEFORE any network call, so the issuer's
+//	   one-time invite is never burned — the same code can still be redeemed
+//	   afterwards.
+//	B) relative config-dir resolution (1ee3192): `tw --config-dir <relative>`
+//	   works end-to-end, including the xray-core client-cert path. The
+//	   reported bug was `client test` step 3 failing with
+//	   `open /usr/local/bin/<rel>/client.crt` because xray-core resolves
+//	   relative paths against its own executable's directory, not the
+//	   process's cwd.
 func testConfigDirSafety(t *testing.T) {
 	scenario(t, "an unwritable config dir fails tw join before any network call (invite not burned), and a RELATIVE --config-dir works end-to-end including the xray client-cert path",
 		"a fresh user (carol) is invited on the server",

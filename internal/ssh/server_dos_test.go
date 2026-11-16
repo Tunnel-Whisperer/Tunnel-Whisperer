@@ -98,12 +98,12 @@ func TestParseDirectTCPIPRejectsOverflow(t *testing.T) {
 	}
 	// A well-formed payload still parses.
 	good := []byte{}
-	good = append(good, 0, 0, 0, 3)      // hostLen=3
-	good = append(good, 'a', 'b', 'c')   // host
+	good = append(good, 0, 0, 0, 3)       // hostLen=3
+	good = append(good, 'a', 'b', 'c')    // host
 	good = append(good, 0, 0, 0x1F, 0x90) // port 8080
-	good = append(good, 0, 0, 0, 1)      // origHostLen=1
-	good = append(good, 'x')             // origin host
-	good = append(good, 0, 0, 0, 42)     // origin port
+	good = append(good, 0, 0, 0, 1)       // origHostLen=1
+	good = append(good, 'x')              // origin host
+	good = append(good, 0, 0, 0, 42)      // origin port
 	d, err := parseDirectTCPIP(good)
 	if err != nil {
 		t.Fatalf("valid payload rejected: %v", err)

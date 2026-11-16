@@ -131,4 +131,3 @@ func DecodeJoinResponse(b []byte) (*JoinResponse, error) {
 	}
 	return &r, nil
 }
-

@@ -550,6 +550,7 @@ func (o *Ops) SaveManualRelay(domain, ip string, sshOpen bool) error {
 //   - A manual marker already matching the imported relay's domain: keep it.
 //   - Otherwise (no marker, or a stale marker from a previously-imported relay):
 //     synthesize the manual marker from the imported config (IP via DNS).
+//
 // ssh_open defaults false; it only affects whether the UI offers direct SSH.
 func (o *Ops) ensureRelayMarker() error {
 	relayDir := config.RelayDir()
