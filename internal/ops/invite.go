@@ -284,6 +284,13 @@ func (o *Ops) InviteUser(req CreateUserRequest, ttl time.Duration, ui InviteUI, 
 	})
 }
 
+// relayAddUUID/relayRemoveUUID are seams so tests can run grantClient without
+// a live relay.
+var (
+	relayAddUUID    = addUUIDToRelay
+	relayRemoveUUID = removeUUIDFromRelay
+)
+
 // grantClient performs the server-side creation for an invited client —
 // UUID/authorized_keys/user-dir writes where the key material is the
 // ENROLLEE's public half and the cert is issued from their CSR. Rolls itself
@@ -301,7 +308,7 @@ func (o *Ops) grantClient(cfg config.Config, req CreateUserRequest, off *enroll.
 	if err != nil {
 		return nil, fmt.Errorf("reading CA key: %w", err)
 	}
-	certPEM, err := pki.SignClientCSR(caCert, caKey, []byte(off.CSRPEM), serverID, time.Time{})
+	certPEM, err := pki.SignClientCSR(caCert, caKey, []byte(off.CSRPEM), serverID, req.ExpiresAt.Truncate(time.Second).UTC())
 	if err != nil {
 		return nil, fmt.Errorf("signing client CSR: %w", err)
 	}
@@ -316,10 +323,10 @@ func (o *Ops) grantClient(cfg config.Config, req CreateUserRequest, off *enroll.
 		}
 	}()
 
-	if err = addUUIDToRelay(&cfg, off.UUID); err != nil {
+	if err = relayAddUUID(&cfg, off.UUID); err != nil {
 		return nil, fmt.Errorf("registering UUID on relay: %w", err)
 	}
-	undo = append(undo, func() { _ = removeUUIDFromRelay(&cfg, off.UUID) })
+	undo = append(undo, func() { _ = relayRemoveUUID(&cfg, off.UUID) })
 
 	// The client pins this to verify the end-to-end SSH session against a
 	// relay MITM. Best-effort: an empty pin makes the client fail closed at
@@ -337,6 +344,9 @@ func (o *Ops) grantClient(cfg config.Config, req CreateUserRequest, off *enroll.
 	// The server keeps ONLY public material for this user — the private keys
 	// were born on the client and never travelled.
 	if err = os.WriteFile(filepath.Join(userDir, "id_ed25519.pub"), []byte(off.SSHPubkey+"\n"), 0644); err != nil {
+		return nil, err
+	}
+	if err = os.WriteFile(filepath.Join(userDir, "client.crt"), certPEM, 0644); err != nil {
 		return nil, err
 	}
 	tunnels := make([]enroll.GrantTunnel, len(req.Mappings))

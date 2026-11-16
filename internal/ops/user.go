@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
+	"github.com/tunnelwhisperer/tw/internal/pki"
 	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
 	twxray "github.com/tunnelwhisperer/tw/internal/xray"
 	proxymanCmd "github.com/xtls/xray-core/app/proxyman/command"
@@ -38,6 +39,8 @@ type UserInfo struct {
 	Online        bool            `json:"online"`
 	SingleSession bool            `json:"single_session"`
 	Sessions      int             `json:"sessions"`
+	ExpiresAt     string          `json:"expires_at,omitempty"`
+	Expired       bool            `json:"expired"`
 	DirPath       string          `json:"-"`
 }
 
@@ -46,6 +49,7 @@ type CreateUserRequest struct {
 	Name          string               `json:"name"`
 	Mappings      []config.PortMapping `json:"mappings"`
 	SingleSession bool                 `json:"single_session"`
+	ExpiresAt     time.Time            `json:"expires_at,omitzero"`
 }
 
 // ListApplications returns all configured application templates.
@@ -181,6 +185,15 @@ func (o *Ops) ListUsers() ([]UserInfo, error) {
 			ui.SingleSession = true
 		}
 
+		if exp, err := userExpiry(ui.DirPath); err != nil {
+			if !os.IsNotExist(err) {
+				slog.Warn("user client.crt unreadable", "user", ui.Name, "error", err)
+			}
+		} else if !exp.IsZero() {
+			ui.ExpiresAt = exp.UTC().Format(time.RFC3339)
+			ui.Expired = time.Now().After(exp)
+		}
+
 		users = append(users, ui)
 	}
 
@@ -193,6 +206,16 @@ func (o *Ops) ListUsers() ([]UserInfo, error) {
 	}
 
 	return users, nil
+}
+
+// userExpiry returns the NotAfter of the user's stored client.crt, or the zero
+// time with an os.IsNotExist error when the user has none (pre-expiry users).
+func userExpiry(dirPath string) (time.Time, error) {
+	data, err := os.ReadFile(filepath.Join(dirPath, "client.crt"))
+	if err != nil {
+		return time.Time{}, err
+	}
+	return pki.CertNotAfter(data)
 }
 
 // validateUserName enforces the user-name shape ([A-Za-z0-9_-]+). Every
