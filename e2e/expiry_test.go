@@ -22,7 +22,7 @@ func testUserExpiry(t *testing.T) {
 		"tw server user invite eve -m <evePort>:<echoPort> --expires 2m issues a cert whose NotAfter is ~2 minutes out (openssl x509 -enddate on the client's cert) and prints 'Credential expires:'",
 		"eve's tw client connect forwards echo before expiry",
 		"at expiry the server logs 'user credential expired, sessions disconnected' for eve and her live session stops forwarding (no echo across a 20s poll)",
-		"a fresh tw client connect for eve never opens its tunnel port across a full 30s poll, and the server's SSH layer never even sees it (no new 'expired user refused' line: stopped earlier, at the relay's mTLS gate)",
+		"a fresh tw client connect for eve never opens its tunnel port within 30s and never reaches the server's SSH layer (no new 'expired user refused' line), unlike her live client which was refused there (consistent with the relay refusing the expired cert at the TLS handshake)",
 		"tw server user list shows 'Expires: EXPIRED' for eve",
 		"re-inviting eve errors with 'has expired; delete it first', and after tw server user delete eve a new invite for eve works")
 
@@ -79,6 +79,11 @@ func testUserExpiry(t *testing.T) {
 		n, err := strconv.Atoi(strings.TrimSpace(out))
 		return err == nil && n > expiredBefore, out
 	})
+	const refusedLog = "grep -c 'expired user refused.*user=eve' /var/log/tw-server.log || true"
+	liveRefusedBefore, err := strconv.Atoi(strings.TrimSpace(execIn(t, "server", refusedLog)))
+	if err != nil {
+		fatalf(t, "counting refusal log lines: %v", err)
+	}
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		if out, err := execInOK("client", echo); err == nil && strings.TrimSpace(out) == "hello-tw-expiry" {
@@ -89,15 +94,22 @@ func testUserExpiry(t *testing.T) {
 		time.Sleep(2 * time.Second)
 	}
 
+	liveRefusedAfter, err := strconv.Atoi(strings.TrimSpace(execIn(t, "server", refusedLog)))
+	if err != nil || liveRefusedAfter <= liveRefusedBefore {
+		srvLog, _ := execInOK("server", "tail -20 /var/log/tw-server.log")
+		fatalf(t, "eve's live client was not refused at the SSH layer during the 20s poll (expired-user refusals %d before, %d after, err %v):\n%s", liveRefusedBefore, liveRefusedAfter, err, srvLog)
+	}
+
 	// A fresh connect never comes up. The client log carries only generic
-	// "SSH handshake failed: EOF" lines and the relay logs no TLS error, so
-	// there is no stable TLS string to assert. Instead: the live client's
-	// retries are what make the server log 'expired user refused'; a fresh
-	// client that logs none never reached the server's SSH, i.e. the relay's
-	// mTLS gate stopped it.
+	// "SSH handshake failed: EOF" lines and no TLS error is logged anywhere,
+	// so there is no stable TLS string to assert. What is proven: the live
+	// client was refused at the SSH layer (counter grew above), while the
+	// fresh client adds no such line, i.e. it never reached the server's SSH
+	// (consistent with the relay refusing the expired cert at the TLS
+	// handshake).
 	killMatching(t, "client", "twexp")
 	time.Sleep(5 * time.Second) // let the killed client's last in-flight retry land
-	refusedBefore, err := strconv.Atoi(strings.TrimSpace(execIn(t, "server", "grep -c 'expired user refused.*user=eve' /var/log/tw-server.log || true")))
+	refusedBefore, err := strconv.Atoi(strings.TrimSpace(execIn(t, "server", refusedLog)))
 	if err != nil {
 		fatalf(t, "counting refusal log lines: %v", err)
 	}
@@ -112,10 +124,10 @@ func testUserExpiry(t *testing.T) {
 	}
 	tail, _ := execInOK("client", "tail -10 /var/log/tw-client-eve-expired.log")
 	t.Logf("expired client stayed down for 30s; client log tail:\n%s", tail)
-	refusedAfter := strings.TrimSpace(execIn(t, "server", "grep -c 'expired user refused.*user=eve' /var/log/tw-server.log || true"))
+	refusedAfter := strings.TrimSpace(execIn(t, "server", refusedLog))
 	if n, err := strconv.Atoi(refusedAfter); err != nil || n != refusedBefore {
 		srvLog, _ := execInOK("server", "tail -20 /var/log/tw-server.log")
-		fatalf(t, "eve's fresh connect reached the server's SSH layer (expired-user refusals %d before, %q after) — it should have been stopped at the relay:\n%s", refusedBefore, refusedAfter, srvLog)
+		fatalf(t, "eve's fresh connect reached the server's SSH layer (expired-user refusals %d before, %q after) — only the live client should reach it:\n%s", refusedBefore, refusedAfter, srvLog)
 	}
 	killMatching(t, "client", "twexp")
 
