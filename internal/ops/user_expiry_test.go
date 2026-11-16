@@ -134,3 +134,26 @@ func TestListUsersTolerantOfBadCert(t *testing.T) {
 		t.Fatalf("users = %+v", users)
 	}
 }
+
+func TestGrantClientDefaultExpiryIsFiveYears(t *testing.T) {
+	o := newExpiryOps(t)
+	grantForTest(t, o, "erin", time.Time{})
+	users, err := o.ListUsers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(users) != 1 {
+		t.Fatalf("users = %+v", users)
+	}
+	got, err := time.Parse(time.RFC3339, users[0].ExpiresAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := time.Now().Add(5 * 365 * 24 * time.Hour)
+	if d := got.Sub(want); d < -time.Minute || d > time.Minute {
+		t.Fatalf("ExpiresAt = %v, want within 1m of %v", got, want)
+	}
+	if users[0].Expired {
+		t.Fatal("default-expiry user reported expired")
+	}
+}

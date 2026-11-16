@@ -251,6 +251,9 @@ func validateCreateUser(cfg config.Config, req CreateUserRequest) error {
 
 	userDir := filepath.Join(config.UsersDir(), req.Name)
 	if _, err := os.Stat(userDir); err == nil {
+		if exp, err := userExpiry(userDir); err == nil && !exp.After(time.Now()) {
+			return fmt.Errorf("user %q has expired; delete it first (tw server user delete %s)", req.Name, req.Name)
+		}
 		return fmt.Errorf("user %q already exists", req.Name)
 	}
 	return nil

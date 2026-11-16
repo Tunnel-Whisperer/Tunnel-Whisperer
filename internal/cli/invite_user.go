@@ -14,10 +14,11 @@ import (
 )
 
 var (
-	inviteUserFrom   string
-	inviteUserMaps   []string
-	inviteUserSingle bool
-	inviteUserTTL    time.Duration
+	inviteUserFrom    string
+	inviteUserMaps    []string
+	inviteUserSingle  bool
+	inviteUserTTL     time.Duration
+	inviteUserExpires string
 )
 
 var inviteUserCmd = &cobra.Command{
@@ -42,6 +43,10 @@ With a name argument the mappings come from --map (repeatable) or --from;
 without one it prompts for both. Re-inviting an existing name is refused:
 to change a user's device or mappings, delete the user and invite again.
 
+--expires sets when the user's credential stops working (RFC 3339,
+YYYY-MM-DD, or a duration like 30d/12h; default: 5 years). It cannot be later
+than the server CA's own expiry.
+
 Examples:
   tw server user invite alice -m 8080:80 -m 5432:5432
   tw server user invite bob --from alice`,
@@ -55,6 +60,7 @@ func init() {
 		"port mapping clientPort:serverPort (repeatable), e.g. -m 8080:80")
 	inviteUserCmd.Flags().BoolVar(&inviteUserSingle, "single-session", false, "enforce one concurrent session for this user")
 	inviteUserCmd.Flags().DurationVar(&inviteUserTTL, "ttl", 15*time.Minute, "invite lifetime")
+	inviteUserCmd.Flags().StringVar(&inviteUserExpires, "expires", "", "credential expiry: RFC 3339, YYYY-MM-DD, or a duration like 30d/12h (default: 5 years)")
 	serverUserCmd.AddCommand(inviteUserCmd)
 }
 
@@ -143,10 +149,22 @@ func runInviteUser(cmd *cobra.Command, args []string) error {
 	}
 
 	req := ops.CreateUserRequest{Name: name, Mappings: mappings, SingleSession: inviteUserSingle}
+	if inviteUserExpires != "" {
+		req.ExpiresAt, err = ops.ParseExpires(inviteUserExpires, time.Now())
+		if err != nil {
+			return err
+		}
+		if err := o.CheckExpiresAgainstCA(req.ExpiresAt); err != nil {
+			return err
+		}
+	}
 	if err := o.InviteUser(req, inviteUserTTL, ops.InviteUI{
 		ShowCode: func(code string, expires time.Time) {
 			fmt.Printf("Invite code: %s\n", code)
 			fmt.Printf("Expires:     %s\n", expires.Format(time.Kitchen))
+			if !req.ExpiresAt.IsZero() {
+				fmt.Printf("Credential expires: %s\n", req.ExpiresAt.Format(time.RFC3339))
+			}
 			fmt.Printf("\nRun this on %s's client machine:\n", req.Name)
 			fmt.Print(joinCommandHint(o.Config().Xray.RelayHost, code))
 			fmt.Println("Waiting for the enrollee ...")
