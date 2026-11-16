@@ -2,8 +2,12 @@ package ops
 
 import (
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/tunnelwhisperer/tw/internal/config"
 )
 
 // expiryWatcher disconnects users whose client certificate has expired: one
@@ -38,10 +42,10 @@ func newExpiryWatcher(o *Ops, rescan time.Duration) *expiryWatcher {
 }
 
 // Start rescans once, then every rescan interval until Stop. It does nothing
-// once Stop has run.
+// when already started or once Stop has run.
 func (w *expiryWatcher) Start() {
 	w.mu.Lock()
-	if w.stopped {
+	if w.stopped || w.started {
 		w.mu.Unlock()
 		return
 	}
@@ -143,7 +147,8 @@ func (w *expiryWatcher) Rescan() {
 }
 
 // fire runs on et's timer. A Forget, re-arm or Stop that raced the timer has
-// already removed et from the map, so it does nothing.
+// already removed et from the map, so it does nothing; neither does a user
+// that is gone or no longer expired on disk.
 func (w *expiryWatcher) fire(name string, et *expiryTimer) {
 	w.mu.Lock()
 	if w.stopped || w.timers[name] != et {
@@ -152,6 +157,20 @@ func (w *expiryWatcher) fire(name string, et *expiryTimer) {
 	}
 	delete(w.timers, name)
 	w.mu.Unlock()
+
+	// The timer may come from a stale rescan snapshot, or the user may have
+	// been deleted or re-issued since (possibly by another process): act only
+	// on the expiry on disk now.
+	exp, err := userExpiry(filepath.Join(config.UsersDir(), name))
+	if err != nil {
+		if !os.IsNotExist(err) {
+			slog.Warn("expiry timer: user client.crt unreadable", "user", name, "error", err)
+		}
+		return
+	}
+	if exp.After(time.Now()) {
+		return
+	}
 
 	n := w.o.srv.DisconnectUser(name)
 	slog.Info("user credential expired, sessions disconnected", "user", name, "sessions", n)

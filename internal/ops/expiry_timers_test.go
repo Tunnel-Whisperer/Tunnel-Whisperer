@@ -271,6 +271,54 @@ func TestExpiryTimerDroppedOnDelete(t *testing.T) {
 	}
 }
 
+// TestExpiryTimerRechecksDiskBeforeDisconnect: a timer armed for an expiry
+// that no longer holds (re-issued or deleted by another process, no Forget)
+// must neither disconnect nor log.
+func TestExpiryTimerRechecksDiskBeforeDisconnect(t *testing.T) {
+	logs := captureSlog(t)
+	e := newExpiryEnv(t)
+	signer := e.grant(t, "bob", time.Now().Add(2*time.Second))
+	e.grant(t, "carol", time.Now().Add(2*time.Second))
+	e.grant(t, "renewed", time.Now().Add(48*time.Hour))
+	client := e.connect(t, signer)
+
+	w := newExpiryWatcher(e.o, time.Hour)
+	w.Start()
+	defer w.Stop()
+	if w.pending() != 3 {
+		t.Fatalf("pending = %d, want 3", w.pending())
+	}
+
+	renewed, err := os.ReadFile(filepath.Join(config.UsersDir(), "renewed", "client.crt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(config.UsersDir(), "bob", "client.crt"), renewed, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(config.UsersDir(), "carol")); err != nil {
+		t.Fatal(err)
+	}
+
+	if !waitFor(t, 5*time.Second, func() bool { return w.pending() == 1 }) {
+		t.Fatalf("bob's and carol's timers must have fired; pending = %d", w.pending())
+	}
+	if err := e.readSvc(client); err != nil {
+		t.Fatalf("re-issued bob must stay connected: %v", err)
+	}
+	if expiredLogged(logs.String(), "bob") || expiredLogged(logs.String(), "carol") {
+		t.Fatalf("stale timer acted; logs:\n%s", logs.String())
+	}
+}
+
+func TestExpiryStartTwice(t *testing.T) {
+	o := newExpiryOps(t)
+	w := newExpiryWatcher(o, time.Hour)
+	w.Start()
+	w.Start()
+	w.Stop()
+}
+
 func TestExpiryForgetNilWatcher(t *testing.T) {
 	var w *expiryWatcher
 	w.Forget("bob")
