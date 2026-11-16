@@ -64,8 +64,8 @@ func newRevokeFixture(t *testing.T) *revokeFixture {
 	t.Cleanup(func() { s.Stop() })
 	var addr string
 	for i := 0; i < 200 && addr == ""; i++ {
-		if s.listener != nil {
-			addr = s.listener.Addr().String()
+		if a := listenerAddr(s); a != nil {
+			addr = a.String()
 		} else {
 			time.Sleep(5 * time.Millisecond)
 		}
@@ -90,6 +90,16 @@ func newRevokeFixture(t *testing.T) *revokeFixture {
 		t.Fatalf("channel before revocation must work: %v", err)
 	}
 	return f
+}
+
+// listenerAddr returns the server's bound address, or nil before Run listens.
+func listenerAddr(s *Server) net.Addr {
+	s.lisMu.Lock()
+	defer s.lisMu.Unlock()
+	if s.listener == nil {
+		return nil
+	}
+	return s.listener.Addr()
 }
 
 func (f *revokeFixture) readService() error {

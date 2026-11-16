@@ -69,6 +69,13 @@ type expiryEnv struct {
 
 func newExpiryEnv(t *testing.T) *expiryEnv {
 	t.Helper()
+	return startExpiryEnv(t, nil)
+}
+
+// startExpiryEnv is newExpiryEnv with the SSH server's UserExpired callback
+// set before it starts.
+func startExpiryEnv(t *testing.T, userExpired func(string) bool) *expiryEnv {
+	t.Helper()
 	o := newExpiryOps(t)
 
 	svc, err := net.Listen("tcp", "127.0.0.1:0")
@@ -95,6 +102,7 @@ func newExpiryEnv(t *testing.T) *expiryEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
+	srv.UserExpired = userExpired
 	go func() { _ = srv.Run() }()
 	t.Cleanup(func() { _ = srv.Stop() })
 
@@ -188,7 +196,7 @@ func expiredLogged(logs, name string) bool {
 
 func TestExpiryTimerDisconnectsLiveSession(t *testing.T) {
 	logs := captureSlog(t)
-	e := newExpiryEnv(t)
+	e := startExpiryEnv(t, userExpiredNow)
 	signer := e.grant(t, "bob", time.Now().Add(3*time.Second))
 	client := e.connect(t, signer)
 	if err := e.readSvc(client); err != nil {
@@ -213,6 +221,21 @@ func TestExpiryTimerDisconnectsLiveSession(t *testing.T) {
 	}
 	if w.pending() != 0 {
 		t.Fatalf("pending after fire = %d, want 0", w.pending())
+	}
+
+	// The reconnect the e2e saw: the same key must no longer authenticate.
+	again, err := gossh.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", e.sshPort), &gossh.ClientConfig{
+		User:            "tw",
+		Auth:            []gossh.AuthMethod{gossh.PublicKeys(signer)},
+		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+		Timeout:         5 * time.Second,
+	})
+	if err == nil {
+		again.Close()
+		t.Fatal("expired bob must not re-authenticate after the timer disconnected him")
+	}
+	if !strings.Contains(err.Error(), "unable to authenticate") {
+		t.Fatalf("reconnect error = %v, want an authentication failure", err)
 	}
 }
 

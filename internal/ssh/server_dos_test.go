@@ -24,8 +24,8 @@ func TestServerBindsLoopback(t *testing.T) {
 
 	var addr net.Addr
 	for i := 0; i < 200; i++ {
-		if s.listener != nil {
-			addr = s.listener.Addr()
+		if a := listenerAddr(s); a != nil {
+			addr = a
 			break
 		}
 		time.Sleep(5 * time.Millisecond)

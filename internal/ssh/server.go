@@ -47,9 +47,12 @@ type Server struct {
 	OnConnect      func(user string) // called after successful SSH authentication
 	OnDisconnect   func(user string) // called when an SSH connection closes
 	Stats          *stats.Collector  // nil = disabled, no overhead
+	UserExpired    func(string) bool // tw_user → expired? true refuses auth and new channels; nil = no expiry checks
 	config         *gossh.ServerConfig
-	listener       net.Listener
 	handshakeSem   chan struct{} // bounds concurrent pre-auth handshakes
+
+	lisMu    sync.Mutex
+	listener net.Listener // set by Run, closed by Stop
 
 	connMu       sync.Mutex
 	connectedMap map[string]int                            // tw_user → active session count
@@ -131,7 +134,9 @@ func (s *Server) checkAuthorizedKey(conn gossh.ConnMetadata, key gossh.PublicKey
 // lookupAuthorizedKey reads the current authorized_keys file and returns the
 // permissions of the first entry whose key has the given SHA256 fingerprint,
 // or nil if no entry matches. The fingerprint is recorded in the returned
-// permissions so later per-channel checks can re-resolve the same entry.
+// permissions so later per-channel checks can re-resolve the same entry. A
+// matched entry whose tw_user UserExpired reports expired is an error, which
+// refuses both authentication and (via recheckPermitOpen) new channels.
 func (s *Server) lookupAuthorizedKey(fingerprint string) (*gossh.Permissions, error) {
 	data, err := os.ReadFile(s.AuthorizedKeys)
 	if err != nil {
@@ -159,6 +164,10 @@ func (s *Server) lookupAuthorizedKey(fingerprint string) (*gossh.Permissions, er
 
 		if twUser != "" {
 			perms.Extensions["tw_user"] = twUser
+			if s.UserExpired != nil && s.UserExpired(twUser) {
+				slog.Info("expired user refused", "user", twUser)
+				return nil, fmt.Errorf("user %q credential expired", twUser)
+			}
 		}
 
 		// Parse permitopen and single-session options.
@@ -256,7 +265,9 @@ func (s *Server) Run() error {
 	if err != nil {
 		return fmt.Errorf("ssh-server: listen %s: %w", addr, err)
 	}
+	s.lisMu.Lock()
 	s.listener = lis
+	s.lisMu.Unlock()
 
 	slog.Info("SSH server listening", "addr", addr)
 
@@ -550,8 +561,9 @@ func isPortAllowed(perms *gossh.Permissions, host string, port uint32) bool {
 }
 
 // recheckPermitOpen resolves the connection's key in the current
-// authorized_keys and returns an error unless that entry still exists, still
-// belongs to the same tw_user, and still permits host:port.
+// authorized_keys and returns an error unless that entry still exists, its
+// user's credential has not expired, it still belongs to the same tw_user,
+// and it still permits host:port.
 func (s *Server) recheckPermitOpen(perms *gossh.Permissions, host string, port uint32) error {
 	fp := perms.Extensions[pubkeyFingerprintExt]
 	if fp == "" {
@@ -608,8 +620,11 @@ func (s *Server) ConnectedUsers() map[string]int {
 
 // Stop gracefully stops the SSH server.
 func (s *Server) Stop() error {
-	if s.listener != nil {
-		return s.listener.Close()
+	s.lisMu.Lock()
+	lis := s.listener
+	s.lisMu.Unlock()
+	if lis != nil {
+		return lis.Close()
 	}
 	return nil
 }

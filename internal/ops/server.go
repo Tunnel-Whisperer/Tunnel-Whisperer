@@ -86,6 +86,7 @@ func (m *serverManager) Start(o *Ops, progress ProgressFunc) error {
 		return fail(2, total, "SSH server", err)
 	}
 	sshServer.Stats = o.stats
+	sshServer.UserExpired = userExpiredNow
 	sshServer.OnConnect = func(user string) {
 		slog.Info("client connected, refreshing online status", "user", user)
 		o.InvalidateOnlineCache()
@@ -173,6 +174,14 @@ func serverXrayPort(cfg *config.Config) int {
 		return cfg.Server.XrayPort
 	}
 	return cfg.Server.SSHPort + 1
+}
+
+// userExpiredNow is the SSH server's UserExpired callback: a readable stored
+// client.crt whose NotAfter has passed means expired. A missing or unreadable
+// cert is NOT expired (fail open, same as ListUsers).
+func userExpiredNow(name string) bool {
+	exp, err := userExpiry(filepath.Join(config.UsersDir(), name))
+	return err == nil && time.Now().After(exp)
 }
 
 // DisconnectUser closes the in-process SSH server's live connections for
