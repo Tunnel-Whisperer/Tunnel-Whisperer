@@ -46,6 +46,7 @@ func TestE2E(t *testing.T) {
 		{"AppCatalog", testAppCatalog},
 		{"ProxyRoute", testProxyRoute},
 		{"Revocation", testRevocation},
+		{"UserExpiry", testUserExpiry},
 		{"Contexts", testContexts},
 		{"SecondTenant", testSecondTenant},
 		{"CrossTenantCert", testCrossTenantCert},
