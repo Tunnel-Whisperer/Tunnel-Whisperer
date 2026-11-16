@@ -35,13 +35,14 @@
         <th>UUID</th>
         <th class="sortable" data-sort="tunnels">Tunnels</th>
         <th class="sortable active" data-sort="status" data-dir="asc">Status</th>
+        <th class="sortable" data-sort="expires">Expires</th>
         <th>Single Session</th>
         <th></th>
       </tr>
     </thead>
     <tbody>
       {{range .Users}}
-      <tr data-user="{{.Name}}" data-uuid="{{.UUID}}" data-tunnels="{{len .Tunnels}}" data-status="{{if .Online}}0{{else if .Active}}1{{else}}2{{end}}">
+      <tr data-user="{{.Name}}" data-uuid="{{.UUID}}" data-tunnels="{{len .Tunnels}}" data-status="{{if .Online}}0{{else if .Active}}1{{else}}2{{end}}" data-expires="{{.ExpiresAt}}">
         <td><a href="/users/{{.Name}}">{{.Name}}</a></td>
         <td class="text-mono text-dim">{{if .UUID}}{{slice .UUID 0 8}}...{{else}}—{{end}}</td>
         <td>{{len .Tunnels}}</td>
@@ -57,6 +58,7 @@
           <span class="badge badge-dim">not registered</span>
           {{end}}
         </td>
+        <td>{{if .Expired}}<span class="badge badge-red">expired</span>{{else if .ExpiresAt}}{{.ExpiresAt}}{{else}}—{{end}}</td>
         <td>
           <label class="toggle-label"><input type="checkbox" {{if .SingleSession}}checked{{end}} onchange="toggleSingleSession('{{.Name}}', this.checked)"></label>
         </td>

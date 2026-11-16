@@ -77,6 +77,7 @@ async function relayUsersRequest(endpoint, body) {
       case 'name':    return row.dataset.user.toLowerCase();
       case 'tunnels': return parseInt(row.dataset.tunnels) || 0;
       case 'status':  return parseInt(row.dataset.status) || 0;
+      case 'expires': return row.dataset.expires ? Date.parse(row.dataset.expires) : Infinity;
       default:        return '';
     }
   }
@@ -87,7 +88,7 @@ async function relayUsersRequest(endpoint, body) {
       const vb = getSortValue(b, sortCol);
       let cmp = 0;
       if (typeof va === 'number') {
-        cmp = va - vb;
+        cmp = va === vb ? 0 : (va < vb ? -1 : 1);
       } else {
         cmp = va.localeCompare(vb);
       }

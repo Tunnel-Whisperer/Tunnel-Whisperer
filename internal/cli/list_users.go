@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/tunnelwhisperer/tw/internal/api"
@@ -69,9 +70,36 @@ func printUsers(users []ops.UserInfo) {
 		if u.UUID != "" {
 			fmt.Printf("    UUID: %s\n", u.UUID)
 		}
+		if u.Expired {
+			fmt.Println("    Expires: EXPIRED")
+		} else if e := formatExpiry(u.ExpiresAt, time.Now()); e != "" {
+			fmt.Printf("    Expires: %s\n", e)
+		}
 		for _, t := range u.Tunnels {
 			fmt.Printf("    Tunnel: localhost:%d → %s:%d\n", t.LocalPort, t.RemoteHost, t.RemotePort)
 		}
 	}
 	fmt.Println()
+}
+
+// formatExpiry renders an RFC 3339 expiry for display: empty when there is
+// none, "EXPIRED" once past, and a day hint when it is within a week.
+func formatExpiry(expiresAt string, now time.Time) string {
+	if expiresAt == "" {
+		return ""
+	}
+	t, err := time.Parse(time.RFC3339, expiresAt)
+	if err != nil {
+		return expiresAt
+	}
+	remaining := t.Sub(now)
+	switch {
+	case remaining <= 0:
+		return "EXPIRED"
+	case remaining < 24*time.Hour:
+		return expiresAt + " (in <1d)"
+	case remaining <= 7*24*time.Hour:
+		return fmt.Sprintf("%s (in %dd)", expiresAt, int(remaining/(24*time.Hour)))
+	}
+	return expiresAt
 }
