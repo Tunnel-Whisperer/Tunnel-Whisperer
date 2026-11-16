@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -23,17 +24,25 @@ func ParseExpires(s string, now time.Time) (time.Time, error) {
 		t = time.Date(d.Year(), d.Month(), d.Day(), 23, 59, 59, 0, time.UTC)
 	} else {
 		dur, err := parseExpiryDuration(s)
+		if errors.Is(err, errExpiryTooFar) {
+			return time.Time{}, err
+		}
 		if err != nil {
 			return time.Time{}, fmt.Errorf("invalid expiry %q: want RFC 3339, YYYY-MM-DD, or a duration like 30d/12h", s)
 		}
 		t = now.Add(dur)
 	}
 	t = t.UTC().Truncate(time.Second)
-	if t.Before(now.Add(time.Minute)) {
+	if t.Before(now.Truncate(time.Second).Add(time.Minute)) {
 		return time.Time{}, fmt.Errorf("expiry must be at least 1 minute in the future")
 	}
 	return t, nil
 }
+
+// maxExpiryDays bounds "<n>d" (100 years) so the conversion cannot overflow.
+const maxExpiryDays = 36500
+
+var errExpiryTooFar = errors.New("expiry too far in the future")
 
 func parseExpiryDuration(s string) (time.Duration, error) {
 	if n, ok := strings.CutSuffix(s, "d"); ok {
@@ -41,9 +50,24 @@ func parseExpiryDuration(s string) (time.Duration, error) {
 		if err != nil {
 			return 0, err
 		}
+		// Refuse before multiplying: a large n wraps time.Duration silently.
+		if days > maxExpiryDays {
+			return 0, errExpiryTooFar
+		}
 		return time.Duration(days) * 24 * time.Hour, nil
 	}
 	return time.ParseDuration(s)
+}
+
+// CheckExpiresAfterTTL refuses an expiry that could be past, or under a
+// minute away, by the time the invite is redeemed: the cert is signed at
+// redemption, up to ttl after now.
+func CheckExpiresAfterTTL(exp time.Time, ttl time.Duration, now time.Time) error {
+	if !exp.After(now.Add(ttl + time.Minute)) {
+		return fmt.Errorf("--expires %s must be more than --ttl (%s) plus 1 minute from now; the certificate is signed when the invite is redeemed",
+			exp.UTC().Format(time.RFC3339), ttl)
+	}
+	return nil
 }
 
 // CheckExpiresAgainstCA refuses an expiry later than the server CA's own

@@ -1,8 +1,13 @@
 package pki
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
+	"math/big"
 	"testing"
 	"time"
 )
@@ -180,6 +185,63 @@ func signFixtures(t *testing.T) (caCert, caKey, csrPEM []byte) {
 		t.Fatalf("GenerateKeyAndCSR: %v", err)
 	}
 	return caCert, caKey, csrPEM
+}
+
+// shortCA builds a CA whose own NotAfter is caEnd (GenerateCA's is fixed).
+func shortCA(t *testing.T, caEnd time.Time) (caCert, caKey []byte) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "srv-1"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              caEnd,
+		KeyUsage:              x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caKey, err = marshalKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), caKey
+}
+
+func TestSignClientCSRClampedToCA(t *testing.T) {
+	caEnd := time.Now().Add(time.Hour).Truncate(time.Second).UTC()
+	caCert, caKey := shortCA(t, caEnd)
+	_, csrPEM, err := GenerateKeyAndCSR("client")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, notAfter := range []time.Time{{}, caEnd.Add(24 * time.Hour)} {
+		certPEM, err := SignClientCSR(caCert, caKey, csrPEM, "srv-1", notAfter)
+		if err != nil {
+			t.Fatalf("SignClientCSR(%v): %v", notAfter, err)
+		}
+		got, err := CertNotAfter(certPEM)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.Equal(caEnd) {
+			t.Errorf("SignClientCSR(%v) NotAfter = %v, want CA NotAfter %v", notAfter, got, caEnd)
+		}
+	}
+	within := caEnd.Add(-30 * time.Minute)
+	certPEM, err := SignClientCSR(caCert, caKey, csrPEM, "srv-1", within)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := CertNotAfter(certPEM); !got.Equal(within) {
+		t.Errorf("NotAfter = %v, want %v (inside the CA's validity, unchanged)", got, within)
+	}
 }
 
 func TestSignClientCSRNotAfter(t *testing.T) {

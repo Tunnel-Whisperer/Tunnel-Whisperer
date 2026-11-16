@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -49,11 +50,23 @@ func grantForTest(t *testing.T, o *Ops, name string, exp time.Time) []byte {
 		Mappings:  []config.PortMapping{{ClientPort: 18080, ServerPort: 80}},
 		ExpiresAt: exp,
 	}
-	out, err := o.grantClient(*o.cfg, req, &off)
+	out, err := grantAnyExpiry(o, req, &off)
 	if err != nil {
 		t.Fatalf("grantClient(%s): %v", name, err)
 	}
 	return out
+}
+
+// grantAnyExpiry runs grantClient with its clock set an hour before
+// req.ExpiresAt, so tests can create users whose expiry is near or past
+// (grantClient refuses those at a real redemption).
+func grantAnyExpiry(o *Ops, req CreateUserRequest, off *enroll.ClientOffer) ([]byte, error) {
+	if !req.ExpiresAt.IsZero() {
+		old := grantNow
+		grantNow = func() time.Time { return req.ExpiresAt.Add(-time.Hour) }
+		defer func() { grantNow = old }()
+	}
+	return o.grantClient(*o.cfg, req, off)
 }
 
 func TestGrantClientStoresCertWithExpiry(t *testing.T) {
@@ -132,6 +145,47 @@ func TestListUsersTolerantOfBadCert(t *testing.T) {
 	}
 	if len(users) != 1 || users[0].Name != "dave" || users[0].ExpiresAt != "" || users[0].Expired {
 		t.Fatalf("users = %+v", users)
+	}
+}
+
+// TestGrantClientRefusesNearExpiry: an invite redeemed so late that its
+// expiry is past or under a minute away must deny the grant before anything
+// is created.
+func TestGrantClientRefusesNearExpiry(t *testing.T) {
+	o := newExpiryOps(t)
+	var c clientMaterial
+	if _, err := c.makeOffer("late"); err != nil {
+		t.Fatal(err)
+	}
+	off := enroll.ClientOffer{Username: "late", UUID: c.uuid, SSHPubkey: string(c.sshPub), CSRPEM: string(c.csrPEM)}
+	added := false
+	relayAddUUID = func(*config.Config, string) error { added = true; return nil }
+	req := CreateUserRequest{
+		Name:      "late",
+		Mappings:  []config.PortMapping{{ClientPort: 18080, ServerPort: 80}},
+		ExpiresAt: time.Now().Add(30 * time.Second),
+	}
+	_, err := o.grantClient(*o.cfg, req, &off)
+	if err == nil || !strings.Contains(err.Error(), "is already past or less than 1 minute away; mint a new invite with a later --expires") {
+		t.Fatalf("grantClient = %v, want the near-expiry refusal", err)
+	}
+	if _, serr := os.Stat(filepath.Join(config.UsersDir(), "late")); !os.IsNotExist(serr) {
+		t.Fatalf("user dir exists after refusal: %v", serr)
+	}
+	if added {
+		t.Fatal("UUID registered on the relay despite the refusal")
+	}
+}
+
+// TestUserExpiredNowRefusesInvalidName: the name comes from an
+// authorized_keys comment; one that is not a valid user name must not be
+// joined onto the users dir and is treated as expired (fail closed).
+func TestUserExpiredNowRefusesInvalidName(t *testing.T) {
+	newExpiryOps(t)
+	for _, n := range []string{"../x", "a/b", "x@host"} {
+		if !userExpiredNow(n) {
+			t.Errorf("userExpiredNow(%q) = false, want true", n)
+		}
 	}
 }
 

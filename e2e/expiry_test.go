@@ -19,7 +19,7 @@ const evePort = "18096"
 // every 60s, so the timer is armed within a minute and fires at T+2m.
 func testUserExpiry(t *testing.T) {
 	scenario(t, "a user invited with --expires stops working at expiry even though nothing was deleted",
-		"tw server user invite eve -m <evePort>:<echoPort> --expires 2m issues a cert whose NotAfter is ~2 minutes out (openssl x509 -enddate on the client's cert) and prints 'Credential expires:'",
+		"tw server user invite eve -m <evePort>:<echoPort> --expires 2m --ttl 50s issues a cert whose NotAfter is ~2 minutes out (openssl x509 -enddate on the client's cert) and prints 'Credential expires:'",
 		"eve's tw client connect forwards echo before expiry",
 		"at expiry the server logs 'user credential expired, sessions disconnected' for eve and her live session stops forwarding (no echo across a 20s poll)",
 		"a fresh tw client connect for eve never opens its tunnel port within 30s and never reaches the server's SSH layer (no new 'expired user refused' line), unlike her live client which was refused there (consistent with the relay refusing the expired cert at the TLS handshake)",
@@ -38,7 +38,7 @@ func testUserExpiry(t *testing.T) {
 	cleanup()
 	defer cleanup()
 
-	issuerLog, joinLog := runInviteExchange(t, "server", "tw server user invite eve -m "+evePort+":"+echoPort+" --expires 2m",
+	issuerLog, joinLog := runInviteExchange(t, "server", "tw server user invite eve -m "+evePort+":"+echoPort+" --expires 2m --ttl 50s",
 		"client", "tw --config-dir /tmp/twexp join "+domain+" {code}")
 	if !regexp.MustCompile(`Credential expires: \d{4}-\d\d-\d\dT`).MatchString(issuerLog) {
 		fatalf(t, "invite did not print 'Credential expires: <RFC3339>':\n%s", issuerLog)

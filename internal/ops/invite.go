@@ -291,6 +291,9 @@ var (
 	relayRemoveUUID = removeUUIDFromRelay
 )
 
+// grantNow is a seam so tests can grant users whose expiry is near or past.
+var grantNow = time.Now
+
 // grantClient performs the server-side creation for an invited client —
 // UUID/authorized_keys/user-dir writes where the key material is the
 // ENROLLEE's public half and the cert is issued from their CSR. Rolls itself
@@ -299,6 +302,12 @@ func (o *Ops) grantClient(cfg config.Config, req CreateUserRequest, off *enroll.
 	serverID, err := o.serverID()
 	if err != nil {
 		return nil, err
+	}
+	// The cert is signed at redemption, up to the invite TTL after --expires
+	// was checked; refuse rather than issue an already (or nearly) dead cert.
+	if !req.ExpiresAt.IsZero() && !req.ExpiresAt.After(grantNow().Add(time.Minute)) {
+		return nil, fmt.Errorf("credential expiry %s is already past or less than 1 minute away; mint a new invite with a later --expires",
+			req.ExpiresAt.UTC().Format(time.RFC3339))
 	}
 	caCert, err := os.ReadFile(config.CACertPath())
 	if err != nil {

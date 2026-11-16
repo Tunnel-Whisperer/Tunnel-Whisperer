@@ -129,6 +129,7 @@ func GenerateKeyAndCSR(commonName string) (keyPEM, csrPEM []byte, err error) {
 // matcher admits only the server's own CN — and the CSR's subject is ignored.
 // The private key never appears here: it stays with the requester. A zero
 // notAfter keeps the default validity; otherwise it is used verbatim (UTC).
+// Either way it is clamped to the CA's own NotAfter.
 func SignClientCSR(caCertPEM, caKeyPEM, csrPEM []byte, commonName string, notAfter time.Time) ([]byte, error) {
 	caCert, caKey, err := parseCA(caCertPEM, caKeyPEM)
 	if err != nil {
@@ -151,6 +152,10 @@ func SignClientCSR(caCertPEM, caKeyPEM, csrPEM []byte, commonName string, notAft
 	}
 	if notAfter.IsZero() {
 		notAfter = time.Now().Add(certValidity)
+	}
+	// A client cert cannot outlive its issuer.
+	if notAfter.After(caCert.NotAfter) {
+		notAfter = caCert.NotAfter
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,

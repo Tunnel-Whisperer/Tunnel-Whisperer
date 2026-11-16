@@ -150,8 +150,12 @@ func runInviteUser(cmd *cobra.Command, args []string) error {
 
 	req := ops.CreateUserRequest{Name: name, Mappings: mappings, SingleSession: inviteUserSingle}
 	if inviteUserExpires != "" {
-		req.ExpiresAt, err = ops.ParseExpires(inviteUserExpires, time.Now())
+		now := time.Now()
+		req.ExpiresAt, err = ops.ParseExpires(inviteUserExpires, now)
 		if err != nil {
+			return err
+		}
+		if err := ops.CheckExpiresAfterTTL(req.ExpiresAt, inviteUserTTL, now); err != nil {
 			return err
 		}
 		if err := o.CheckExpiresAgainstCA(req.ExpiresAt); err != nil {

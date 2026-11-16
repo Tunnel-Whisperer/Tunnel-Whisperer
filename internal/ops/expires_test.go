@@ -53,6 +53,54 @@ func TestParseExpires(t *testing.T) {
 	}
 }
 
+// TestParseExpiresMinimumWithSubSecondNow: the documented minimum ("1m",
+// "60s") must be accepted when now has a sub-second part, as time.Now does.
+func TestParseExpiresMinimumWithSubSecondNow(t *testing.T) {
+	now := time.Date(2026, 11, 16, 10, 0, 0, 987654321, time.UTC)
+	for _, in := range []string{"1m", "60s"} {
+		got, err := ParseExpires(in, now)
+		if err != nil {
+			t.Errorf("ParseExpires(%q): %v", in, err)
+			continue
+		}
+		if want := time.Date(2026, 11, 16, 10, 1, 0, 0, time.UTC); !got.Equal(want) {
+			t.Errorf("ParseExpires(%q) = %v, want %v", in, got, want)
+		}
+	}
+	if _, err := ParseExpires("59s", now); err == nil {
+		t.Error("ParseExpires(59s) accepted")
+	}
+}
+
+func TestParseExpiresDaysOverflow(t *testing.T) {
+	now := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
+	for _, in := range []string{"213504d", "99999999999d", "36501d"} {
+		got, err := ParseExpires(in, now)
+		if err == nil || !strings.Contains(err.Error(), "expiry too far in the future") {
+			t.Errorf("ParseExpires(%q) = %v, %v; want 'expiry too far in the future'", in, got, err)
+		}
+	}
+	for _, in := range []string{"3650d", "36500d"} {
+		if _, err := ParseExpires(in, now); err != nil {
+			t.Errorf("ParseExpires(%q): %v", in, err)
+		}
+	}
+}
+
+func TestCheckExpiresAfterTTL(t *testing.T) {
+	now := time.Date(2026, 11, 16, 10, 0, 0, 500, time.UTC)
+	ttl := 15 * time.Minute
+	if err := CheckExpiresAfterTTL(now.Add(ttl+time.Minute+time.Second), ttl, now); err != nil {
+		t.Fatalf("expiry after ttl+1m: %v", err)
+	}
+	for _, exp := range []time.Time{now.Add(ttl + time.Minute), now.Add(ttl), now.Add(2 * time.Minute)} {
+		err := CheckExpiresAfterTTL(exp, ttl, now)
+		if err == nil || !strings.Contains(err.Error(), "--expires") || !strings.Contains(err.Error(), "--ttl") {
+			t.Errorf("CheckExpiresAfterTTL(%v) = %v, want an error naming --expires and --ttl", exp, err)
+		}
+	}
+}
+
 func TestParseExpiresCACap(t *testing.T) {
 	o := newExpiryOps(t)
 	data, err := os.ReadFile(config.CACertPath())

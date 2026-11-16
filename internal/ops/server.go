@@ -180,6 +180,11 @@ func serverXrayPort(cfg *config.Config) int {
 // client.crt whose NotAfter has passed means expired. A missing or unreadable
 // cert is NOT expired (fail open, same as ListUsers).
 func userExpiredNow(name string) bool {
+	// name comes from an authorized_keys comment: never join an invalid one
+	// onto the users dir, and refuse it (fail closed).
+	if validateUserName(name) != nil {
+		return true
+	}
 	exp, err := userExpiry(filepath.Join(config.UsersDir(), name))
 	return err == nil && time.Now().After(exp)
 }

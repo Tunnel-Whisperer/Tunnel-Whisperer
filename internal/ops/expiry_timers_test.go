@@ -124,7 +124,7 @@ func (e *expiryEnv) grant(t *testing.T, name string, exp time.Time) gossh.Signer
 		Mappings:  []config.PortMapping{{ClientPort: 18080, ServerPort: e.svcPort}},
 		ExpiresAt: exp,
 	}
-	if _, err := e.o.grantClient(*e.o.cfg, req, &off); err != nil {
+	if _, err := grantAnyExpiry(e.o, req, &off); err != nil {
 		t.Fatalf("grantClient(%s): %v", name, err)
 	}
 	signer, err := gossh.ParsePrivateKey(c.sshPriv)
@@ -197,7 +197,7 @@ func expiredLogged(logs, name string) bool {
 func TestExpiryTimerDisconnectsLiveSession(t *testing.T) {
 	logs := captureSlog(t)
 	e := startExpiryEnv(t, userExpiredNow)
-	signer := e.grant(t, "bob", time.Now().Add(3*time.Second))
+	signer := e.grant(t, "bob", time.Now().Add(5*time.Second))
 	client := e.connect(t, signer)
 	if err := e.readSvc(client); err != nil {
 		t.Fatalf("channel before expiry must work: %v", err)
@@ -210,7 +210,7 @@ func TestExpiryTimerDisconnectsLiveSession(t *testing.T) {
 		t.Fatalf("pending = %d, want 1", w.pending())
 	}
 
-	if !waitClosed(t, client, 10*time.Second) {
+	if !waitClosed(t, client, 15*time.Second) {
 		t.Fatal("expiry timer must close bob's live SSH connection")
 	}
 	if err := e.readSvc(client); err == nil {
@@ -267,7 +267,7 @@ func TestExpiryRescanDisconnectsAlreadyExpired(t *testing.T) {
 func TestExpiryTimerDroppedOnDelete(t *testing.T) {
 	logs := captureSlog(t)
 	e := newExpiryEnv(t)
-	e.grant(t, "bob", time.Now().Add(2*time.Second))
+	e.grant(t, "bob", time.Now().Add(5*time.Second))
 	// No relay is configured; drop the client config so DeleteUser does not
 	// try to reach one for the UUID.
 	if err := os.Remove(filepath.Join(config.UsersDir(), "bob", "config.yaml")); err != nil && !os.IsNotExist(err) {
@@ -288,7 +288,7 @@ func TestExpiryTimerDroppedOnDelete(t *testing.T) {
 	if w.pending() != 0 {
 		t.Fatalf("pending after delete = %d, want 0", w.pending())
 	}
-	time.Sleep(4 * time.Second)
+	time.Sleep(7 * time.Second)
 	if expiredLogged(logs.String(), "bob") {
 		t.Fatalf("deleted user's timer fired; logs:\n%s", logs.String())
 	}
@@ -300,8 +300,8 @@ func TestExpiryTimerDroppedOnDelete(t *testing.T) {
 func TestExpiryTimerRechecksDiskBeforeDisconnect(t *testing.T) {
 	logs := captureSlog(t)
 	e := newExpiryEnv(t)
-	signer := e.grant(t, "bob", time.Now().Add(2*time.Second))
-	e.grant(t, "carol", time.Now().Add(2*time.Second))
+	signer := e.grant(t, "bob", time.Now().Add(5*time.Second))
+	e.grant(t, "carol", time.Now().Add(5*time.Second))
 	e.grant(t, "renewed", time.Now().Add(48*time.Hour))
 	client := e.connect(t, signer)
 
@@ -323,7 +323,7 @@ func TestExpiryTimerRechecksDiskBeforeDisconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !waitFor(t, 5*time.Second, func() bool { return w.pending() == 1 }) {
+	if !waitFor(t, 10*time.Second, func() bool { return w.pending() == 1 }) {
 		t.Fatalf("bob's and carol's timers must have fired; pending = %d", w.pending())
 	}
 	if err := e.readSvc(client); err != nil {
@@ -331,6 +331,38 @@ func TestExpiryTimerRechecksDiskBeforeDisconnect(t *testing.T) {
 	}
 	if expiredLogged(logs.String(), "bob") || expiredLogged(logs.String(), "carol") {
 		t.Fatalf("stale timer acted; logs:\n%s", logs.String())
+	}
+}
+
+// TestNoCertUserStillConnects: a user enrolled before the feature (no
+// client.crt, only id_ed25519.pub and its authorized_keys line) must still
+// authenticate and open channels with the real UserExpired wiring.
+func TestNoCertUserStillConnects(t *testing.T) {
+	e := startExpiryEnv(t, userExpiredNow)
+	var c clientMaterial
+	if _, err := c.makeOffer("legacy"); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(config.UsersDir(), "legacy")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "id_ed25519.pub"), c.sshPub, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := appendAuthorizedKey(c.sshPub, "legacy", []int{e.svcPort}, false); err != nil {
+		t.Fatal(err)
+	}
+	if userExpiredNow("legacy") {
+		t.Fatal("userExpiredNow(legacy) = true for a user without client.crt")
+	}
+	signer, err := gossh.ParsePrivateKey(c.sshPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := e.connect(t, signer)
+	if err := e.readSvc(client); err != nil {
+		t.Fatalf("channel for a user without client.crt must work: %v", err)
 	}
 }
 
