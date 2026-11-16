@@ -76,13 +76,44 @@ tw server user invite bob -m 8080:80 --single-session
 
 You can also toggle it from the dashboard: go to the user's detail page in the **Users** section and use the single-session toggle.
 
+## Expiring a User
+
+```bash
+tw server user invite eve -m 8080:80 --expires 30d
+tw server user invite eve -m 8080:80 --expires 2026-12-31
+tw server user invite eve -m 8080:80 --expires 2026-12-31T17:00:00Z
+```
+
+`--expires` sets when the user's credential stops working. It accepts:
+
+- an RFC 3339 timestamp (`2026-12-31T17:00:00Z`);
+- a date, `YYYY-MM-DD`, meaning 23:59:59 UTC that day;
+- a duration from now: `<n>d` for days, or any Go duration such as `12h` or `90m`.
+
+The expiry must be at least one minute in the future and no later than the server CA's own expiry. The invite prints `Credential expires: <timestamp>`. Without `--expires` the certificate lasts 5 years.
+
+The expiry is the `NotAfter` of the client certificate the server signs during enrollment. The server keeps a copy at `users/<name>/client.crt` (public material), and that file is the source of truth for the user's expiry. At expiry:
+
+- the relay's mTLS check refuses the expired certificate at every new TLS handshake, so a new connection never reaches the server;
+- the server's SSH layer refuses an expired user's authentication and every new channel (log line `expired user refused`). This is what stops a client that is still connected, which can otherwise re-authenticate without a new TLS handshake;
+- the running server daemon disconnects the user's live SSH sessions at the moment of expiry (log line `user credential expired, sessions disconnected`). The daemon rescans users every 60 seconds, so a user invited from the CLI is picked up within a minute.
+
+Nothing is deleted: the user stays in `tw server user list` as `EXPIRED`, and its UUID stays registered on the relay until you delete it.
+
+!!! note "No extend or renew"
+    An expiry cannot be changed. To continue, delete the user and invite it again; inviting an expired name is refused with `has expired; delete it first`.
+
+- Users invited before this feature have no stored certificate and never expire.
+- A `client.crt` that cannot be read or parsed is treated as no expiry (fails open), and a warning is logged.
+- Only client users expire. A server (tenant) has no expiry.
+
 ## Listing Users
 
 ```bash
 tw server user list
 ```
 
-Shows each user's UUID and tunnel mappings. UUIDs are shown, and sent to the relay, in lowercase, even if a user's stored config has them in uppercase. The dashboard's **Users** page additionally shows online status, relay registration, and tunnel counts.
+Shows each user's UUID, credential expiry and tunnel mappings. An `Expires:` line appears only for users with a stored certificate: the expiry time, `EXPIRED` once it has passed, and an `(in Nd)` hint within 7 days. UUIDs are shown, and sent to the relay, in lowercase, even if a user's stored config has them in uppercase. The dashboard's **Users** page additionally shows online status, relay registration, tunnel counts, and an **Expires** column (an `expired` badge once the credential has expired).
 
 ## Changing Port Mappings
 

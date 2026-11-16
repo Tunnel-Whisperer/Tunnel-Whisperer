@@ -675,3 +675,22 @@ These need Caddy, the relay's standalone Xray, or Windows, none of which the san
 - **Relays that already hosted an untrusted tenant.** Under the old design C1 gave any tenant root on the relay, so such a relay may already be compromised, and the sync cannot undo a past compromise. Rebuild it (destroy and re-provision, or a fresh VM with the install script), rotate the relay SSH host key and the admin SSH key, and have tenants re-enroll with fresh CAs.
 - **`python3` on relays.** The tenant handler needs it; the manual install script installs it, cloud images ship it, and the sync refuses to run without it.
 - **Hardening notes from the run not addressed here:** Xray installer and Caddy apt key not pinned by hash/fingerprint; release workflow (`contents: write` workflow-wide, actions pinned by tag, no checksums/signatures); unbounded `io.ReadAll` on bundle entries; dashboard has no Origin/Host checks on mutating methods, `GET /logout`, no `ReadTimeout`; settings saved without validation (`SetXraySettings`, `SetClientSettings`); `removeAuthorizedKey` matches by substring (collides on a reused key); `servers/*.json` and `contexts.yaml` 0644; relay host private key in cloud-init user-data; client forward listeners reachable by every local user.
+
+## Credential expiry for client users (2026-11)
+
+Design: `docs/superpowers/specs/2026-11-13-credential-expiry-design.md`. `tw server user invite --expires` sets the `NotAfter` of the client certificate; the server's stored `users/<name>/client.crt` is the source of truth.
+
+**Enforced**
+
+- **Relay handshake:** Caddy's mTLS check refuses an expired certificate at every new TLS handshake.
+- **Server SSH:** `UserExpired` makes the embedded SSH server refuse an expired user's authentication and every new channel (`expired user refused`). Caddy checks only at the handshake and the Xray session outlives expiry, so without this a connected client could re-authenticate.
+- **Daemon:** a per-user timer disconnects live sessions at expiry (`user credential expired, sessions disconnected`); a 60 s rescan arms timers for users invited from the CLI.
+
+**Not enforced**
+
+- **Tenants/servers:** no expiry (a tenant signs its own CA, so cert dates cannot bound it). Deferred; see the design doc.
+- **Relay UUID cleanup:** an expired user's UUID stays on the relay until `tw server user delete`.
+- **Renewal:** none. Delete and re-invite; re-inviting an expired name is refused until then.
+- **Fail open:** a missing `client.crt` (users invited before this feature) or an unreadable one means no expiry; the unreadable case logs a warning.
+
+**Pinned by tests:** `TestSignClientCSRNotAfter`, `TestGrantClientStoresCertWithExpiry`, `TestListUsersReportsExpiry`, `TestParseExpires`, `TestExpiryTimerDisconnectsLiveSession`, `TestAuthRefusedWhenUserExpired`, `TestChannelRefusedWhenUserExpiresMidSession`, and e2e `TestE2E/UserExpiry`.

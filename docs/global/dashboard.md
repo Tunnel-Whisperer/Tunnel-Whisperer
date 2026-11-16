@@ -75,6 +75,7 @@ The nav bar shows the pages for the current role, plus the **current context nam
 ### Users Page
 
 - Sortable user list with online status, registration status, and tunnel count
+- **Expires column** — the user's credential expiry (sortable), or an `expired` badge once it has passed; see [Expiring a User](../server/users.md#expiring-a-user)
 - **Search box and pagination** (client-side filtering)
 - **Enrollment happens in the CLI** — `tw server user invite <name> -m <port:port>` mints the code and does the client's key/cert exchange in one step; the dashboard manages the resulting users
 - **Apply/Unregister** — batch relay registration
