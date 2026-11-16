@@ -53,6 +53,8 @@ permitopen="127.0.0.1:5432",permitopen="127.0.0.1:8080" ssh-ed25519 AAAA... alic
 
 This is the actual access-control record: the embedded SSH server only allows this key to forward to the listed localhost ports. Port forwarding to anything else is rejected.
 
+tw rewrites the server's `authorized_keys` in full on every user change (other lines are kept, blank lines are dropped). Every key must carry a `<name>@tw` comment with a valid user name (see [Inviting a User](#inviting-a-user)). A hand-added key whose comment is not a valid user name (for example `x@host` or one containing `/`) is refused at authentication (fail closed), because the name is also used to look up the user's stored expiry.
+
 !!! note "Revocation is live"
     The SSH server re-reads `authorized_keys` on **every** authentication attempt, and again before **every** forwarding channel it opens, so no restart is needed. A key that was removed, or whose `permitopen` no longer covers the target, cannot open new channels even on a connection that is already established. Deleting a user also closes that user's live SSH sessions (see [Deleting a User](#deleting-a-user)). The file is always replaced atomically (`0600`), so the server never reads a half-written file.
 
@@ -90,7 +92,7 @@ tw server user invite eve -m 8080:80 --expires 2026-12-31T17:00:00Z
 - a date, `YYYY-MM-DD`, meaning 23:59:59 UTC that day;
 - a duration from now: `<n>d` for days, or any Go duration such as `12h` or `90m`.
 
-The expiry must be at least one minute in the future and no later than the server CA's own expiry. The invite prints `Credential expires: <timestamp>`. Without `--expires` the certificate lasts 5 years.
+The expiry must be more than the invite's `--ttl` plus one minute from now (the certificate is signed when the invite is redeemed, up to `--ttl` later) and no later than the server CA's own expiry. If the invite is redeemed so late that the expiry is under a minute away, the grant is refused and you mint a new invite with a later `--expires`; the signed certificate is never allowed to outlive the CA. The invite prints `Credential expires: <timestamp>`. Without `--expires` the certificate lasts 5 years.
 
 The expiry is the `NotAfter` of the client certificate the server signs during enrollment. The server keeps a copy at `users/<name>/client.crt` (public material), and that file is the source of truth for the user's expiry. At expiry:
 

@@ -38,6 +38,7 @@ machine, and the install script can be re-run from scratch.
 | `tw relay test` | 3-step diagnostic: DNS → HTTPS/mTLS → Xray + SSH through the tunnel. |
 | `tw relay ssh` | Interactive root-capable shell on the relay, through the encrypted tunnel. See [SSH access](ssh-access.md). |
 | `tw relay invite [--ttl 15m]` | Mint a one-time code that admits a server tenant onto the relay, live and without an Xray restart — no files. See [Tenants](tenants.md). |
+| `tw relay add-server [<context-name>] [--switch]` | Enroll this machine as a server tenant on its own relay in one command (single-operator shortcut). See [Tenants](tenants.md). |
 | `tw relay get-servers` | List enrolled servers with **live** tunnel state queried from the relay. |
 | `tw relay un-enroll-server <server-id> [--yes]` | Completely remove a tenant: block re-auth, sever live connections, rewrite configs, forget the registry entry. |
 | `tw relay sync-tenants` | Give every enrolled server its own locked-down relay account and drop tenant keys from the admin account. Run once on relays set up by older versions. See [Tenants](tenants.md#migrating-to-per-tenant-relay-accounts). |

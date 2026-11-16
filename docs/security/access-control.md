@@ -99,6 +99,8 @@ The embedded SSH server **re-reads `authorized_keys` on every authentication att
 
 `tw` rewrites `authorized_keys` atomically (temp file, `fsync`, rename, mode `0600`), so the server never reads a truncated file.
 
+tw rewrites the file in full on every user change, so keys must carry a `<name>@tw` comment with a valid user name. A hand-added key whose comment is not a valid user name is refused at authentication (fail closed): the name is used to look up the user's stored credential expiry, and an invalid one is never resolved against the users directory.
+
 This design ensures that access control changes are applied in real time, without service interruption.
 
 ---

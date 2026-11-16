@@ -685,6 +685,7 @@ Design: `docs/superpowers/specs/2026-11-13-credential-expiry-design.md`. `tw ser
 - **Relay handshake:** Caddy's mTLS check refuses an expired certificate at every new TLS handshake. This check is per server, not per user: every client certificate of a server carries the same CN, so the relay cannot tell that server's users apart.
 - **Server SSH:** `UserExpired` makes the embedded SSH server refuse an expired user's authentication and every new channel (`expired user refused`). This is the authoritative per-user control. Caddy checks only at the handshake and the Xray session outlives expiry, so without this a connected client could re-authenticate.
 - **Clocks:** the SSH check uses the server's clock and the relay's TLS check the relay's, so a connected client is cut within the skew between the two.
+- **Expiry window:** `--expires` must lie more than the invite's `--ttl` plus one minute from now (the certificate is signed when the invite is redeemed), and the grant refuses to sign an expiry under a minute away at redeem time. A signed expiry is clamped to the server CA's own `NotAfter`.
 - **Daemon:** a per-user timer disconnects live sessions at expiry (`user credential expired, sessions disconnected`); a 60 s rescan arms timers for users invited from the CLI.
 
 **Not enforced**
@@ -694,4 +695,4 @@ Design: `docs/superpowers/specs/2026-11-13-credential-expiry-design.md`. `tw ser
 - **Renewal:** none. Delete and re-invite; re-inviting an expired name is refused until then.
 - **Fail open:** a missing `client.crt` (users invited before this feature) or an unreadable one means no expiry; the unreadable case logs a warning.
 
-**Pinned by tests:** `TestSignClientCSRNotAfter`, `TestGrantClientStoresCertWithExpiry`, `TestListUsersReportsExpiry`, `TestParseExpires`, `TestExpiryTimerDisconnectsLiveSession`, `TestAuthRefusedWhenUserExpired`, `TestChannelRefusedWhenUserExpiresMidSession`, and e2e `TestE2E/UserExpiry`.
+**Pinned by tests:** `TestSignClientCSRNotAfter`, `TestGrantClientStoresCertWithExpiry`, `TestListUsersReportsExpiry`, `TestParseExpires`, `TestParseExpiresMinimumWithSubSecondNow`, `TestParseExpiresDaysOverflow`, `TestCheckExpiresAfterTTL`, `TestGrantClientRefusesNearExpiry`, `TestUserExpiredNowRefusesInvalidName`, `TestNoCertUserStillConnects`, `TestSignClientCSRClampedToCA`, `TestExpiryTimerDisconnectsLiveSession`, `TestAuthRefusedWhenUserExpired`, `TestChannelRefusedWhenUserExpiresMidSession`, and e2e `TestE2E/UserExpiry`.

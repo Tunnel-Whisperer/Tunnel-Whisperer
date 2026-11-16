@@ -113,7 +113,7 @@ server:
   remote_port: 2222
 
   # Local port the embedded Xray instance listens on. Optional; leave 0
-  # to use the built-in default.
+  # to use ssh_port + 1.
   xray_port: 0
 
   # Port used for temporary Xray tunnel during relay config updates
@@ -130,7 +130,7 @@ server:
 
 # Bandwidth analytics (opt-in, works in both modes).
 analytics:
-  enabled: true
+  enabled: false      # default; set true to opt in
   history_size: 720  # snapshots to keep (default 720 = 1h at 5s intervals)
 
 # Client-only settings (ignored in server/relay mode).
@@ -143,6 +143,10 @@ client:
 
   # Local port the embedded Xray dokodemo-door listens on (default 54001).
   xray_port: 54001
+
+  # Server's SSH host public key (authorized_keys format), pinned when the
+  # forward tunnel connects. Written by enrollment (tw join); not set by hand.
+  server_host_key: "ssh-ed25519 AAAA..."
 
   # Local interface forwarded tunnels bind to.
   # 127.0.0.1 = local only (default); 0.0.0.0 = all interfaces (required
@@ -207,7 +211,7 @@ mode_auth:
 | `relay_ssh_port` | int | `22` | SSH port on the relay for the reverse tunnel. |
 | `relay_ssh_user` | string | `ubuntu` | SSH user on the relay server. |
 | `remote_port` | int | `2222` | Remote port on the relay forwarded back to local SSH. Enrolled servers get their port assigned by the relay admin (starting at 20000). |
-| `xray_port` | int | _(empty)_ | Local port the embedded Xray instance listens on. Optional; leave unset to use the built-in default. |
+| `xray_port` | int | _(empty)_ | Local port the embedded Xray instance listens on. Optional; when unset it is `ssh_port` + 1. |
 | `temp_xray_port` | int | `59000` | Port for the temporary Xray tunnel used during relay config updates (user creation/registration). Change if `59000` is already in use on your system. |
 | `applications` | list | _(empty)_ | Application templates — reusable port mapping bundles for user creation. |
 
@@ -241,6 +245,7 @@ Analytics works in both server and client modes. In server mode, stats are track
 | `ssh_user` | string | `tunnel` | SSH user to authenticate as on the server side. |
 | `server_ssh_port` | int | `2222` | SSH port on the server (reached via the tunnel). |
 | `xray_port` | int | `54001` | Local port the embedded Xray dokodemo-door listens on. |
+| `server_host_key` | string | _(empty)_ | The server's SSH host public key (authorized_keys format), delivered by enrollment (`tw join`) and pinned when the forward tunnel connects, so a compromised relay cannot MITM the end-to-end SSH session. Not set by hand. |
 | `listen_address` | string | `127.0.0.1` | Local interface forwarded tunnels bind to. Set to `0.0.0.0` to expose tunnels on all interfaces — required when `tw` runs inside a container that publishes ports to the host. Also settable with `tw client listen`. |
 | `tunnels` | list | _(empty)_ | Port forwarding rules. Each entry has `local_port`, `remote_host`, `remote_port`. |
 | `port_overrides` | map | _(empty)_ | Local-port overrides keyed by server port (`remote_port`). Client-owned — set with `tw client set-port` or the dashboard Tunnels card; never shipped in bundles. |

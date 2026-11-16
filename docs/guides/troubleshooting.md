@@ -234,6 +234,18 @@ The admin sees the reason:
 For client invites, `offer uuid "..." is not a canonical UUID` means the
 same thing.
 
+### "must be more than --ttl ... plus 1 minute" / "less than 1 minute away"
+
+`tw server user invite --expires` was refused. The certificate is signed when
+the invite is redeemed, up to `--ttl` after you ran the command, so the expiry
+must lie more than `--ttl` plus one minute from now, and not beyond the server
+CA's own expiry. If the user redeemed so late that the expiry was under a
+minute away, the grant is refused with `credential expiry ... is already past
+or less than 1 minute away`.
+
+**Fix:** mint a new invite with a later `--expires` (or a shorter `--ttl`). See
+[Expiring a User](../server/users.md#expiring-a-user).
+
 ### "skipping invalid registry entry"
 
 The relay admin's log shows "skipping invalid registry entry; remove it with

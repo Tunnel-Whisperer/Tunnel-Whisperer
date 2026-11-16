@@ -168,7 +168,7 @@ Structured by role — with dynamic tab completion for contexts, users, and serv
 | **Server** | |
 | `tw join <relay-host> <code>` | Redeem an admin's invite — becomes a server or client per the issuer's grant |
 | `tw server start` / `test` / `status` | Run the daemon (SSH server, tunnel, gRPC API, dashboard) |
-| `tw server user invite/apply/list/single-session/delete/unregister` | Per-user port grants; revocation is live, no restart |
+| `tw server user invite/apply/list/single-session/delete/unregister` | Per-user port grants, optional `--expires` credential expiry; revocation is live, no restart |
 | `tw server app list/create/edit/delete` | Reusable port-mapping templates |
 | **Client** | |
 | `tw client connect` / `listen` / `set-port` / `test` / `status` | Open the tunnel and the local ports granted at enrollment |

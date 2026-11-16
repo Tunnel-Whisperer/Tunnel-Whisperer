@@ -172,7 +172,7 @@ does the whole thing in-process.
 | `--from <user>` | Copy port mappings from an existing user (mutually exclusive with `--map`). |
 | `--single-session` | Enforce one concurrent SSH connection per user; subsequent login attempts while one is active are rejected. Takes effect on the next auth attempt. |
 | `--ttl <duration>` | Invite lifetime before it expires unredeemed (default `15m`). |
-| `--expires <when>` | When the user's credential stops working: RFC 3339, `YYYY-MM-DD` (end of that day, UTC), or a duration such as `30d` or `12h`. Default: 5 years. At least 1 minute ahead and not beyond the server CA's own expiry. There is no extend: delete and re-invite. See [Expiring a User](../server/users.md#expiring-a-user). |
+| `--expires <when>` | When the user's credential stops working: RFC 3339, `YYYY-MM-DD` (end of that day, UTC), or a duration such as `30d` or `12h`. Default: 5 years. Must be more than `--ttl` plus 1 minute ahead (the certificate is signed at redemption) and not beyond the server CA's own expiry. There is no extend: delete and re-invite. See [Expiring a User](../server/users.md#expiring-a-user). |
 
 ```bash
 tw server user invite alice -m 8080:80 -m 5432:5432
