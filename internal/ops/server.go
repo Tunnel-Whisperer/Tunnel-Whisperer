@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/tunnelwhisperer/tw/internal/config"
@@ -31,6 +32,7 @@ type serverManager struct {
 	sshSrv   *twssh.Server
 	xrayInst *twxray.Instance
 	tunnel   *twssh.ReverseTunnel
+	expiry   *expiryWatcher
 }
 
 // Start launches all server components (SSH, Xray, reverse tunnel).
@@ -154,9 +156,12 @@ func (m *serverManager) Start(o *Ops, progress ProgressFunc) error {
 		progress(ProgressEvent{Step: step, Total: total, Label: "Reverse tunnel", Status: "completed", Message: fmt.Sprintf("relay :%d → local :%d", cfg.Server.RemotePort, cfg.Server.SSHPort)})
 	}
 
+	expiry := newExpiryWatcher(o, 60*time.Second)
 	m.mu.Lock()
 	m.state = StateRunning
+	m.expiry = expiry
 	m.mu.Unlock()
+	expiry.Start()
 
 	return nil
 }
@@ -182,6 +187,14 @@ func (m *serverManager) DisconnectUser(twUser string) int {
 	return srv.DisconnectUser(twUser)
 }
 
+// forgetExpiry drops twUser's pending expiry timer, if this process runs one.
+func (m *serverManager) forgetExpiry(twUser string) {
+	m.mu.Lock()
+	w := m.expiry
+	m.mu.Unlock()
+	w.Forget(twUser)
+}
+
 // Stop shuts down all server components in reverse order.
 func (m *serverManager) Stop(progress ProgressFunc) error {
 	m.mu.Lock()
@@ -190,7 +203,13 @@ func (m *serverManager) Stop(progress ProgressFunc) error {
 		return fmt.Errorf("server not running (state: %s)", m.state)
 	}
 	m.state = StateStopping
+	expiry := m.expiry
+	m.expiry = nil
 	m.mu.Unlock()
+
+	if expiry != nil {
+		expiry.Stop()
+	}
 
 	if progress == nil {
 		progress = func(ProgressEvent) {}

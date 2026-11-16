@@ -306,6 +306,7 @@ func (o *Ops) DeleteUser(name string) error {
 
 	// Removing the key only blocks new handshakes; end the live sessions too.
 	o.srv.DisconnectUser(name)
+	o.srv.forgetExpiry(name)
 
 	return nil
 }
