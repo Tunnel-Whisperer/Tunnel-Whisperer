@@ -682,8 +682,9 @@ Design: `docs/superpowers/specs/2026-11-13-credential-expiry-design.md`. `tw ser
 
 **Enforced**
 
-- **Relay handshake:** Caddy's mTLS check refuses an expired certificate at every new TLS handshake.
-- **Server SSH:** `UserExpired` makes the embedded SSH server refuse an expired user's authentication and every new channel (`expired user refused`). Caddy checks only at the handshake and the Xray session outlives expiry, so without this a connected client could re-authenticate.
+- **Relay handshake:** Caddy's mTLS check refuses an expired certificate at every new TLS handshake. This check is per server, not per user: every client certificate of a server carries the same CN, so the relay cannot tell that server's users apart.
+- **Server SSH:** `UserExpired` makes the embedded SSH server refuse an expired user's authentication and every new channel (`expired user refused`). This is the authoritative per-user control. Caddy checks only at the handshake and the Xray session outlives expiry, so without this a connected client could re-authenticate.
+- **Clocks:** the SSH check uses the server's clock and the relay's TLS check the relay's, so a connected client is cut within the skew between the two.
 - **Daemon:** a per-user timer disconnects live sessions at expiry (`user credential expired, sessions disconnected`); a 60 s rescan arms timers for users invited from the CLI.
 
 **Not enforced**

@@ -113,7 +113,7 @@ Nothing is deleted: the user stays in `tw server user list` as `EXPIRED`, and it
 tw server user list
 ```
 
-Shows each user's UUID, credential expiry and tunnel mappings. An `Expires:` line appears only for users with a stored certificate: the expiry time, `EXPIRED` once it has passed, and an `(in Nd)` hint within 7 days. UUIDs are shown, and sent to the relay, in lowercase, even if a user's stored config has them in uppercase. The dashboard's **Users** page additionally shows online status, relay registration, tunnel counts, and an **Expires** column (an `expired` badge once the credential has expired).
+Shows each user's UUID, credential expiry and tunnel mappings. An `Expires:` line appears only for users with a stored certificate: the expiry time, `EXPIRED` once it has passed, and an `(in Nd)` hint within 7 days (`(in <1d)` under a day). UUIDs are shown, and sent to the relay, in lowercase, even if a user's stored config has them in uppercase. The dashboard's **Users** page additionally shows online status, relay registration, tunnel counts, and an **Expires** column (an `expired` badge once the credential has expired).
 
 ## Changing Port Mappings
 

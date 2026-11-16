@@ -169,9 +169,11 @@ Removes the server's CA from the relay trust pool, its relay account, and its Xr
 
 A client user can be given an expiry at invite time (`tw server user invite <name> --expires <when>`). The expiry is the `NotAfter` of the user's client certificate, and the server's stored copy (`users/<name>/client.crt`) is the source of truth. It is enforced in three places:
 
-- **Relay:** Caddy's mTLS check refuses an expired certificate at every new TLS handshake.
-- **Server SSH layer:** the embedded SSH server refuses an expired user's authentication and every new channel, which stops a client that is still connected and re-authenticates without a new handshake.
+- **Relay:** Caddy's mTLS check refuses an expired certificate at every new TLS handshake. This check is per server: every client certificate of a server carries the same CN, so the relay cannot tell that server's users apart.
+- **Server SSH layer:** the embedded SSH server refuses an expired user's authentication and every new channel, which stops a client that is still connected and re-authenticates without a new handshake. This is the authoritative per-user control.
 - **Server daemon:** a timer disconnects the user's live SSH sessions at expiry; the daemon also rescans users every 60 seconds.
+
+The SSH check uses the server's clock and the relay's TLS check the relay's, so a connected client is cut within the skew between the two.
 
 There is no extend or renew: delete the user and invite again. Users without a stored certificate (invited before this feature), or whose `client.crt` cannot be read, are treated as not expiring. Servers (tenants) have no expiry. An expired user's UUID stays on the relay until `tw server user delete`. See [Expiring a User](../server/users.md#expiring-a-user).
 
