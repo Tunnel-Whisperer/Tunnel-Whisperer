@@ -110,6 +110,19 @@ func TestRenderSyncRejects(t *testing.T) {
 	}
 }
 
+// TestRenderSyncRejectsUUIDShapedServerID: a UUID-shaped server id is the
+// email of the tenant's own Xray client and could collide with a client the
+// tenant adds, so no relay renderer accepts it.
+func TestRenderSyncRejectsUUIDShapedServerID(t *testing.T) {
+	ak := "ssh-ed25519 AAAA\n"
+	if _, err := RenderSync(nil, []Account{{ServerID: "dddddddd-4444-4444-8444-444444444444", AuthorizedKeys: ak}}); err == nil {
+		t.Error("RenderSync accepted a UUID-shaped server id")
+	}
+	if _, err := RenderSync(nil, []Account{{ServerID: "web-01-dddddddd", AuthorizedKeys: ak}}); err != nil {
+		t.Errorf("RenderSync rejected an ordinary server id: %v", err)
+	}
+}
+
 func TestForcedCommandEverywhere(t *testing.T) {
 	if !strings.Contains(string(sshdDropIn), "Match User twt-*\n\tForceCommand "+RequestPath+"\n") {
 		t.Errorf("sshd drop-in must force %s for tenant accounts:\n%s", RequestPath, sshdDropIn)

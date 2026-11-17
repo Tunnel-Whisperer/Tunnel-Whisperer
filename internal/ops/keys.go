@@ -48,14 +48,21 @@ func (o *Ops) EnsureKeys() error {
 	}
 	slog.Info("SSH keys written", "dir", config.Dir())
 
-	// Seed authorized_keys with the generated public key.
+	// Seed authorized_keys with the generated public key, under the
+	// authorized_keys lock so a concurrent append is never overwritten.
 	akPath := config.AuthorizedKeysPath()
+	release, err := lockAuthorizedKeys(authorizedKeysLockPath())
+	if err != nil {
+		return err
+	}
 	if _, err := os.Stat(akPath); os.IsNotExist(err) {
-		if err := os.WriteFile(akPath, pubAuthorized, 0600); err != nil {
+		if err := writeFileAtomic(akPath, pubAuthorized, 0600); err != nil {
+			release()
 			return fmt.Errorf("writing authorized_keys: %w", err)
 		}
 		slog.Info("authorized_keys seeded", "path", akPath)
 	}
+	release()
 
 	// Save default config if none exists.
 	o.mu.Lock()

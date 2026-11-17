@@ -90,6 +90,11 @@ def server_id_for(user):
     server_id = text[:-1]
     if not SERVER_ID_RE.fullmatch(server_id) or tenant_user(server_id) != user:
         raise Refused("tenant registration does not match this account")
+    # The server id is the email of the tenant's own client; a UUID-shaped
+    # one could be added again as a client (email = uuid) and Xray refuses an
+    # inbound with duplicate emails. tw never enrolls such an id.
+    if UUID_RE.fullmatch(server_id):
+        raise Refused("tenant registration on the relay has a UUID-shaped server id")
     return server_id
 
 
@@ -195,6 +200,11 @@ def client_ids(inbound):
             if isinstance(c, dict) and isinstance(c.get("id"), str)]
 
 
+def client_emails(inbound):
+    return [c["email"].lower() for c in inbound["settings"]["clients"]
+            if isinstance(c, dict) and isinstance(c.get("email"), str)]
+
+
 def run(argv, stdin=None):
     try:
         r = subprocess.run(argv, input=stdin, stdout=subprocess.PIPE,
@@ -282,7 +292,15 @@ def handle(sock):
                 if len(clients) >= MAX_CLIENTS:
                     raise Refused("inbound %s already holds %d clients, the most a tenant may have"
                                   % (tag, MAX_CLIENTS))
+                # Xray compares emails case-insensitively and refuses to
+                # build an inbound holding a duplicate, which would stop the
+                # whole relay's Xray on its next start.
+                if uuid.lower() in client_emails(inbound):
+                    raise Refused("%s is already the email of a client in inbound %s" % (uuid, tag))
                 clients.append({"id": uuid, "email": uuid})
+                emails = client_emails(inbound)
+                if len(emails) != len(set(emails)):
+                    raise Refused("inbound %s would hold duplicate client emails" % tag)
                 save_config(conf)
                 state = "added"
             return user, verb, describe(state, api_add(inbound, uuid))

@@ -506,6 +506,94 @@ func TestHandlerClientCap(t *testing.T) {
 	}
 }
 
+// setInbound replaces (or appends) the inbound tagged vless-in-<id> in the
+// relay config.
+func (e *handlerEnv) setInbound(id string, port int, clients ...any) {
+	e.t.Helper()
+	var conf map[string]any
+	if err := json.Unmarshal([]byte(e.read("x/config.json")), &conf); err != nil {
+		e.t.Fatal(err)
+	}
+	ibs := conf["inbounds"].([]any)
+	ib := inbound(id, port, clients...)
+	replaced := false
+	for i, x := range ibs {
+		if x.(map[string]any)["tag"] == ib["tag"] {
+			ibs[i], replaced = ib, true
+		}
+	}
+	if !replaced {
+		ibs = append(ibs, ib)
+	}
+	conf["inbounds"] = ibs
+	data, _ := json.MarshalIndent(conf, "", "  ")
+	e.write("x/config.json", string(data), 0o640)
+}
+
+// TestHandlerRefusesUUIDShapedServerID: a tenant whose server id S is
+// UUID-shaped could `add S`, giving its inbound a second client with email S
+// (its own identity's email); Xray then refuses to load the shared config on
+// its next start, taking every tenant offline.
+func TestHandlerRefusesUUIDShapedServerID(t *testing.T) {
+	e := newHandlerEnv(t)
+	const s = "dddddddd-4444-4444-8444-444444444444"
+	e.setInbound(s, 30002, map[string]any{"id": "dddddddd-0000-4000-8000-000000000000", "email": s})
+	e.write("m/"+UserName(s), s+"\n", 0o600)
+	before := e.read("x/config.json")
+
+	reply, code := e.request(UserName(s), UserName(s), "add "+s+"\n")
+	if !strings.HasPrefix(reply, "err ") || code == 0 {
+		t.Errorf("add <server id> = %q (exit %d), want refusal", reply, code)
+	}
+	if e.read("x/config.json") != before {
+		t.Error("a refused add modified the relay config")
+	}
+
+	alpha := UserName("alpha")
+	if reply, _ := e.request(alpha, alpha, "add "+newUser+"\n"); !strings.HasPrefix(reply, "ok added") {
+		t.Errorf("ordinary add = %q", reply)
+	}
+}
+
+// TestHandlerRefusesDuplicateEmail: an add whose uuid is already the email of
+// a client in the inbound (compared case-insensitively, as Xray does), or one
+// that would leave duplicate emails behind, is refused and saves nothing.
+func TestHandlerRefusesDuplicateEmail(t *testing.T) {
+	e := newHandlerEnv(t)
+	alpha := UserName("alpha")
+	own := map[string]any{"id": alphaUUID, "email": "alpha"}
+
+	e.setInbound("alpha", 30000, own, map[string]any{"id": betaUser1, "email": strings.ToUpper(newUser)})
+	before := e.read("x/config.json")
+	reply, code := e.request(alpha, alpha, "add "+newUser+"\n")
+	if reply != "err "+newUser+" is already the email of a client in inbound vless-in-alpha" || code == 0 {
+		t.Errorf("add colliding with an email = %q (exit %d)", reply, code)
+	}
+	if e.read("x/config.json") != before {
+		t.Error("a refused add modified the relay config")
+	}
+
+	e.setInbound("alpha", 30000, own,
+		map[string]any{"id": betaUser1, "email": "dup"},
+		map[string]any{"id": betaUUID, "email": "DUP"})
+	before = e.read("x/config.json")
+	reply, code = e.request(alpha, alpha, "add "+newUser+"\n")
+	if reply != "err inbound vless-in-alpha would hold duplicate client emails" || code == 0 {
+		t.Errorf("add to an inbound with duplicate emails = %q (exit %d)", reply, code)
+	}
+	if e.read("x/config.json") != before {
+		t.Error("a refused add modified the relay config")
+	}
+
+	e.setInbound("alpha", 30000, own)
+	if reply, _ := e.request(alpha, alpha, "add "+newUser+"\n"); !strings.HasPrefix(reply, "ok added") {
+		t.Errorf("ordinary add = %q", reply)
+	}
+	if got := e.clientIDs("vless-in-alpha"); !reflect.DeepEqual(got, []string{alphaUUID, newUser}) {
+		t.Errorf("alpha clients after add = %v", got)
+	}
+}
+
 // TestHandlerRechecksRegistrationUnderLock (L2): a request that waited for
 // the config lock while the admin un-enrolled its tenant does nothing.
 func TestHandlerRechecksRegistrationUnderLock(t *testing.T) {

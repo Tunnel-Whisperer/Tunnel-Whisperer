@@ -58,6 +58,12 @@ func validateServerIdentity(serverID, uuid, caCertPEM, sshPubkey string) (caPEM,
 	if len(serverID) > maxServerIDLen {
 		return "", "", fmt.Errorf("server_id is %d characters; the limit is %d", len(serverID), maxServerIDLen)
 	}
+	// A UUID-shaped server_id would equal the email of a client the tenant
+	// can add to its own inbound, and Xray refuses an inbound with duplicate
+	// emails, so it is rejected here as in every relay renderer.
+	if isCanonicalUUID(serverID) {
+		return "", "", fmt.Errorf("server_id %q must not be shaped like a UUID", serverID)
+	}
 	// The UUID is rendered into the relay's Xray config; a malformed one would
 	// be registered and then break every later render.
 	if !isCanonicalUUID(uuid) {

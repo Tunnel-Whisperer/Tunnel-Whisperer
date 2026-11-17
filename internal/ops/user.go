@@ -759,12 +759,25 @@ func removeAuthorizedKeysByComment(name string) error {
 	})
 }
 
+// authorizedKeysLockPath is the sidecar file every authorized_keys writer
+// locks around its read-modify-write.
+func authorizedKeysLockPath() string {
+	return filepath.Join(filepath.Dir(config.AuthorizedKeysPath()), "authorized_keys.lock")
+}
+
 // updateAuthorizedKeys applies edit to the non-empty lines of authorized_keys
 // (missing file = no lines) and atomically replaces the file with the result:
 // the SSH server re-reads it on every channel, so it must never observe a
-// truncated or half-written file.
+// truncated or half-written file. The whole read-modify-write holds the
+// authorized_keys.lock sidecar lock, so concurrent writers in this or another
+// tw process cannot lose each other's updates (or restore a revoked key).
 func updateAuthorizedKeys(edit func(lines []string) []string) error {
 	akPath := config.AuthorizedKeysPath()
+	release, err := lockAuthorizedKeys(authorizedKeysLockPath())
+	if err != nil {
+		return err
+	}
+	defer release()
 	data, err := os.ReadFile(akPath)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("reading authorized_keys: %w", err)

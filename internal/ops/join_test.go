@@ -85,6 +85,25 @@ func TestDecodeJoinRequestServerIDLength(t *testing.T) {
 	}
 }
 
+// TestDecodeJoinRequestRejectsUUIDShapedServerID: a UUID-shaped server_id is
+// the email of the tenant's own relay client, and the tenant could add a
+// client with that uuid (email = uuid), giving its inbound duplicate emails
+// that stop the shared relay's Xray from loading its config.
+func TestDecodeJoinRequestRejectsUUIDShapedServerID(t *testing.T) {
+	r := validJoinRequest(t)
+	r.ServerID = "dddddddd-4444-4444-8444-444444444444"
+	r.CACertPEM = testCAPEM(t, r.ServerID)
+	if _, err := decodeJoin(t, r); err == nil || !strings.Contains(err.Error(), "must not be shaped like a UUID") {
+		t.Fatalf("UUID-shaped server_id: err = %v, want a UUID-shape refusal", err)
+	}
+	// One character off the UUID shape is an ordinary id.
+	r.ServerID = "dddddddd-4444-4444-8444-44444444444"
+	r.CACertPEM = testCAPEM(t, r.ServerID)
+	if _, err := decodeJoin(t, r); err != nil {
+		t.Fatalf("non-UUID server_id rejected: %v", err)
+	}
+}
+
 // TestDecodeJoinRequestRejectsTrailingPEM: only the first block was validated
 // but the whole string was stored and installed into the relay trust pool, so
 // a tenant could smuggle a second CA (CN=<victim>) in after its own.

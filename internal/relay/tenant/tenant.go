@@ -60,6 +60,10 @@ var (
 
 	// serverIDRe is the server-id shape every relay renderer enforces.
 	serverIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+	// uuidShapeRe matches a canonical UUID. A server id of that shape is
+	// refused: it is the email of the tenant's own Xray client and could
+	// collide with a client the tenant adds (email = its uuid).
+	uuidShapeRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 	// adminUserRe is a portable Linux user name.
 	adminUserRe = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 )
@@ -155,7 +159,7 @@ func RenderSync(admin *Admin, accounts []Account) (string, error) {
 	views := make([]accountView, 0, len(accounts))
 	seen := make(map[string]bool, len(accounts))
 	for _, a := range accounts {
-		if !serverIDRe.MatchString(a.ServerID) {
+		if !serverIDRe.MatchString(a.ServerID) || uuidShapeRe.MatchString(a.ServerID) {
 			return "", fmt.Errorf("tenant: invalid server id %q", a.ServerID)
 		}
 		user := UserName(a.ServerID)

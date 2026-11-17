@@ -53,6 +53,12 @@ func newTenantView(t Tenant, requireUUID bool) (tenantView, error) {
 	if !serverIDRe.MatchString(t.ServerID) {
 		return tenantView{}, fmt.Errorf("xray: invalid server id %q: must match %s", t.ServerID, serverIDRe)
 	}
+	// The server id is the email of the tenant's own client; a UUID-shaped
+	// one could collide with a client the tenant adds (email = its uuid),
+	// and Xray refuses an inbound with duplicate emails.
+	if uuidRe.MatchString(t.ServerID) {
+		return tenantView{}, fmt.Errorf("xray: invalid server id %q: must not be shaped like a UUID", t.ServerID)
+	}
 	if requireUUID && !uuidRe.MatchString(t.UUID) {
 		return tenantView{}, fmt.Errorf("xray: invalid uuid %q for server %q", t.UUID, t.ServerID)
 	}

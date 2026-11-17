@@ -88,7 +88,8 @@ func writeMergedRelayXrayConfig(client *gossh.Client, xjson string) error {
 // enroll/un-enroll rewrite would strip every server's users (ISS-002).
 //
 // For each vless-in-* inbound present in both configs, clients from current
-// whose id is not already in rendered are appended, in current's order.
+// whose id is not already in rendered are appended, in current's order,
+// except one whose email (case-insensitively) another client already has.
 // Inbounds only in rendered (new tenant) stay as rendered; inbounds only in
 // current (un-enrolled tenant) are dropped; non-vless inbounds are untouched.
 func mergeRelayClients(rendered, current map[string]interface{}) {
@@ -124,10 +125,14 @@ func mergeRelayClients(rendered, current map[string]interface{}) {
 		}
 		clients, _ := settings["clients"].([]interface{})
 		present := make(map[string]bool, len(clients))
+		emails := make(map[string]bool, len(clients))
 		for _, c := range clients {
 			if cm, ok := c.(map[string]interface{}); ok {
 				if id, ok := cm["id"].(string); ok {
 					present[id] = true
+				}
+				if email, ok := cm["email"].(string); ok {
+					emails[strings.ToLower(email)] = true
 				}
 			}
 		}
@@ -142,8 +147,19 @@ func mergeRelayClients(rendered, current map[string]interface{}) {
 			if !ok || present[id] {
 				continue
 			}
+			// Xray refuses to build an inbound whose clients share an email
+			// (case-insensitively), which would stop the relay's Xray on its
+			// next start; such a client is not carried over.
+			email, hasEmail := cm["email"].(string)
+			if hasEmail && emails[strings.ToLower(email)] {
+				slog.Warn("dropping relay client with a duplicate email", "inbound", tag, "id", id, "email", email)
+				continue
+			}
 			clients = append(clients, cm)
 			present[id] = true
+			if hasEmail {
+				emails[strings.ToLower(email)] = true
+			}
 		}
 		settings["clients"] = clients
 	}

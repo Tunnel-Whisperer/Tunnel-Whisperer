@@ -132,3 +132,30 @@ func TestMergeRelayClients(t *testing.T) {
 		}
 	})
 }
+
+// TestMergeRelayClientsDropsDuplicateEmail: a carried-over client whose email
+// (case-insensitively) another client of the inbound already has would stop
+// the relay's Xray from building that inbound, so it is not carried over.
+func TestMergeRelayClientsDropsDuplicateEmail(t *testing.T) {
+	const serverID = "dddddddd-4444-4444-8444-444444444444"
+	client := func(id, email string) map[string]interface{} {
+		return map[string]interface{}{"id": id, "email": email}
+	}
+	inbound := func(clients ...interface{}) map[string]interface{} {
+		return map[string]interface{}{
+			"tag": "vless-in-" + serverID, "protocol": "vless",
+			"settings": map[string]interface{}{"clients": clients, "decryption": "none"},
+		}
+	}
+	rendered := mergeConf(inbound(client("own-uuid", serverID)))
+	current := mergeConf(inbound(
+		client("own-uuid", serverID),
+		client(serverID, serverID),
+		client("user-1", "user-1"),
+		client("user-2", "USER-1"),
+	))
+	mergeRelayClients(rendered, current)
+	if got, want := mergeIDs(t, rendered, "vless-in-"+serverID), []string{"own-uuid", "user-1"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("clients = %v, want %v", got, want)
+	}
+}
