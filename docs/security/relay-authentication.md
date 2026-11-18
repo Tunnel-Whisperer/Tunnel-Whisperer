@@ -73,7 +73,7 @@ client differs by path:
 
 The CA is generated automatically the first time a server or relay profile
 initializes (any `tw` command that touches ops — e.g. `tw server start`, `tw
-relay create`); generation is skipped in client mode. Generation is
+relay create`); generation is skipped in the client role. Generation is
 **idempotent**: an existing CA is never regenerated, and a missing client
 certificate is re-issued from it.
 

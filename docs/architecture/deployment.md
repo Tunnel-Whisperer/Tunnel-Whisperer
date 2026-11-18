@@ -229,7 +229,7 @@ flowchart TD
 2. Validates that `relay_host` and at least one tunnel mapping are configured
 3. Generates UUID if missing
 4. Saves `config.FileHash()` as `cfgHash` for change detection
-5. Starts **Xray** in client mode (dokodemo-door on `client.xray_port`, default `:54001` -> VLESS/XHTTP/mTLS to relay, targeting `client.server_ssh_port`)
+5. Starts the client-side **Xray** (dokodemo-door on `client.xray_port`, default `:54001` -> VLESS/XHTTP/mTLS to relay, targeting `client.server_ssh_port`)
 6. Opens a **single SSH session** through Xray to the server's embedded SSH (public key auth)
 7. Starts **local port listeners** for all configured tunnel mappings (bound to `client.listen_address`), forwarding through the SSH session
 8. Blocks until stopped (Ctrl-C), with automatic reconnection on failure

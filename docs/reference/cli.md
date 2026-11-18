@@ -1,8 +1,8 @@
 # CLI Commands
 
 All interaction with Tunnel Whisperer happens through the `tw` binary. The
-command tree is organized by **role**: `tw relay …` for the relay owner,
-`tw server …` for a server operator, `tw client …` for a client, plus
+command tree is organized by **role**: `tw relay …` for the relay admin,
+`tw server …` for a server operator, `tw client …` for a client user, plus
 role-neutral groups (`config`, `proxy`, `service`, `status`, `dashboard`,
 `completion`). Commands are mode-aware: a command gated to one role fails with
 an error when the active profile is configured for another (see
@@ -47,20 +47,20 @@ tw server start
 
 ## `tw relay` (relay role)
 
-Everything the relay owner does to the relay. All subcommands require
+Everything the relay admin does to the relay. All subcommands require
 `mode: relay`.
 
 | Command | Description |
 |---|---|
 | `tw relay create` | Provision a relay server — interactive wizard (cloud providers via Terraform, or a manual bring-your-own-VM flow); refuses to start the cloud path if Terraform is missing or older than 1.0. Writes the relay's portable context bundle (domain sanitized: `tw_relay-example-com.twctx`) on success. |
-| `tw relay add-server [<context-name>]` | Enroll **this machine** as a server tenant in one command and store the result as a new, ready-to-use context (default name `server-<relay's first DNS label>`). The single-operator shortcut: no join/response files, no context switching, and the context is born mode-signed. |
+| `tw relay add-server [<context-name>]` | Enroll **this machine** as a server in one command and store the result as a new, ready-to-use context (default name `server-<relay's first DNS label>`). The single-person-setup shortcut: no join/response files, no context switching, and the context is born mode-signed. |
 | `tw relay destroy` | Destroy the provisioned relay (Terraform for cloud relays: runs `terraform init` then `terraform destroy`, so it works from any machine that imported the relay bundle; refuses if Terraform is missing or older than 1.0; prompts for AWS credentials when needed). |
-| `tw relay invite [--ttl 15m]` | Mint a one-time code that enrolls a remote server — no files. Prints the code, waits for the enrollee's `tw join`, shows a short authentication string (SAS) to confirm against their read-back, then registers it, allocates its port, rewrites the relay's Caddyfile/Xray config/admin `authorized_keys` live, and creates the server's own relay account. |
+| `tw relay invite [--ttl 15m]` | Mint a one-time code that enrolls a remote server — no files. Prints the code, waits for the enrollee's `tw join`, shows a short authentication string (SAS) to confirm against their read-back, then registers it, allocates its port, rewrites the relay's Caddyfile/Xray config/relay admin account's `authorized_keys` live, and creates the server's own relay account. |
 | `tw relay get-servers` | List servers registered on the relay (`SERVER-ID`, `PATH`, `PORT`, `ENROLLED`, `TUNNEL` up/down — live-checked against the relay). |
 | `tw relay sync-tenants` | Bring the relay's tenant accounts in line with the registry without enrolling anyone (see below). |
 | `tw relay un-enroll-server <server-id>` | Un-enroll a server from the relay and kill its live connections. Prints the server's details, then asks for confirmation. Also removes registry entries that fail validation and are skipped everywhere else. |
 | `tw relay ssh` | Open an interactive SSH shell on the relay server (through the tunnel). |
-| `tw relay status` | Relay-mode variant of [`tw status`](#tw-status). |
+| `tw relay status` | Relay-role variant of [`tw status`](#tw-status). |
 | `tw relay test` | Test connectivity to the relay server. |
 
 ### `tw relay create` flags
@@ -103,20 +103,20 @@ same machine; the chosen ports are printed.
 
 ### `tw relay sync-tenants`
 
-Takes no arguments and no flags. Over the admin's relay SSH connection it:
+Takes no arguments and no flags. Over the relay admin's SSH connection to the relay it:
 
 1. installs or updates the tenant request handler, its systemd units and the
    `98-tw-tenants.conf` sshd drop-in, and checks with `sshd -T` that the
    drop-in's `Match` block is in effect,
 2. creates, updates or removes one `twt-*` account per enrolled server,
-3. updates the relay admin account's `authorized_keys`: tw's admin line is
+3. updates the relay admin account's `authorized_keys`: tw's relay admin line is
    replaced, tenant lines are removed, and every other key (e.g. your own
    maintenance key) is kept. Only if tenant lines were removed does it end
-   every other SSH session of the admin account (a pre-migration tenant
+   every other SSH session of the relay admin account (a pre-migration tenant
    session must not survive).
 
 Enroll and un-enroll run the same sync. Run this command once to migrate a
-relay whose servers still log in as the admin account. Output:
+relay whose servers still log in as the relay admin account. Output:
 
 ```text
       [1/2] Render tenant accounts...
@@ -142,13 +142,13 @@ All subcommands require `mode: server`.
 | Command | Description |
 |---|---|
 | `tw server start` | Start the Tunnel Whisperer server: embedded SSH server, Xray, reverse tunnel, plus the dashboard (if `server.dashboard_port` > 0) and the gRPC API. |
-| `tw server status` | Server-mode variant of [`tw status`](#tw-status). |
+| `tw server status` | Server-role variant of [`tw status`](#tw-status). |
 | `tw server test` | Test connectivity to the relay server. |
 | `tw server user …` | Manage client users (below). |
 | `tw server app …` | Manage application templates (below). |
 
 To join a relay in the first place, use the top-level [`tw join`](#tw-join)
-against a code from the admin's `tw relay invite` — there is no `tw server
+against a code from the relay admin's `tw relay invite` — there is no `tw server
 join-relay` command. When the server *is* the relay admin's own machine, skip
 the invite exchange entirely: [`tw relay add-server`](#tw-relay-relay-role)
 does the whole thing in-process.
@@ -207,7 +207,7 @@ All subcommands require `mode: client`.
 | `tw client connect` | Connect to the relay: starts the embedded Xray client and the SSH forward tunnels. Runs until Ctrl-C. Supports repeatable one-shot overrides: `--map <local_port>:<server_port>` (ssh -L ordering, not persisted). |
 | `tw client listen [address]` | Show or set the local interface forwarded tunnels bind to. No argument prints the current address (default `127.0.0.1`); pass an IP to change it (`0.0.0.0` to expose tunnels on all interfaces, e.g. in a container). Takes effect on next reconnect. |
 | `tw client set-port [server_port] [local_port]` | Override the local port a tunnel binds on this machine, keyed by its server port. No arguments lists tunnels with default, override, and effective ports; `--clear` removes an override. Takes effect on next reconnect. |
-| `tw client status` | Client-mode variant of [`tw status`](#tw-status). |
+| `tw client status` | Client-role variant of [`tw status`](#tw-status). |
 | `tw client test` | Test connectivity to the relay server. |
 
 ## `tw join`
@@ -216,8 +216,8 @@ All subcommands require `mode: client`.
 tw join <relay-host> <code> [--name <ctx>]
 ```
 
-Joins a relay using a one-time invite code from its operator (`tw relay
-invite` for a server tenant, `tw server user invite` for a client
+Joins a relay using a one-time invite code from the relay admin or the server operator (`tw relay
+invite` for a server, `tw server user invite` for a client
 user). It's role-neutral and works even with **no mode configured** — the
 issuer's invite decides whether this machine becomes a server or a client.
 The default config directory is system-owned, so run it as `sudo tw join ...`
@@ -306,8 +306,8 @@ warning telling you to restart the service.
 Starts the web dashboard (default port 8080, from `server.dashboard_port`)
 and the gRPC API, then auto-starts the appropriate role:
 
-- **Server mode** — if the relay is provisioned, the server starts automatically.
-- **Client mode** — if `xray.relay_host` is set, the client connects automatically.
+- **Server role** — if the relay is provisioned, the server starts automatically.
+- **Client role** — if `xray.relay_host` is set, the client connects automatically.
 
 | Flag | Description |
 |---|---|

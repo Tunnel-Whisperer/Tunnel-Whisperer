@@ -52,9 +52,9 @@ Both server and client connect **outbound** to a lightweight relay VM on port 44
 
 The same `tw` binary plays three mutually exclusive roles, selected by its configured (and cryptographically signed) mode:
 
-- **Relay** — the admin who owns the relay VM: provisions it, holds the CA, enrolls servers (`tw relay …`)
-- **Server** — the operator exposing services: joins a relay, creates users, runs the tunnel endpoint (`tw server …`)
-- **Client** — the person connecting in: redeems a spoken invite code, gets local port forwards (`tw client …`)
+- **Relay** — the relay admin who owns the relay VM: provisions it, holds the CA, enrolls servers (`tw relay …`)
+- **Server** — the server operator exposing services: joins a relay, creates users, runs the tunnel endpoint (`tw server …`)
+- **Client** — the client user: redeems a spoken invite code, gets local port forwards (`tw client …`)
 
 One relay serves many servers; each server serves many clients. See the [Global section](global/index.md) for the role model and everything shared across roles.
 
@@ -92,13 +92,13 @@ Connect a cloud Jupyter notebook to an on-premise database behind a corporate fi
 
 ## Quick Start
 
-=== "Relay (admin)"
+=== "Relay (relay admin)"
 
     ```bash
     # Provision a relay VM (Hetzner, DigitalOcean, AWS — or bring your own)
     tw relay create
 
-    # Enroll a server: mint a one-time code, read it to the operator,
+    # Enroll a server: mint a one-time code, read it to the server operator,
     # approve on their SAS read-back
     tw relay invite
 
@@ -109,7 +109,7 @@ Connect a cloud Jupyter notebook to an on-premise database behind a corporate fi
 === "Server"
 
     ```bash
-    # Join a relay: redeem the admin's spoken invite code
+    # Join a relay: redeem the relay admin's spoken invite code
     sudo tw join relay.example.com <code>
 
     # Invite a client user: mint a code, read it to them,

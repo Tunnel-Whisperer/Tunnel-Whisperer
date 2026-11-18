@@ -17,7 +17,7 @@ state under a single platform-specific directory.
 | File | Description |
 |---|---|
 | `config.yaml` | Main configuration file (see [Configuration](configuration.md)) |
-| `id_ed25519` / `id_ed25519.pub` | The profile's ed25519 SSH identity key pair, generated on first initialization. Server: authenticates the reverse tunnel to the relay. Relay: the admin management key. Client: the per-user key received in the bundle. Also the signing/identity key for `mode_auth`. |
+| `id_ed25519` / `id_ed25519.pub` | The profile's ed25519 SSH identity key pair, generated on first initialization. Server: authenticates the reverse tunnel to the relay. Relay: the relay admin management key. Client: the per-user key received in the bundle. Also the signing/identity key for `mode_auth`. |
 | `dashboard.token` | The web dashboard's login token (`0600`). Fetch with `tw dashboard token`; `--rotate` replaces it and invalidates active sessions. |
 | `api.token` | The gRPC control-plane bearer token (`0600`). Required on every RPC; the CLI reads it automatically. |
 | `contexts.yaml` | Plaintext context index: the active context name plus non-secret metadata (role, relay, user, short ID, created) per stored context |
@@ -58,18 +58,18 @@ A server enrolled on a relay, with two users, has this layout:
         └── ...
 ```
 
-## Relay (admin) file tree
+## Relay file tree
 
-The relay owner's profile additionally holds the tenant registry and the
+The relay admin's profile additionally holds the tenant registry and the
 relay infrastructure state:
 
 ```
 /etc/tw/config/
 ├── config.yaml              # mode: relay
 ├── contexts.yaml / contexts/
-├── id_ed25519(.pub)         # Admin management key (authorized on the relay VM)
-├── relay_host_ed25519(.pub) # tw-managed SSH host key installed on the relay VM; the admin pins it on the direct port-22 channel
-├── ca.crt / ca.key          # The relay profile's own tenant CA (the admin is also a tenant)
+├── id_ed25519(.pub)         # Relay admin management key (authorized on the relay VM)
+├── relay_host_ed25519(.pub) # tw-managed SSH host key installed on the relay VM; the relay admin pins it on the direct port-22 channel
+├── ca.crt / ca.key          # The relay profile's own tenant CA (the relay profile is also a tenant)
 ├── client.crt / client.key  # ...and its mTLS client certificate
 ├── servers/                 # Enrolled-server registry: one JSON file per tenant
 │   └── <server-id>.json     # server_id, uuid, hostname, remote_port, ca_cert_pem, ssh_pubkey, enrolled_at
@@ -140,7 +140,7 @@ which unpacks into the config directory:
 ├── contexts.yaml / contexts/
 ├── id_ed25519               # This user's SSH private key (from the bundle)
 ├── id_ed25519.pub
-├── authorized_keys          # Seeded with the profile's own key on init (unused in client mode)
+├── authorized_keys          # Seeded with the profile's own key on init (unused in the client role)
 ├── client.crt               # Per-server client certificate (from the bundle) for relay mTLS
 └── client.key               # Private key for client.crt
 ```
@@ -185,7 +185,7 @@ directories are `0700`. See
 !!! note "Not part of a context"
     `authorized_keys` and `ssh_host_ed25519_key` are **not** sealed into
     bundles and are not cleared on context switch — they persist in the
-    config dir across switches. In practice only server mode uses them, and
+    config dir across switches. In practice only the server role uses them, and
     a server machine rarely switches contexts; but if you repurpose a
     machine, remove them along with the rest of the config dir.
 

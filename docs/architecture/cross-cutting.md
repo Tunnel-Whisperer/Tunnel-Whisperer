@@ -84,7 +84,7 @@ sequenceDiagram
 
 UUIDs must be canonical lowercase (`isCanonicalUUID`, `internal/ops/uuidcheck.go`); tw refuses to send anything else and the handler checks the same rule. The relay admin's own profile still edits `config.json` directly over its sudo account (`sudo cat` / `sudo tee`, gRPC `AlterInbound`), under the same lock. The relay-side pieces live in `internal/relay/tenant` and are installed by provisioning and by every tenant sync (`tw relay sync-tenants`, enroll, un-enroll, close-SSH).
 
-Relay-side *tenant* changes (server enroll / un-enroll) follow the same live-update philosophy but at a bigger granularity: the admin re-renders the Caddyfile, the tenant accounts (one `twt-*` account per registered server, reconciled by a root script, `relaytenant.RenderSync`), then tw's lines in the admin account's `authorized_keys` (admin line replaced, tenant lines removed, other keys kept), and Xray `config.json` wholesale from the registry, then live-adds (`AddInbound` + `AddRule`) or live-removes the affected tenant via the same gRPC API — no Xray restart. One thing is deliberately *not* re-rendered: client-user UUIDs are owned by their servers and exist only in the relay's `config.json` (the admin's registry never sees them), so enroll and un-enroll read the current file and carry each surviving `vless-in-<server-id>` inbound's extra clients over into the rewritten one (`mergeRelayClients`, `internal/ops/relaymerge.go`); a removed tenant's inbound, users included, is dropped. Enroll and un-enroll are serialized by a local file lock (`internal/ops/oplock.go`).
+Relay-side *tenant* changes (server enroll / un-enroll) follow the same live-update philosophy but at a bigger granularity: the relay admin re-renders the Caddyfile, the tenant accounts (one `twt-*` account per registered server, reconciled by a root script, `relaytenant.RenderSync`), then tw's lines in the relay admin account's `authorized_keys` (relay admin line replaced, tenant lines removed, other keys kept), and Xray `config.json` wholesale from the registry, then live-adds (`AddInbound` + `AddRule`) or live-removes the affected tenant via the same gRPC API — no Xray restart. One thing is deliberately *not* re-rendered: client-user UUIDs are owned by their servers and exist only in the relay's `config.json` (the relay admin's registry never sees them), so enroll and un-enroll read the current file and carry each surviving `vless-in-<server-id>` inbound's extra clients over into the rewritten one (`mergeRelayClients`, `internal/ops/relaymerge.go`); a removed tenant's inbound, users included, is dropped. Enroll and un-enroll are serialized by a local file lock (`internal/ops/oplock.go`).
 
 ---
 
@@ -151,7 +151,7 @@ The dashboard polls `ConfigChanged()` every 3 seconds via the `/api/status` endp
 
 The `mode` field in `config.yaml` can be `"relay"`, `"server"`, `"client"`, or empty (bootstrap). The legacy value `"admin"` is canonicalized to `"relay"` on read. When set:
 
-- **CLI**: `requireMode(allowed ...string)` in `root.go` checks the configured mode before executing a command. Relay-only commands (e.g., `tw relay create`, `tw relay invite`) return an error in server or client mode, and so on for each role; the variadic form lets a command be allowed in more than one mode. `tw join` is the exception — it's role-neutral and skips `requireMode` entirely, since the issuer's invite (not the enrollee's current mode) decides the resulting role.
+- **CLI**: `requireMode(allowed ...string)` in `root.go` checks the configured mode before executing a command. Relay-only commands (e.g., `tw relay create`, `tw relay invite`) return an error in server or client role, and so on for each role; the variadic form lets a command be allowed in more than one mode. `tw join` is the exception — it's role-neutral and skips `requireMode` entirely, since the issuer's invite (not the enrollee's current mode) decides the resulting role.
 - **Dashboard**: The `pageData.Mode` field is passed to all templates. Navigation links and page content adapt -- pages belonging to other roles are hidden.
 
 ```go
@@ -375,11 +375,11 @@ authority. The lifecycle is handled transparently:
   **idempotent**: an existing CA is never regenerated, and a missing client
   cert is re-issued from the existing CA. A client cert whose CN differs from
   the stored id is a hard error, except the legacy relay-domain CN, which is
-  re-issued. It is skipped in client mode.
-- **Distribution to the relay** — for the admin's own entry, the CA *public*
+  re-issued. It is skipped in the client role.
+- **Distribution to the relay** — for the relay admin's own entry, the CA *public*
   certificate is base64-embedded into cloud-init / the install script and written
   to `/etc/caddy/ca/<server-id>.crt` at provisioning; for joined servers, the
-  admin writes their CA cert (carried in the invite offer over the SPAKE2
+  relay admin writes their CA cert (carried in the invite offer over the SPAKE2
   channel) to the same location during enrollment and reloads Caddy. The
   rendered Caddyfile (`client_auth verify_if_given` with one trust-pool entry
   per tenant, plus a certless `/enroll` route per tenant) is rewritten the

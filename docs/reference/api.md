@@ -146,7 +146,7 @@ collector is created or destroyed on the fly.
 | `POST` | `/api/client/stop` | Stop the client |
 | `POST` | `/api/client/reconnect` | Disconnect and reconnect the client |
 | `POST` | `/api/client/upload` | Upload a client context bundle (`.twctx`) to configure the client |
-| `POST` | `/api/client/port-override` | Set or clear a tunnel's local port override, keyed by server port (client mode only; the HTTP counterpart of `tw client set-port`) |
+| `POST` | `/api/client/port-override` | Set or clear a tunnel's local port override, keyed by server port (client role only; the HTTP counterpart of `tw client set-port`) |
 
 **Upload:** `POST /api/client/upload` expects a `multipart/form-data` body
 with the bundle in a `config` file field (10 MB max).
@@ -174,10 +174,10 @@ on next reconnect.
     interactive terminal session to the relay server. The dashboard uses
     [xterm.js](https://xtermjs.org/) to render the terminal in the browser.
 
-### Enrolled servers (relay mode only)
+### Enrolled servers (relay role only)
 
 These endpoints mirror the `tw relay …` enrollment commands and answer only
-when the daemon runs in relay mode.
+when the daemon runs in the relay role.
 
 | Method | Path | Description |
 |---|---|---|
@@ -298,7 +298,7 @@ token credentials over the plaintext loopback transport, 2-second dial timeout).
 | `TestRelay` | `Empty` → `TestRelayResponse` | Run relay connectivity tests; returns per-step results |
 | `StartServer` / `StopServer` | `Empty` → `Empty` | Start/stop all server components |
 | `StartClient` / `StopClient` | `Empty` → `Empty` | Start/stop the client |
-| `UploadClientConfig` | `UploadClientConfigRequest` → `Empty` | Import a client context bundle (bytes) in client mode |
+| `UploadClientConfig` | `UploadClientConfigRequest` → `Empty` | Import a client context bundle (bytes) in the client role |
 | `ListUsers` | `Empty` → `ListUsersResponse` | All configured users with tunnel mappings |
 | `DeleteUser` | `DeleteUserRequest` → `Empty` | Delete a user by name |
 

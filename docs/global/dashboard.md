@@ -21,7 +21,7 @@ tw dashboard token            # prints the token
 tw dashboard token --rotate   # generates a new token and invalidates all active sessions
 ```
 
-The token lives in a `0600` file in the config directory (`dashboard.token`), readable only by the operator. A successful login sets a `SameSite=Strict`, `HttpOnly` session cookie (12-hour lifetime); rotating the token logs every session out. Automation can skip the login page by sending the token directly:
+The token lives in a `0600` file in the config directory (`dashboard.token`), readable only by whoever runs the dashboard. A successful login sets a `SameSite=Strict`, `HttpOnly` session cookie (12-hour lifetime); rotating the token logs every session out. Automation can skip the login page by sending the token directly:
 
 ```bash
 curl -H "Authorization: Bearer $(tw dashboard token)" http://127.0.0.1:8080/api/status
@@ -48,7 +48,7 @@ On first launch — before a mode is set — the dashboard shows three cards to 
 
 - **Server** — run behind a firewall; connect to a relay, start SSH + Xray, let clients in
 - **Client** — connect to an existing server through a relay
-- **Relay** — own and manage the relay: provision it, hold the admin bundle, admit servers
+- **Relay** — own and manage the relay: provision it, hold the relay admin bundle, admit servers
 
 Once a role is chosen (here or via the CLI), it is fixed and the navigation shows only that role's pages.
 
@@ -62,7 +62,7 @@ The nav bar shows the pages for the current role, plus the **current context nam
 | relay | Status (relay home) · Relay · Servers · Config |
 | client | Status · Config |
 
-## Server Mode
+## Server Role
 
 ### Status Page
 
@@ -92,11 +92,11 @@ Application templates are reusable port-mapping bundles: list, **Create**, **Edi
 
 Full sortable, searchable table of all tunnel bandwidth data with live polling: filter by user, sort by port/sent/received/connections, 10 rows per page, live active-connection badge.
 
-## Relay Mode
+## Relay Role
 
 ### Status Page (Relay Home)
 
-The relay owner's landing page: a relay summary card (domain, instance, IP, provider — or a **Provision Relay** button if none exists yet) and a reminder that the **admin bundle** is the relay's only backup: it holds the CA keypair and relay SSH key, carries no passphrase, and has no recovery if lost.
+The relay admin's landing page: a relay summary card (domain, instance, IP, provider — or a **Provision Relay** button if none exists yet) and a reminder that the **relay admin bundle** is the relay's only backup: it holds the CA keypair and relay SSH key, carries no passphrase, and has no recovery if lost.
 
 ### Servers Page
 
@@ -106,19 +106,19 @@ The multi-tenant view — every server enrolled on this relay, in a **live table
 - **Un-enroll** — per-row action with a confirmation; the server's relay access and all its live connections end immediately
 
 !!! note "Enrollment is CLI-only"
-    Admitting a new server or client tenant (`tw relay invite`, `tw server user invite`) requires a spoken SAS confirmation and isn't yet exposed in the dashboard — run it from the CLI, then manage the result here.
+    Admitting a new server or client (`tw relay invite`, `tw server user invite`) requires a spoken SAS confirmation and isn't yet exposed in the dashboard — run it from the CLI, then manage the result here.
 
-## Client Mode
+## Client Role
 
 ### Status Page
 
 - **Client card** — upload form for the context bundle (when none is loaded), Xray and Tunnel health, **Connect/Disconnect/Reconnect**
-- **Tunnels card** — port mappings with the *effective* local port (click to copy `localhost:port`). Ports remapped on this machine show an `override` badge; **edit** changes a tunnel's local port and **reset** restores the admin default (both take effect on the next reconnect). Bundle update form when stopped.
+- **Tunnels card** — port mappings with the *effective* local port (click to copy `localhost:port`). Ports remapped on this machine show an `override` badge; **edit** changes a tunnel's local port and **reset** restores the server operator's default (both take effect on the next reconnect). Bundle update form when stopped.
 - **Bandwidth card** — when analytics is enabled: per-port sent/received bytes and active connections
 
 ## Relay Management Page
 
-Available in relay and server mode under **Relay**:
+Available in the relay and server roles under **Relay**:
 
 - Relay status and connection details (copyable IP)
 - **Test Connectivity** — runs the multi-step relay diagnostic
@@ -147,8 +147,8 @@ The stored [contexts](contexts.md) as a table with a **search box and role filte
 
 - **Log Level** and **Proxy** — separate cards for log verbosity and the outbound [proxy](proxy.md) URL
 - **Xray Transport** — relay host, relay port (default 443), path
-- **Server** (server mode) — SSH port, API port, dashboard port, relay SSH port/user, remote port, temp Xray port
-- **Client** (client mode) — SSH user, server SSH port, local Xray port, listen address (`127.0.0.1` default; `0.0.0.0` to expose tunnels on all interfaces, e.g. in a container)
+- **Server** (server role) — SSH port, API port, dashboard port, relay SSH port/user, remote port, temp Xray port
+- **Client** (client role) — SSH user, server SSH port, local Xray port, listen address (`127.0.0.1` default; `0.0.0.0` to expose tunnels on all interfaces, e.g. in a container)
 - **Analytics** — enable bandwidth statistics (takes effect immediately), history size
 - **config.yaml** — read-only view of the live file, refreshed after each save
 

@@ -107,17 +107,17 @@ This design ensures that access control changes are applied in real time, withou
 
 ## Relay SSH access control
 
-The relay's own SSH daemon serves only two kinds of principals, and they use **separate accounts**. `tw` re-renders its lines for both on every enroll, un-enroll, close-SSH and `tw relay sync-tenants`, so they self-heal; keys tw does not manage in the admin account are kept.
+The relay's own SSH daemon serves only two kinds of principals, and they use **separate accounts**. `tw` re-renders its lines for both on every enroll, un-enroll, close-SSH and `tw relay sync-tenants`, so they self-heal; keys tw does not manage in the relay admin account are kept.
 
-**The admin key** (the relay owner's `id_ed25519.pub`) is the only tw key in the admin account's `authorized_keys`; tw never puts a tenant key there and leaves keys it does not manage (e.g. the operator's maintenance key) in place. The admin account has passwordless sudo:
+**The relay admin key** (the relay admin's `id_ed25519.pub`) is the only tw key in the relay admin account's `authorized_keys`; tw never puts a tenant key there and leaves keys it does not manage (e.g. the relay admin's own maintenance key) in place. The relay admin account has passwordless sudo:
 
 ```
 from="127.0.0.1" ssh-ed25519 AAAA... 
 ```
 
 - Pinned `from="127.0.0.1"`: it only authenticates for connections arriving through the encrypted tunnel (which egress at localhost on the relay) — never over public port 22.
-- **Exception:** a relay provisioned with `--ssh-open` leaves the admin line unpinned, because the pin would reject logins over the deliberately opened port 22. Re-provisioning without `--ssh-open` re-pins it.
-- The admin key is otherwise unrestricted — only the admin can open a shell (`tw relay ssh`) or forward to relay loopback services.
+- **Exception:** a relay provisioned with `--ssh-open` leaves the relay admin line unpinned, because the pin would reject logins over the deliberately opened port 22. Re-provisioning without `--ssh-open` re-pins it.
+- The relay admin key is otherwise unrestricted — only the relay admin can open a shell (`tw relay ssh`) or forward to relay loopback services.
 
 **Tenant (enrolled server) keys** — each enrolled server has its own relay account (`twt-` followed by 24 hex characters derived from the server-id), without sudo, whose `authorized_keys` holds exactly one line:
 
@@ -132,7 +132,7 @@ from="127.0.0.1",restrict,command="/usr/local/lib/tw/tw-tenant-request",port-for
 - `permitlisten="127.0.0.1:<port>"` (appears twice) — the reverse (`-R`) forwards are limited to the tenant's **own** two allocated ports: its tunnel port, and the tunnel port + 20000 (the enroll port `tw server user invite` publishes its client-enrollment listener on).
 - `permitopen="127.0.0.1:1"` — local (`-L`) forwarding is pinned to a dead sentinel port, so a tenant cannot reach the relay's loopback services (e.g. the Xray gRPC API on `127.0.0.1:10085`) or other tenants' ports.
 
-Relays set up by older `tw` versions kept all tenant keys in the admin account, where a tenant could run commands with sudo. `tw relay sync-tenants`, or the next enroll or un-enroll, moves them to their own accounts (see [Tenants → Migrating](../relay/tenants.md#migrating-to-per-tenant-relay-accounts)).
+Relays set up by older `tw` versions kept all tenant keys in the relay admin account, where a tenant could run commands with sudo. `tw relay sync-tenants`, or the next enroll or un-enroll, moves them to their own accounts (see [Tenants → Migrating](../relay/tenants.md#migrating-to-per-tenant-relay-accounts)).
 
 ---
 

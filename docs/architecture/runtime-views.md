@@ -2,11 +2,11 @@
 
 ## Relay Provisioning (`tw relay create`)
 
-Interactive 9-step wizard, run on the admin machine (mode `relay`). Providers: Hetzner, DigitalOcean, AWS (via Terraform, which must be in PATH), or **Manual** — a bring-your-own VM set up with a tw-generated install script. `--provider manual --domain <d> --ip <ip>` runs fully non-interactive; `--ssh-open` optionally leaves port 22 open to the internet.
+Interactive 9-step wizard, run on the relay admin's machine (mode `relay`). Providers: Hetzner, DigitalOcean, AWS (via Terraform, which must be in PATH), or **Manual** — a bring-your-own VM set up with a tw-generated install script. `--provider manual --domain <d> --ip <ip>` runs fully non-interactive; `--ssh-open` optionally leaves port 22 open to the internet.
 
 ```mermaid
 sequenceDiagram
-    participant Admin as Admin (tw relay create)
+    participant Admin as Relay admin (tw relay create)
     participant TF as Terraform
     participant Cloud as Cloud Provider
     participant R as Relay VM
@@ -37,7 +37,7 @@ sequenceDiagram
 - `cloud-init.yaml` -- from `cloud-init.yaml.tmpl` with baked values (domain, SSH user, public key, pinned Xray version, `--ssh-open` conditionals) plus the base64-embedded Caddyfile, relay Xray `config.json`, and CA certificate rendered by `internal/relay/{caddy,xray}`
 - `main.tf` -- the selected provider's template (rendered for the `--ssh-open` firewall conditional)
 
-For a **manual** relay, `GenerateManualInstallScript()` renders the same material into a self-contained shell script (`install-script.sh.tmpl`) the operator runs as root on their own Ubuntu VM; the script is idempotent and re-runnable.
+For a **manual** relay, `GenerateManualInstallScript()` renders the same material into a self-contained shell script (`install-script.sh.tmpl`) the relay admin runs as root on their own Ubuntu VM; the script is idempotent and re-runnable.
 
 Credentials are stored as:
 
@@ -46,10 +46,10 @@ Credentials are stored as:
 
 The cloud-init / install script on the relay:
 
-1. Creates the SSH admin user with the admin's public key (pinned `from="127.0.0.1"` unless `--ssh-open`) and passwordless sudo
+1. Creates the relay admin account with the relay admin's public key (pinned `from="127.0.0.1"` unless `--ssh-open`) and passwordless sudo
 2. Installs Caddy from the official apt repo, Xray via the official install script pinned to `terraform.XrayVersion`
-3. Writes the rendered Xray config (`api-in` on `127.0.0.1:10085`; the admin's own `vless-in-<id>` inbound on `127.0.0.1:<remote-port>+10000` with XHTTP; freedom outbound restricted to loopback via `finalRules`; per-tenant allow/deny routing rules)
-4. Writes the admin's CA public certificate to `/etc/caddy/ca/<server-id>.crt` (base64 in cloud-init)
+3. Writes the rendered Xray config (`api-in` on `127.0.0.1:10085`; the relay admin's own `vless-in-<id>` inbound on `127.0.0.1:<remote-port>+10000` with XHTTP; freedom outbound restricted to loopback via `finalRules`; per-tenant allow/deny routing rules)
+4. Writes the relay admin's CA public certificate to `/etc/caddy/ca/<server-id>.crt` (base64 in cloud-init)
 5. Writes the rendered Caddyfile — the mutual-TLS gate (`client_auth verify_if_given` against the CA trust pool, TLS 1.3 only) plus a per-tenant `handle` matching `/tw/<server-id>*` and cert `CN=<server-id>`, proxying h2c to the tenant's VLESS inbound, plus a certless `@enroll_<server-id>` handle for `/enroll/<tok>/*`
 6. Locks down SSH to `127.0.0.1` only (`0.0.0.0` with `--ssh-open`), disables password authentication
 7. Configures firewall: deny all incoming, allow 80/tcp + 443/tcp (+ 22/tcp with `--ssh-open`)
@@ -65,7 +65,7 @@ so the relay boots with the mTLS gate already in place. See
 ## Server Enrollment (`tw relay invite` / `tw join`)
 
 A second (or Nth) server joins an existing relay through a zero-file, spoken
-invite: the admin mints a one-time code, reads it to the joining operator
+invite: the relay admin mints a one-time code, reads it to the server operator
 over any channel, and the two sides run a SPAKE2 key exchange (keyed by the
 code) tunnelled through the relay's `/enroll/<tok>` route — the same route a
 certless connection can reach under `client_auth verify_if_given`. Neither
@@ -75,8 +75,8 @@ humans reading back a short authentication string.
 
 ```mermaid
 sequenceDiagram
-    participant S as Joining Server
-    participant A as Admin (relay role)
+    participant S as Server operator (tw join)
+    participant A as Relay admin (relay role)
     participant R as Relay VM
 
     A ->> A: tw relay invite
@@ -97,7 +97,7 @@ sequenceDiagram
     A ->> A: confirms exact match, approves
 
     A ->> A: [1] Register server, allocate remote_port (registry under servers/)
-    A ->> A: [2] Build FULL tenant list (admin + every registered server)
+    A ->> A: [2] Build FULL tenant list (the relay admin's own entry + every registered server)
     A ->> R: [3] Over relay SSH: write CA certs, re-render + validate +<br/>graceful-reload Caddyfile, update tw's authorized_keys lines,<br/>persist full Xray config.json
     A ->> R: [4] gRPC live-add (AddInbound + AddRule via :10085<br/>over the SSH tunnel) — no Xray restart
     A ->> S: encrypted grant (relay host, path, remote_port, ssh_user,<br/>+ ed25519 mode signature), via /enroll/tok/result
@@ -114,13 +114,13 @@ Key properties:
   successful or not, and expires after its TTL (default 15 minutes).
 - **The SAS defeats theft and MITM** — both sides derive the same short
   authentication string from the session key (`internal/enroll/pake.go`,
-  HKDF-SHA256); the admin approves only on an exact spoken match. A thief who
-  redeems first burns the invite, so the real operator's join fails
+  HKDF-SHA256); the relay admin approves only on an exact spoken match. A thief who
+  redeems first burns the invite, so the real server operator's join fails
   "already used" — the detectable tell.
 - **Non-disruptive** — existing tenants' tunnels stay up: Caddy reloads gracefully, and the new Xray inbound + routing rules are added live over the gRPC API; the full `config.json` is written only for restart persistence.
-- **Full-rewrite philosophy** — the Caddyfile, tw's lines in the admin account's `authorized_keys` (other keys there are kept), the tenant accounts, and relay Xray config are re-rendered from the complete registry on every enroll/un-enroll, so stale or corrupted state self-heals. Registry entries are validated again when they are loaded (`ListServers`); an invalid one is skipped and never rendered.
+- **Full-rewrite philosophy** — the Caddyfile, tw's lines in the relay admin account's `authorized_keys` (other keys there are kept), the tenant accounts, and relay Xray config are re-rendered from the complete registry on every enroll/un-enroll, so stale or corrupted state self-heals. Registry entries are validated again when they are loaded (`ListServers`); an invalid one is skipped and never rendered.
 - **Rollback before the relay is touched** — if enrollment fails before any relay change, the new registry entry is removed again. Once the relay may carry the tenant, the entry stays and the error names the `tw relay un-enroll-server` command that removes it.
-- **Serialized** — enroll and un-enroll take a local file lock (`internal/ops/oplock.go`), so concurrent admin operations cannot interleave.
+- **Serialized** — enroll and un-enroll take a local file lock (`internal/ops/oplock.go`), so concurrent relay admin operations cannot interleave.
 - **Tenant confinement** — each server gets its own relay account
   (`twt-` followed by 24 hex characters derived from the server-id, returned as `ssh_user` in the
   grant). Its single `authorized_keys` line carries
@@ -130,7 +130,7 @@ Key properties:
   can publish exactly these two reverse listeners and send add/remove/list
   UUID requests for its own inbound, nothing else (no shell, no sudo, no
   reaching the relay's gRPC API).
-- **Un-enroll** (`tw relay un-enroll-server <id>`) reverses everything *and* severs live state: rewrites the admin `authorized_keys` and removes the tenant's account first (kills its processes, blocks re-auth), removes the tenant's routing rules and inbound via gRPC, kills the sshd session holding its reverse listener, removes its Caddy handle and CA cert, then forgets the registry entry.
+- **Un-enroll** (`tw relay un-enroll-server <id>`) reverses everything *and* severs live state: rewrites the relay admin account's `authorized_keys` and removes the tenant's account first (kills its processes, blocks re-auth), removes the tenant's routing rules and inbound via gRPC, kills the sshd session holding its reverse listener, removes its Caddy handle and CA cert, then forgets the registry entry.
 - **Two-phase delivery** (`internal/ops/invite.go`) — the grant is handed
   over on the same connection that served the offer where possible, but a
   second Caddy reload landing mid-exchange can kill that connection first;

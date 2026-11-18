@@ -1,6 +1,6 @@
 # Getting Started
 
-Tunnel Whisperer connects services across separated private networks via resilient HTTPS tunnels. One binary, three roles: the **relay** admin owns the relay VM, **servers** join it and expose services, **clients** import a bundle and connect. This guide walks you through the setup.
+Tunnel Whisperer connects services across separated private networks via resilient HTTPS tunnels. One binary, three roles: the **relay admin** owns the relay VM, **servers** join it and expose services, **clients** import a bundle and connect. This guide walks you through the setup.
 
 ## Prerequisites
 
@@ -12,7 +12,7 @@ Tunnel Whisperer connects services across separated private networks via resilie
 ## Workflow Overview
 
 ```text
-                              # role: relay (admin machine)
+                              # role: relay (relay admin's machine)
 1. Provision   tw relay create
 2. Invite      tw relay invite            (mints a code, waits for the server)
 
@@ -27,10 +27,10 @@ Tunnel Whisperer connects services across separated private networks via resilie
                tw client connect
 ```
 
-The **relay admin** provisions the relay and invites servers. Each **server** operator redeems an invite to join the relay, invites its own users, and runs `tw server start`. Each **client** redeems a user invite — which generates their identity locally and never transmits a private key — and runs `tw client connect` to establish local port forwarding. Every invite is a spoken one-time code confirmed by a short authentication string read back between the two humans involved; see [Tenants — security](../relay/tenants.md#security).
+The **relay admin** provisions the relay and invites servers. Each **server operator** redeems an invite to join the relay, invites its own users, and runs `tw server start`. Each **client user** redeems a user invite — which generates their identity locally and never transmits a private key — and runs `tw client connect` to establish local port forwarding. Every invite is a spoken one-time code confirmed by a short authentication string read back between the two humans involved; see [Tenants — security](../relay/tenants.md#security).
 
-!!! warning "The first role command sets the machine's mode"
-    A machine's mode (`relay`, `server`, or `client`) is set by its first role action and is signed for tamper evidence — commands of other roles refuse to run. See [Global — the role model](../global/index.md).
+!!! warning "Role commands are locked to the profile's mode"
+    A machine's mode (`relay`, `server`, or `client`) is set by `tw relay create`, `tw join`, `tw relay add-server` or `tw config import --activate` and is signed for tamper evidence — commands of other roles refuse to run. See [Global — the role model](../global/index.md).
 
 ## Pick Your Role
 

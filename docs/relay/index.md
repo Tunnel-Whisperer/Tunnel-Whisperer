@@ -10,22 +10,22 @@ opaque, end-to-end-encrypted streams without ever seeing plaintext.
 The **relay admin** is the person (and the `tw` profile, `mode: relay`) that
 owns this machine. Creating a relay with `tw relay create` stamps the active
 profile as the relay identity; from then on the `tw relay …` command group is
-the admin's toolbox.
+the relay admin's toolbox.
 
-## What the admin owns
+## What the relay admin owns
 
 | Asset | Where it lives | What it is |
 | ----- | -------------- | ---------- |
-| Admin SSH key pair | `<config-dir>/id_ed25519{,.pub}` | The only key that can open a shell on the relay. Tunnel-only by default (see [SSH access](ssh-access.md)). |
-| Admin CA + client certificate | `<config-dir>/ca.{crt,key}`, `client.{crt,key}` | The admin's own mTLS admission credentials — the relay trusts one CA per tenant, including the admin's own slot. The CA private key never leaves the admin machine. |
-| Server registry | `<config-dir>/servers/*.json` | One JSON file per enrolled server tenant: server-id, UUID, CA cert, SSH public key, allocated port. The relay's entire tenant configuration is re-rendered from this registry on every enroll/un-enroll. |
+| Relay admin SSH key pair | `<config-dir>/id_ed25519{,.pub}` | The only key that can open a shell on the relay. Tunnel-only by default (see [SSH access](ssh-access.md)). |
+| Relay admin CA + client certificate | `<config-dir>/ca.{crt,key}`, `client.{crt,key}` | The relay admin's own mTLS admission credentials — the relay trusts one CA per tenant, including the relay admin's own slot. The CA private key never leaves the relay admin's machine. |
+| Server registry | `<config-dir>/servers/*.json` | One JSON file per enrolled server: server-id, UUID, CA cert, SSH public key, allocated port. The relay's entire tenant configuration is re-rendered from this registry on every enroll/un-enroll. |
 | Relay state | `<config-dir>/relay/` | Terraform state for cloud relays, or the `manual-relay.json` marker for bring-your-own-VM relays, plus relay metadata (`ssh_open`, instance name). Terraform's provider cache lives outside it, in `<config-dir>/cache/` (see [File Layout](../reference/file-layout.md#the-cache-directory)). |
-| Admin bundle | `tw_<domain-sanitized>.twctx` (dots become dashes: `tw_relay-example-com.twctx`) | The portable relay identity, emitted at create time (a few hundred KB; Terraform's provider cache is never included). **Keep it safe — there is no recovery.** Importing it on another machine — any hostname or OS — makes that machine the relay admin under the same server-id. |
+| Relay admin bundle | `tw_<domain-sanitized>.twctx` (dots become dashes: `tw_relay-example-com.twctx`) | The portable relay identity, emitted at create time (a few hundred KB; Terraform's provider cache is never included). **Keep it safe — there is no recovery.** Importing it on another machine — any hostname or OS — makes that machine the relay admin's machine under the same server-id. |
 
 The relay VM itself holds **no signing keys and no user credentials** — only
 the *public* CA certificates it verifies client certificates against, rendered
 configuration (Caddyfile, Xray `config.json`), and the tw-managed
-`authorized_keys` file. Everything on it can be re-rendered from the admin
+`authorized_keys` file. Everything on it can be re-rendered from the relay admin's
 machine, and the install script can be re-run from scratch.
 
 ## Command overview
@@ -37,22 +37,22 @@ machine, and the install script can be re-run from scratch.
 | `tw relay status` | Unified status view: active context, mode, relay provisioning state. |
 | `tw relay test` | 3-step diagnostic: DNS → HTTPS/mTLS → Xray + SSH through the tunnel. |
 | `tw relay ssh` | Interactive root-capable shell on the relay, through the encrypted tunnel. See [SSH access](ssh-access.md). |
-| `tw relay invite [--ttl 15m]` | Mint a one-time code that admits a server tenant onto the relay, live and without an Xray restart — no files. See [Tenants](tenants.md). |
-| `tw relay add-server [<context-name>] [--switch]` | Enroll this machine as a server tenant on its own relay in one command (single-operator shortcut). See [Tenants](tenants.md). |
+| `tw relay invite [--ttl 15m]` | Mint a one-time code that admits a server onto the relay, live and without an Xray restart — no files. See [Tenants](tenants.md). |
+| `tw relay add-server [<context-name>] [--switch]` | Enroll this machine as a server on its own relay in one command (single-person-setup shortcut). See [Tenants](tenants.md). |
 | `tw relay get-servers` | List enrolled servers with **live** tunnel state queried from the relay. |
 | `tw relay un-enroll-server <server-id> [--yes]` | Completely remove a tenant: block re-auth, sever live connections, rewrite configs, forget the registry entry. |
-| `tw relay sync-tenants` | Give every enrolled server its own locked-down relay account and drop tenant keys from the admin account. Run once on relays set up by older versions. See [Tenants](tenants.md#migrating-to-per-tenant-relay-accounts). |
+| `tw relay sync-tenants` | Give every enrolled server its own locked-down relay account and drop tenant keys from the relay admin account. Run once on relays set up by older versions. See [Tenants](tenants.md#migrating-to-per-tenant-relay-accounts). |
 
-All of these are gated to the relay mode — a server or client profile cannot
+All of these are gated to the relay role — a server or client profile cannot
 run them.
 
 ## Lifecycle
 
 ```mermaid
 flowchart TD
-    A["tw relay create<br/><i>cloud wizard or manual install script</i>"] --> B["Relay live<br/>Caddy + Xray on :80/:443<br/>admin bundle emitted (.twctx)"]
+    A["tw relay create<br/><i>cloud wizard or manual install script</i>"] --> B["Relay live<br/>Caddy + Xray on :80/:443<br/>relay admin bundle emitted (.twctx)"]
     B --> C["Operate<br/>tw relay status / test / ssh<br/>dashboard Relay page"]
-    C --> D["tw relay invite<br/><i>admit a server tenant (live, no restart)</i>"]
+    C --> D["tw relay invite<br/><i>admit a server (live, no restart)</i>"]
     D --> C
     C --> E["tw relay un-enroll-server<br/><i>remove a tenant completely</i>"]
     E --> C
@@ -61,12 +61,12 @@ flowchart TD
 
 1. **Create** — `tw relay create` provisions the VM (or emits an install
    script for yours), stamps the profile's mode to `relay`, and writes the
-   admin bundle.
+   relay admin bundle.
 2. **Operate** — `tw relay test` verifies the full path; `tw relay ssh` and
    the dashboard give day-2 access.
 3. **Enroll / un-enroll** — servers join via a spoken one-time invite code
-   (`tw relay invite` on the admin, `tw join` on the joining machine); the
-   admin admits or removes them at any time without disturbing other tenants.
+   (`tw relay invite` on the relay admin's machine, `tw join` on the joining machine); the
+   relay admin admits or removes them at any time without disturbing other tenants.
 4. **Destroy** — `tw relay destroy` removes the infrastructure (saving TLS
    certificates for reuse on cloud relays) and clears the relay from config.
 

@@ -12,7 +12,7 @@ On a freshly provisioned relay (without `--ssh-open`):
 - `sshd` listens on `127.0.0.1` only (a tw drop-in at
   `/etc/ssh/sshd_config.d/99-tw-localhost.conf`),
 - the firewall denies port 22 (only 80 and 443 are open),
-- tw's admin key line in `authorized_keys` is pinned `from="127.0.0.1"`, so
+- tw's relay admin key line in `authorized_keys` is pinned `from="127.0.0.1"`, so
   even if port 22 were reachable, the key would only authenticate for
   connections arriving at loopback — which in practice means connections that
   egressed from the VLESS tunnel on the relay itself,
@@ -40,9 +40,9 @@ Provisioning with `--ssh-open` (flag or wizard prompt) trades some of that
 surface for direct access:
 
 - `sshd` listens on `0.0.0.0` and the firewall allows port 22,
-- tw's admin key is written **unpinned** — no `from="127.0.0.1"` — so the tw
+- tw's relay admin key is written **unpinned** — no `from="127.0.0.1"` — so the tw
   key works directly over port 22 as well as through the tunnel,
-- password authentication stays off, and **tenant server keys stay pinned**
+- password authentication stays off, and **enrolled server keys stay pinned**
   to the tunnel regardless — `--ssh-open` never widens what tenants can do.
 
 Use it when you want a recovery path that doesn't depend on the tunnel being
@@ -61,8 +61,8 @@ tunnel):
    [`tw relay sync-tenants`](tenants.md#migrating-to-per-tenant-relay-accounts)),
 2. `ufw deny 22/tcp`,
 3. `sshd` back to `ListenAddress 127.0.0.1`,
-4. tw's admin line in the admin account's `authorized_keys` rewritten with
-   the admin key **re-pinned** `from="127.0.0.1"`. This restores the tunnel-only
+4. tw's relay admin line in the relay admin account's `authorized_keys` rewritten with
+   the relay admin key **re-pinned** `from="127.0.0.1"`. This restores the tunnel-only
    invariant, not just the firewall rule,
 5. sshd restarted; local metadata updated so status reflects the change.
 
@@ -72,21 +72,21 @@ Re-running the install script without `--ssh-open` achieves the same end state
 
 ## Anatomy of the relay's `authorized_keys`
 
-The admin and the tenants log in as **different** relay accounts. The tw
+The relay admin and the tenants log in as **different** relay accounts. The tw
 lines below are re-rendered from the tenant registry on every enroll,
 un-enroll, close-SSH operation and `tw relay sync-tenants`. A tenant
-account's `authorized_keys` is rewritten in full; in the admin account's
+account's `authorized_keys` is rewritten in full; in the relay admin account's
 only tw's lines change, and other keys (e.g. your own maintenance key) are
 kept.
 
-The **admin account** (`ubuntu` by default, passwordless sudo) holds the
-admin key and never a tenant key:
+The **relay admin account** (`ubuntu` by default, passwordless sudo) holds the
+relay admin key and never a tenant key:
 
 ```text
 from="127.0.0.1" ssh-ed25519 AAAA...        # pin absent on --ssh-open relays
 ```
 
-The admin line has no `restrict`: the admin gets a shell, sudo, and
+The relay admin line has no `restrict`: the relay admin gets a shell, sudo, and
 unrestricted forwarding (needed, among other things, to reach the relay
 Xray's management API for live tenant changes). Its only constraint is the
 `from="127.0.0.1"` pin — present by default, absent only on `--ssh-open`
@@ -140,8 +140,8 @@ layer:
   closed, or ACME certificate not issued yet (first boot can take several
   minutes).
 - *Xray + SSH fails* — the mTLS handshake, the VLESS layer, or SSH auth is
-  broken. Verify you're on the admin machine (or one that imported the admin
-  bundle): the client certificate and the admin SSH key must match what the
+  broken. Verify you're on the relay admin's machine (or one that imported the relay admin
+  bundle): the client certificate and the relay admin SSH key must match what the
   relay was rendered with. On a server, this step logs in as the server's
   tenant account and sends a `list` request to the tenant handler instead of
   running a command.
@@ -156,7 +156,7 @@ provider's serial/web console or recovery mode, or any non-tw key you kept in
 `authorized_keys`. As a last resort, re-run the install script
 (`tw-install-<domain>.sh`) as root on the VM — it rebuilds the relay's entire
 tw state idempotently. If you re-run it, remember it resets the tenant set to
-just the admin slot; re-enroll servers afterwards (see
+just the relay admin's own slot; re-enroll servers afterwards (see
 [Tenants](tenants.md)).
 
 **A tenant reports its tunnel won't come up** after relay maintenance. Check
@@ -164,10 +164,10 @@ just the admin slot; re-enroll servers afterwards (see
 may have been rebuilt (install-script re-run). Re-enroll the tenant; the
 enroll operation rewrites all relay-side state for every registered server.
 If the tunnel went down right after a tenant sync, the server probably runs
-an older `tw` that still logs in as the admin account. Upgrade it (see
+an older `tw` that still logs in as the relay admin account. Upgrade it (see
 [Tenants](tenants.md#troubleshooting-tenant-accounts)).
 
 **The dashboard's relay terminal gives no shell on a server profile.**
 Expected: a server's relay account has no shell, and every session runs the
 tenant request program. Only the relay admin context (`tw relay ssh`, or the
-terminal in the admin's dashboard) opens a relay shell.
+terminal in the relay admin's dashboard) opens a relay shell.

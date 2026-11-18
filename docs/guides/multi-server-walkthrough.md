@@ -14,17 +14,17 @@ Each step below embeds its segment of a live recording made against a real topol
  │                      └──────▲───────┘                      │
  │                             │                              │
 ┌┴────────┐  ┌─────────┐   ┌───┴────────┐              ┌──────┴──┐  ┌─────────┐
-│ server1 │  │ server2 │   │ admin      │              │ client1 │  │ client2 │
-│ sshd:22 │  │ sshd:22 │   │ laptop     │              │         │  │         │
+│ server1 │  │ server2 │   │ relay admin│              │ client1 │  │ client2 │
+│ sshd:22 │  │ sshd:22 │   │ machine    │              │         │  │         │
 └─────────┘  └─────────┘   │ (owns the  │              └─────────┘  └─────────┘
                            │  relay)    │
                            └────────────┘
 ```
 
-Five machines run `tw`: your admin laptop, server1, server2, client1, client2. The relay VM itself only runs Caddy + Xray (installed by the generated script). Nobody needs an inbound port except the relay (80/443); everyone else connects outbound over HTTPS.
+Five machines run `tw`: your machine (the relay admin's), server1, server2, client1, client2. The relay VM itself only runs Caddy + Xray (installed by the generated script). Nobody needs an inbound port except the relay (80/443); everyone else connects outbound over HTTPS.
 
 !!! warning "One role per profile — run each step on the right box"
-    The first role command a machine runs sets its active profile to that role (`relay`, `server`, or `client`); from then on, commands of the other two roles refuse to run in it. This locks the *profile*, not the machine — you can always hold another role in a separate [context](../global/contexts.md) — but for this walkthrough, keep it simple: one role per machine.
+    A profile's mode (`relay`, `server`, or `client`) is set by `tw relay create`, `tw join`, `tw relay add-server` or `tw config import --activate`; from then on, commands of the other two roles refuse to run in it. This locks the *profile*, not the machine — you can always hold another role in a separate [context](../global/contexts.md) — but for this walkthrough, keep it simple: one role per machine.
 
 ## Prerequisites
 
@@ -32,11 +32,11 @@ Five machines run `tw`: your admin laptop, server1, server2, client1, client2. T
 - The `tw` binary installed on all 5 machines.
 - Servers must be running a normal `sshd` on port 22 (that's what clients will reach).
 
-## Step 1 — Admin: Provision the Relay
+## Step 1 — Relay admin: Provision the Relay
 
 ![Step 1 — provision the relay](../assets/multi-server-step1-relay.gif)
 
-On your **admin laptop**:
+On the **relay admin's machine (yours)**:
 
 ```bash
 tw relay create
@@ -58,19 +58,19 @@ Verify:
 tw relay test        # DNS → HTTPS/mTLS → SSH-over-tunnel, all three must pass
 ```
 
-This machine is now in **relay** mode — it's the relay's owner and the only one that can enroll servers or shell into the relay (`tw relay ssh`).
+This machine is now in the **relay** role — it's the relay admin's machine and the only one that can enroll servers or shell into the relay (`tw relay ssh`).
 
 ## Step 2 — Enroll server1 (spoken invite)
 
 ![Step 2 — enroll server1](../assets/multi-server-step2-server1.gif)
 
-**On the admin laptop:**
+**On the relay admin's machine:**
 
 ```bash
 tw relay invite
 ```
 
-This mints a one-time code and waits. Read it to server1's operator over any trusted channel — it's a PAKE password, not a bearer credential, so overhearing it alone isn't enough (see [Tenants — security](../relay/tenants.md#security)).
+This mints a one-time code and waits. Read it to the server operator of server1 over any trusted channel — it's a PAKE password, not a bearer credential, so overhearing it alone isn't enough (see [Tenants — security](../relay/tenants.md#security)).
 
 **On server1:**
 
@@ -78,9 +78,9 @@ This mints a one-time code and waits. Read it to server1's operator over any tru
 sudo tw join relay.example.com <code>
 ```
 
-Both terminals now show a short authentication string (SAS). Read yours aloud to the admin.
+Both terminals now show a short authentication string (SAS). Read yours aloud to the relay admin.
 
-**On the admin laptop:** confirm the read-back matches and approve. Enrollment then runs the usual live steps (you'll see `Caddyfile reloaded`), and the grant — relay host, path, port, SSH user, mode signature — comes back over the same encrypted channel.
+**On the relay admin's machine:** confirm the read-back matches and approve. Enrollment then runs the usual live steps (you'll see `Caddyfile reloaded`), and the grant — relay host, path, port, SSH user, mode signature — comes back over the same encrypted channel.
 
 **On server1** (once `tw join` reports the context created — it's activated automatically on this freshly-installed machine):
 
@@ -93,7 +93,7 @@ tw server test           # expect "tunnel and tenant request channel working"
 
 ![Step 3 — enroll server2](../assets/multi-server-step3-server2.gif)
 
-Repeat Step 2 exactly, on server2. Enrollment is live — server1 keeps running, no relay restart. Then confirm both tenants from the admin laptop:
+Repeat Step 2 exactly, on server2. Enrollment is live — server1 keeps running, no relay restart. Then confirm both tenants from the relay admin's machine:
 
 ```bash
 tw relay get-servers     # lists server1 and server2
@@ -111,7 +111,7 @@ Each client gets a user on the server it should reach, with a port map `clientLo
 tw server user invite client1 -m 2201:22
 ```
 
-Read the code to client1's operator; approve on the matching SAS read-back.
+Read the code to client1's user; approve on the matching SAS read-back.
 
 **On server2** (for client2):
 
@@ -133,7 +133,7 @@ No files change hands: each client's SSH key and a CSR are generated locally on 
 sudo tw join relay.example.com <code1>
 ```
 
-Read the displayed SAS aloud to server1's operator for approval. Once approved:
+Read the displayed SAS aloud to the server operator of server1 for approval. Once approved:
 
 ```bash
 tw client connect        # keep running; or install as a service like the servers
@@ -155,7 +155,7 @@ ssh -p 2201 <your-unix-user>@127.0.0.1
 ![Step 6 — verify everything](../assets/multi-server-step6-verify.gif)
 
 ```bash
-# admin
+# relay admin
 tw relay test && tw relay get-servers
 # each server
 tw server test && tw server user list
@@ -173,8 +173,8 @@ A user (and its context) belongs to one server, but clients handle multiple via 
 
 ## Gotchas
 
-- Modes are enforced and signed: a client box can't run `tw server ...` commands and vice versa. If you set up a machine in the wrong mode, wipe its tw config dir and start that machine's steps over.
-- The relay VM's SSH is tunnel-only after install — the admin reaches it via `tw relay ssh`. If you provisioned with `--ssh-open`, the admin key also works directly over port 22 (close it later from the dashboard's relay page).
+- Roles are enforced and signed: a client box can't run `tw server ...` commands and vice versa. If you set up a machine in the wrong role, wipe its tw config dir and start that machine's steps over.
+- The relay VM's SSH is tunnel-only after install — the relay admin reaches it via `tw relay ssh`. If you provisioned with `--ssh-open`, the relay admin key also works directly over port 22 (close it later from the dashboard's relay page).
 - A user's port mappings are fixed at enrollment — there is no edit command. To change them, delete the user and invite them again under the same name (a "renew").
-- To kick a server off the relay: admin runs `tw relay un-enroll-server <server-id> --yes`; to revoke a client: server runs `tw server user unregister <name>` / `delete <name>` (takes effect on their next connection attempt).
+- To kick a server off the relay: relay admin runs `tw relay un-enroll-server <server-id> --yes`; to revoke a client: server runs `tw server user unregister <name>` / `delete <name>` (takes effect on their next connection attempt).
 - Invite codes are single-use and short-lived (15 minutes by default) — if one expires before it's redeemed, just mint a fresh one.

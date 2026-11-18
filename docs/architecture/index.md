@@ -2,7 +2,7 @@
 
 Tunnel Whisperer creates resilient, application-layer bridges for specific ports across separated private networks. It encapsulates traffic in standard HTTPS to traverse strict firewalls, NAT, and DPI-controlled environments.
 
-The system has three roles: a **relay** operator (admin) owns a publicly reachable relay VM, **servers** behind private networks join it via an enrollment handshake, and **clients** behind other private networks connect through it. The relay is multi-tenant — several independent servers can share one relay, each isolated behind its own path, CA, and loopback port. All connectivity is egress-only from servers and clients.
+The system has three roles: a **relay admin** owns a publicly reachable relay VM, **servers** behind private networks join it via an enrollment handshake, and **clients** behind other private networks connect through it. The relay is multi-tenant — several independent servers can share one relay, each isolated behind its own path, CA, and loopback port. All connectivity is egress-only from servers and clients.
 
 ```mermaid
 graph LR

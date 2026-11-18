@@ -1,6 +1,6 @@
 # Proxy Configuration
 
-If a machine is behind a corporate firewall that requires outbound connections to go through a proxy, Tunnel Whisperer can route its traffic through a SOCKS5 or HTTP proxy. The setting works in **all three roles** — server and client tunnels use it for the Xray transport, and relay-mode operations (provisioning, relay SSH, enrollment) honor it too.
+If a machine is behind a corporate firewall that requires outbound connections to go through a proxy, Tunnel Whisperer can route its traffic through a SOCKS5 or HTTP proxy. The setting works in **all three roles** — server and client tunnels use it for the Xray transport, and relay-role operations (provisioning, relay SSH, enrollment) honor it too.
 
 ## Supported Protocols
 

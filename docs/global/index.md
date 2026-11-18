@@ -8,9 +8,9 @@ Every machine runs the same `tw` binary. What it *does* is decided by the **mode
 
 | Role | Who runs it | Top-level commands |
 | ---- | ----------- | ------------------ |
-| **Relay** | The admin who owns the relay VM: provisions it, holds the CA, admits servers | `tw relay create / destroy / test / ssh / status / invite / get-servers / un-enroll-server` |
-| **Server** | The operator of the network being exposed: joins a relay, manages users and apps, runs the tunnel endpoint | `tw server start / test / status / user … / app …` |
-| **Client** | The person connecting in: joins via invite or imports a bundle, brings up local port forwards | `tw client connect / listen / test / status` |
+| **Relay** | The relay admin who owns the relay VM: provisions it, holds the CA, admits servers | `tw relay create / destroy / test / ssh / status / invite / get-servers / un-enroll-server` |
+| **Server** | The server operator, who runs the network being exposed: joins a relay, manages users and apps, runs the tunnel endpoint | `tw server start / test / status / user … / app …` |
+| **Client** | The client user: joins via invite or imports a bundle, brings up local port forwards | `tw client connect / listen / test / status` |
 
 The mode is set by the first role action a machine performs — `tw relay create` (relay), `tw join <relay-host> <code>` against a `tw relay invite` code (server or client — the issuer's invite decides which), or importing **and activating** a context bundle (`tw config import --activate`) — and every context carries exactly one role.
 

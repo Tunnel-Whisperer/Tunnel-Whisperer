@@ -103,10 +103,10 @@ Client Network                   Public Cloud                    Server Network
 
 ## Three Roles, One Binary
 
-Every machine runs the same `tw` binary in one of three modes (set by its first role command, then signed and enforced):
+Every machine runs the same `tw` binary in one of three roles (the mode is set by `tw relay create`, `tw join` or `tw relay add-server`, then signed and enforced):
 
-- **Relay (admin):** owns the relay VM — provisions it, enrolls/removes server tenants, holds the keys.
-- **Server:** joins a relay as a tenant, publishes its reverse tunnel, manages client users.
+- **Relay (relay admin):** owns the relay VM — provisions it, enrolls/removes servers, holds the keys.
+- **Server:** joins a relay (enrolled as a tenant of it), publishes its reverse tunnel, manages client users.
 - **Client:** enrolls with `tw join` against a spoken invite code and opens local ports that reach the server's services.
 
 Each role's identity is a small portable bundle (`tw config export`): move it to another machine — any hostname, Linux or Windows — with `tw config import` and it keeps its identity.
@@ -117,21 +117,21 @@ The smallest setup — one relay, one server, one client:
 
 ```mermaid
 flowchart TD
-    S1["Admin provisions the relay"]
-    S2["Server joins, admin enrolls it"]
+    S1["Relay admin provisions the relay"]
+    S2["Server joins, relay admin enrolls it"]
     S3["Server invites the client user with a one-time code"]
     S4["Client redeems the code with tw join and connects"]
     S1 --> S2 --> S3 --> S4
 ```
 
 ```bash
-# ── Admin laptop: provision the relay (cloud wizard, or any VPS manually) ──
+# ── Relay admin's machine: provision the relay (cloud wizard, or any VPS manually) ──
 tw relay create --provider manual --domain relay.example.com --ip <vps-ip>
 #   → run the emitted tw-install-relay.example.com.sh as root on the VPS,
 #     point DNS relay.example.com → <vps-ip>
 tw relay test                          # DNS → HTTPS/mTLS → SSH-over-tunnel
 
-# ── server: join the relay (admin runs `tw relay invite`, reads you the code) ──
+# ── server: join the relay (relay admin runs `tw relay invite`, reads you the code) ──
 sudo tw join relay.example.com <code>  # SAS spoken check on both sides (sudo: config dir is system-owned)
 
 # ── server: grant the client access to its SSH (port 22 → client's local 2201) ──
@@ -158,7 +158,7 @@ Structured by role — with dynamic tab completion for contexts, users, and serv
 
 | Command | Description |
 |---------|-------------|
-| **Relay (admin)** | |
+| **Relay (relay admin)** | |
 | `tw relay create` | Provision a relay: cloud wizard (Hetzner/DigitalOcean/AWS) or `--provider manual --domain --ip [--ssh-open]` |
 | `tw relay invite` / `add-server` | Enroll a joining server over a one-time code (SAS-confirmed) / self-enroll this machine |
 | `tw relay get-servers` | List tenants with live TUNNEL up/down state |
@@ -166,7 +166,7 @@ Structured by role — with dynamic tab completion for contexts, users, and serv
 | `tw relay sync-tenants` | Give every enrolled server its own locked-down relay account (one-time migration for older relays) |
 | `tw relay ssh` / `test` / `status` / `destroy` | Shell over the tunnel, 3-step diagnostic, status, teardown |
 | **Server** | |
-| `tw join <relay-host> <code>` | Redeem an admin's invite — becomes a server or client per the issuer's grant |
+| `tw join <relay-host> <code>` | Redeem an invite from the relay admin or a server operator — becomes a server or client per the issuer's grant |
 | `tw server start` / `test` / `status` | Run the daemon (SSH server, tunnel, gRPC API, dashboard) |
 | `tw server user invite/apply/list/single-session/delete/unregister` | Per-user port grants, optional `--expires` credential expiry; revocation is live, no restart |
 | `tw server app list/create/edit/delete` | Reusable port-mapping templates |
@@ -198,7 +198,7 @@ Structured by role — with dynamic tab completion for contexts, users, and serv
 - **Least privilege** — each user can only forward to explicitly allowed ports; each enrolled server has its own relay account with a forced command (no shell, no sudo), pinned to the tunnel
 - **Dynamic keys** — add/revoke users without restarting the server (authorized_keys re-read on every auth and every forwarded channel; deleting a user ends their live sessions)
 - **Signed roles** — each machine's mode (relay/server/client) is ed25519-signed by its issuer; tampering is detected
-- **SSH your way** — relay SSH is tunnel-only by default; `--ssh-open` deliberately opens port 22 for the admin key, closable later from the dashboard
+- **SSH your way** — relay SSH is tunnel-only by default; `--ssh-open` deliberately opens port 22 for the relay admin key, closable later from the dashboard
 
 > See [Security Documentation](https://tunnel-whisperer.github.io/Tunnel-Whisperer/security/) for encryption details, access control, and compliance properties.
 
@@ -229,6 +229,6 @@ Measured with `make bench` on the e2e topology (real relay, real server, real cl
 |---|---|---|---|---|---|---|---|---|
 | Pure SSH | 3.64 Gbit/s | 0.10 Gbit/s | 75 µs | 30.5 ms | 359 MB/s | 4.7 % | 1.37 | — / 4.6 MiB (idle sshd) / — |
 | SSH over WireGuard (direct peer) | 1.20 Gbit/s | 0.10 Gbit/s | 336 µs | 30.5 ms | 149 MB/s | 9.4 % | 0.29 | 0 (kernel) |
-| **SSH over Tunnel Whisperer** (via relay) | 0.97 Gbit/s | 0.03 Gbit/s | 1162 µs | 31.5 ms | 122 MB/s | 6.0 % | 0.12 | 55.6 / 45.8 / 109.8 MiB (caddy + xray) |
+| **SSH over Tunnel Whisperer** (via relay) | 0.97 Gbit/s | 0.03 Gbit/s | 1162 µs | 31.5 ms | 122 MB/s | 6.0 % | 0.12 | 55.6 / 45.8 / 109.8 MiB (Caddy + Xray) |
 
 tw crosses a relay and wraps traffic in TLS so it passes firewalls that block WireGuard outright; the table shows what that costs. At 4 streams under WAN loss, tw stays flat at its single-stream number because every stream is multiplexed over one outer TCP connection to the relay — a property of the design, not a bug.

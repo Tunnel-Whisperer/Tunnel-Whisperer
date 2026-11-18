@@ -22,7 +22,7 @@ Inside the TLS envelope, the **VLESS protocol** tags each user with a **UUID** a
 
 The innermost layer is a full **SSH session** using **Ed25519 public key authentication** (256-bit elliptic curve). SSH handles end-to-end encryption between client and server, and enforces per-user port restrictions via `permitopen` directives in the server's `authorized_keys`, which is re-read on every authentication attempt and every forwarded channel (live revocation; deleting a user also closes their open sessions). No passwords are used — there is no brute-force attack surface.
 
-The client also **pins the server's SSH host key** (delivered in the enrollment grant) and connects with `FixedHostKey`, failing closed if it is unpinned — so a compromised or malicious relay cannot terminate and man-in-the-middle the end-to-end SSH. Clients enrolled before host-key pinning was introduced must **re-enroll** to receive the pin. On the management side, the admin likewise pins the relay's own SSH host key (installed at provision time) on the direct port-22 channel.
+The client also **pins the server's SSH host key** (delivered in the enrollment grant) and connects with `FixedHostKey`, failing closed if it is unpinned — so a compromised or malicious relay cannot terminate and man-in-the-middle the end-to-end SSH. Clients enrolled before host-key pinning was introduced must **re-enroll** to receive the pin. On the management side, the relay admin likewise pins the relay's own SSH host key (installed at provision time) on the direct port-22 channel.
 
 ---
 
@@ -34,7 +34,7 @@ The client also **pins the server's SSH host key** (delivered in the enrollment 
     Compromise of the relay does not expose:
 
     - User data or application traffic (encrypted end-to-end by SSH)
-    - SSH private keys (stored only on clients, servers, and the admin machine)
+    - SSH private keys (stored only on clients, servers, and the relay admin's machine)
     - CA private keys (the relay holds only public CA certificates; signing keys never leave each server)
     - User credentials (UUID auth is per-session, keys never transit the relay)
 
@@ -42,8 +42,8 @@ The client also **pins the server's SSH host key** (delivered in the enrollment 
 
 SSH on the relay is management plumbing, not a user-facing surface:
 
-- **Admin key** — the relay owner's `id_ed25519.pub`, pinned `from="127.0.0.1"` so it only authenticates for connections arriving through the encrypted tunnel. Exception: a relay provisioned with `--ssh-open` leaves the admin key unpinned so it also works over the deliberately opened public port 22. Only the admin can open a shell.
-- **Tenant (server) keys** — each enrolled server logs in as its own `twt-*` account (no sudo), never as the admin. Its single key line is pinned `from="127.0.0.1"` and locked with `restrict,command="/usr/local/lib/tw/tw-tenant-request",port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:<own ports>"`, and an sshd `Match User twt-*` block repeats the forced command. So a tenant has no shell and cannot run commands: every session can only ask a root handler to add, remove or list client UUIDs on the tenant's own Xray inbound. Its reverse forwarding is limited to its own allocated ports, and local forwarding is pinned to a dead sentinel so a tenant cannot reach the relay's loopback services (e.g. the Xray gRPC API). See [Tenants](../relay/tenants.md#tenant-accounts-on-the-relay).
+- **Relay admin key** — the relay admin's `id_ed25519.pub`, pinned `from="127.0.0.1"` so it only authenticates for connections arriving through the encrypted tunnel. Exception: a relay provisioned with `--ssh-open` leaves the relay admin key unpinned so it also works over the deliberately opened public port 22. Only the relay admin can open a shell.
+- **Tenant (server) keys** — each enrolled server logs in as its own `twt-*` account (no sudo), never as the relay admin account. Its single key line is pinned `from="127.0.0.1"` and locked with `restrict,command="/usr/local/lib/tw/tw-tenant-request",port-forwarding,permitopen="127.0.0.1:1",permitlisten="127.0.0.1:<own ports>"`, and an sshd `Match User twt-*` block repeats the forced command. So a tenant has no shell and cannot run commands: every session can only ask a root handler to add, remove or list client UUIDs on the tenant's own Xray inbound. Its reverse forwarding is limited to its own allocated ports, and local forwarding is pinned to a dead sentinel so a tenant cannot reach the relay's loopback services (e.g. the Xray gRPC API). See [Tenants](../relay/tenants.md#tenant-accounts-on-the-relay).
 - Unless `--ssh-open` was chosen, the firewall allows only ports 80/443 and `sshd` listens on `127.0.0.1` only. Password authentication is disabled either way.
 
 ---

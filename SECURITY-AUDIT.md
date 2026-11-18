@@ -1,5 +1,7 @@
 # Tunnel Whisperer — Security Audit (research/security-audit)
 
+*Historical record. In the audit text below, "operator" means the local user of the machine running tw, and `tw serve` is today's `tw server start`.*
+
 Multi-agent vulnerability hunt: 9 specialized auditors across all attack surfaces, each finding adversarially verified by an independent skeptic agent. 17 raw findings → 12 confirmed, 5 rejected as false positives.
 
 _Date: 2026-08-26 · Branch: research/security-audit · Method: automated multi-agent review, top findings independently re-verified by hand._

@@ -78,8 +78,8 @@ xray:
   client_cert_path: ""
   client_key_path: ""
 
-# Server settings (used in server mode; the relay_ssh_* / remote_port fields
-# are also used in relay mode for the relay SSH connection, and api_port is
+# Server settings (used in the server role; the relay_ssh_* / remote_port fields
+# are also used in the relay role for the relay SSH connection, and api_port is
 # read in every mode to find a running daemon).
 server:
   # Port the internal SSH server listens on.
@@ -133,7 +133,7 @@ analytics:
   enabled: false      # default; set true to opt in
   history_size: 720  # snapshots to keep (default 720 = 1h at 5s intervals)
 
-# Client-only settings (ignored in server/relay mode).
+# Client-only settings (ignored in server/relay role).
 client:
   # SSH user to authenticate as on the server.
   ssh_user: tunnel
@@ -236,7 +236,7 @@ mode_auth:
 | `enabled` | bool | `false` | Enable bandwidth statistics collection. Opt-in. |
 | `history_size` | int | `720` | Number of snapshots in the ring buffer. At the default 5-second interval, 720 = 1 hour of history. |
 
-Analytics works in both server and client modes. In server mode, stats are tracked per user per port. In client mode, stats are tracked per local port. Changes via the dashboard take effect immediately without a restart.
+Analytics works in both server and client roles. In server role, stats are tracked per user per port. In client role, stats are tracked per local port. Changes via the dashboard take effect immediately without a restart.
 
 ### `client` section
 

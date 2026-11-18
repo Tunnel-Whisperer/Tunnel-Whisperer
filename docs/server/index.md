@@ -2,10 +2,10 @@
 
 A **server** is a machine on a private network that exposes selected local services (databases, SSH, web apps — anything listening on `127.0.0.1`) to remote clients through a relay. The server never opens an inbound port: it dials *out* to the relay over HTTPS (port 443) and publishes its embedded SSH endpoint there through a reverse tunnel.
 
-In the three-role model, a server is a **tenant** of a relay. The relay is owned and operated by its admin (the machine in `relay` mode); a server joins it through an explicit enrollment handshake and gets its own path (`/tw/<server-id>`) and port allocation on the relay. Multiple servers can share one relay, each isolated under its own path and mutual-TLS identity.
+In the three-role model, a server is enrolled as a **tenant** of a relay. The relay is owned and operated by its relay admin (working from a machine in the relay role); a server joins it through an explicit enrollment handshake and gets its own path (`/tw/<server-id>`) and port allocation on the relay. Multiple servers can share one relay, each isolated under its own path and mutual-TLS identity.
 
 !!! warning "One role per profile"
-    The first server command sets the active profile to `server`, and the mode is cryptographically signed; relay and client commands then refuse to run in it. This locks the *profile*, not the machine — another role can live in its own [context](../global/contexts.md) — but run server commands only on the machine that should *be* the server.
+    The profile's mode is set by `tw relay create`, `tw join` or `tw relay add-server`, not by the first server command, and it is cryptographically signed; relay and client commands then refuse to run in it. This locks the *profile*, not the machine — another role can live in its own [context](../global/contexts.md) — but run server commands only on the machine that should *be* the server.
 
 ## Lifecycle
 

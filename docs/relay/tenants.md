@@ -6,7 +6,7 @@ CA in the mTLS trust pool, and its own reverse-tunnel port. The relay admin
 admits and removes tenants at will — live, without restarting the relay's Xray
 and without disturbing the other tenants.
 
-The admin's source of truth is the local **registry**
+The relay admin's source of truth is the local **registry**
 (`<config-dir>/servers/`, one JSON file per tenant). Every enroll and
 un-enroll re-renders the *entire* relay configuration from that registry and
 rewrites it wholesale on the relay — a stale or corrupted file on the relay
@@ -14,7 +14,7 @@ self-heals on the next operation.
 
 ## Enrolling a server
 
-Enrollment is a **zero-file invite**: the admin mints a one-time code and
+Enrollment is a **zero-file invite**: the relay admin mints a one-time code and
 reads it to the server operator over any channel (phone, chat, whatever's
 convenient); no request/response files ever change hands.
 
@@ -34,13 +34,13 @@ sequenceDiagram
     S->>S: shows the SAME SAS
     S->>A: reads the SAS aloud
     A->>A: confirms exact match, approves
-    A->>R: write CA cert, rewrite Caddyfile + admin authorized_keys,<br/>create the tenant's relay account, live-add Xray inbound (no restart)
+    A->>R: write CA cert, rewrite Caddyfile + relay admin authorized_keys,<br/>create the tenant's relay account, live-add Xray inbound (no restart)
     A->>S: encrypted grant (relay coords, mode signature)
     S->>S: stores a ready, mode-signed context (auto-activated)
     S->>R: tw server start — tunnel comes up
 ```
 
-### On the admin machine
+### On the relay admin's machine
 
 ```bash
 tw relay invite [--ttl 15m]
@@ -61,16 +61,16 @@ sudo tw join relay.example.com <code> [--name <ctx>]
 `tw join` works with **no mode configured yet** — it's the single entry point
 for both roles, and the issuer's invite decides which one you get. Running it
 against a `tw relay invite` code enrolls this machine as a **server** tenant.
-Both terminals — the admin's `tw relay invite` and this machine's `tw join` —
+Both terminals — the relay admin's `tw relay invite` and this machine's `tw join` —
 now show a short authentication string (SAS), e.g. `7F2-A91`. **Read yours
-aloud to the admin**; they approve only on an exact match.
+aloud to the relay admin**; they approve only on an exact match.
 
 Once approved, `tw join`:
 
 1. **Generates identity** — an Xray UUID, an ed25519 SSH key pair, and a
    per-server CA plus client certificate for the relay's mutual-TLS gate, all
    locally on this machine.
-2. **Runs the enrollment** — the admin's side executes the same five steps as
+2. **Runs the enrollment** — the relay admin's side executes the same five steps as
    before (register, build the tenant list, apply relay config, live-add the
    Xray inbound, done); nothing here changed except how the request/response
    travel.
@@ -96,9 +96,9 @@ tw server start
   sides. Someone who overhears the spoken code still can't complete the
   exchange without also passing the SAS check below.
 - **The SAS read-back defeats code theft and MITM.** Both sides derive the
-  same short authentication string from the session key; the admin approves
+  same short authentication string from the session key; the relay admin approves
   only when the enrollee reads back an exact match. If a thief redeems the
-  invite first, they burn it — the real operator's `tw join` then fails with
+  invite first, they burn it — the real server operator's `tw join` then fails with
   "already used", which is the tell that something is wrong.
 - **Invites are single-use, short-lived, and burn on any attempt.** Default
   TTL is 15 minutes (configurable with `--ttl` on `tw relay invite`), and the
@@ -114,8 +114,8 @@ tw server start
 
 ## Same machine? Self-enrollment
 
-When the server you want to enroll **is the admin machine itself** (the
-single-operator setup: one person runs relay, server, and client), skip the
+When the server you want to enroll **is the relay admin's machine itself** (the
+single-person setup: one person runs relay, server, and client), skip the
 file exchange — from the relay context:
 
 ```bash
@@ -199,7 +199,7 @@ join` exchange.
 Relays provisioned before invite-based enrollment shipped keep working for
 already-enrolled tenants without any action — but **no invite of either kind
 works yet**, including `tw relay invite` for a new server. A pre-upgrade
-render never wrote the admin's own `/enroll/<tok>` route into the Caddyfile,
+render never wrote the relay admin's own `/enroll/<tok>` route into the Caddyfile,
 and `tw relay invite` has no other way to become reachable: the exchange is
 served over that exact route, so there's no invite that can bootstrap it into
 existence. (Same root cause as the tenant side: the enroll port is a second
@@ -210,25 +210,25 @@ One **full render** fixes both at once, and it has to be triggered by
 something that doesn't itself depend on the missing `/enroll` route:
 
 - If no tenant is enrolled yet, run `tw relay add-server` — it enrolls a
-  tenant entirely in-process over the admin's own management SSH connection,
+  tenant entirely in-process over the relay admin's own management SSH connection,
   never through the public `/enroll` endpoint, so it isn't blocked by the
   thing it's fixing. Delete the resulting context (`tw config delete-context
   <name>`) or `tw relay un-enroll-server <its-id>` afterwards if you didn't
   actually want a self-enrolled server.
 - If a tenant already exists, `tw relay un-enroll-server <server-id>` on any
   one of them works just as well — un-enrollment also renders the relay's
-  full state (admin slot included) directly over SSH, not through `/enroll`.
+  full state (the relay admin's own slot included) directly over SSH, not through `/enroll`.
 
 Either one re-renders the Caddyfile and every tenant's `authorized_keys` from
-the registry, adding the admin's `/enroll` route and every tenant's enroll
+the registry, adding the relay admin's `/enroll` route and every tenant's enroll
 `permitlisten` in the same pass. After that, both `tw relay invite` and
 `tw server user invite` work normally. Relays provisioned by this
 version of `tw` already have both from the start and need nothing.
 
 ## Migrating to per-tenant relay accounts
 
-Older versions put every tenant's key into the relay **admin** account's
-`authorized_keys`. That account has passwordless sudo, and OpenSSH's
+Older versions put every tenant's key into the `authorized_keys` of the relay **admin account**.
+That account has passwordless sudo, and OpenSSH's
 `restrict` option does not block command execution, so any enrolled server
 could run commands as root on the relay. Tenants now get
 [their own locked-down accounts](#tenant-accounts-on-the-relay). To move an
@@ -239,25 +239,25 @@ tw relay sync-tenants
 ```
 
 It installs the tenant request handler and creates one account per
-registered server first. Then it updates the admin account's
-`authorized_keys`: tw's admin line is replaced, tenant lines are removed, and
+registered server first. Then it updates the relay admin account's
+`authorized_keys`: tw's relay admin line is replaced, tenant lines are removed, and
 every other key (e.g. your own maintenance key) is kept. If it removed tenant
-lines, it also ends every other SSH session of the admin account, so a
+lines, it also ends every other SSH session of the relay admin account, so a
 pre-migration tenant session (which could still run commands) does not
-survive. Other admin sessions, such as an open `tw relay ssh`, are closed
-too. Once migrated, later syncs leave the admin's sessions alone. The command
+survive. Other relay admin sessions, such as an open `tw relay ssh`, are closed
+too. Once migrated, later syncs leave the relay admin's sessions alone. The command
 is idempotent. Every enroll, un-enroll and **Close Port 22** runs the same
 sync, so a relay also migrates the next time you do any of those.
 
 What happens to the servers:
 
-- **Servers running this `tw` version** have the admin account's name stored
+- **Servers running this `tw` version** have the relay admin account's name stored
   as their relay SSH user. When the relay rejects their key for that user,
   they retry once with their own tenant account. If that works, they save it
   to `server.relay_ssh_user`. The reverse tunnel reconnects on its own, and
   no action is needed on the server.
 - **Servers running an older `tw`** lose their reverse tunnel after the sync:
-  their key is gone from the admin account and they don't know about tenant
+  their key is gone from the relay admin account and they don't know about tenant
   accounts. Upgrade `tw` on those servers. After that they fall back to
   their tenant account automatically.
 - **A new server on a relay that has not been synced** can bring up its
@@ -268,7 +268,7 @@ What happens to the servers:
     Under the old design any tenant could become root on the relay. If a
     relay ever hosted a tenant you do not fully trust, assume it may be
     compromised: rebuild it (re-provision, or a fresh VM with the install
-    script), rotate the relay's SSH host key and the admin SSH key, and
+    script), rotate the relay's SSH host key and the relay admin SSH key, and
     re-enroll the servers so they get fresh CAs.
 
 The relay needs `python3`, because the handler runs on it. Ubuntu cloud
@@ -306,7 +306,7 @@ apply fails, the change stays saved in the config and takes effect at the
 next Xray restart, and `tw` shows a warning. It accepts only canonical
 lowercase UUIDs, holds at most 1000 clients per tenant inbound, and refuses
 to remove the server's own UUID. The handler runs under a systemd sandbox
-that leaves it write access to `/usr/local/etc/xray` only. It and the admin
+that leaves it write access to `/usr/local/etc/xray` only. It and the relay admin's profile
 take the same lock around every edit of the Xray config.
 
 The drop-in also sets `AllowTcpForwarding remote`, `PermitTTY no` and turns
@@ -318,7 +318,7 @@ not.
 
 ## Dashboard equivalents
 
-The admin dashboard's **Servers** page mirrors the read side of this:
+The relay admin's dashboard **Servers** page mirrors the read side of this:
 
 - the enrolled-servers table with the same columns (Server ID, Path, Port,
   Enrolled, Tunnel), with the tunnel state queried live from the relay;
@@ -363,7 +363,7 @@ What a tenant *cannot* do on the relay:
   `from="127.0.0.1"` (tunnel-only), even on `--ssh-open` relays.
 - **No reading anyone's traffic** — all streams through the relay are
   end-to-end SSH-encrypted between client and server; the relay (and therefore
-  the admin) only ever sees ciphertext.
+  the relay admin) only ever sees ciphertext.
 
 The exact `authorized_keys` lines behind these guarantees are dissected on
 [SSH access](ssh-access.md).
@@ -372,7 +372,7 @@ The exact `authorized_keys` lines behind these guarantees are dissected on
 
 **`relay tenant request "add" failed: ... if the relay predates per-tenant
 accounts, its admin must run 'tw relay sync-tenants'`** — the relay has no
-tenant handler yet. Run `tw relay sync-tenants` from the admin context.
+tenant handler yet. Run `tw relay sync-tenants` from the relay admin context.
 
 **`relay refused "add" request: <reason>`** — the handler ran and refused
 the request. Common reasons:

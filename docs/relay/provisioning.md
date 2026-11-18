@@ -19,17 +19,17 @@ tw relay create
 
 Creating a relay **stamps the active profile's mode to `relay`** (only if the
 mode was unset — server and client profiles are blocked from the command) and,
-on success, emits the **admin bundle** in the current directory (domain
+on success, emits the **relay admin bundle** in the current directory (domain
 sanitized into the name: `tw_relay-example-com.twctx` for
 `relay.example.com`).
 
-!!! danger "Keep the admin bundle safe"
-    The `.twctx` bundle is the portable relay identity: admin SSH key, CA,
+!!! danger "Keep the relay admin bundle safe"
+    The `.twctx` bundle is the portable relay identity: relay admin SSH key, CA,
     certificates, and configuration. Whoever holds it administers the relay —
     and there is **no recovery** if it is lost. Store it like a private key.
-    (You can re-create it later from the admin machine with `tw config export`.)
+    (You can re-create it later from the relay admin's machine with `tw config export`.)
 
-The admin bundle is **portable**: import it on another machine — any hostname,
+The relay admin bundle is **portable**: import it on another machine — any hostname,
 Linux or Windows — with `tw config import`, and that machine administers the
 same relay under the same identity (the server-id is stored in the bundle, not
 re-derived from the hostname) and can later run `tw relay destroy`. Terraform's
@@ -42,16 +42,16 @@ Before anything else, the wizard asks one security question: **should the
 relay's SSH port 22 be open to the internet?** The default is **no**.
 
 - **Default (closed)** — `sshd` listens on `127.0.0.1` only, the firewall
-  blocks port 22, and tw's admin key is pinned `from="127.0.0.1"` so it only
+  blocks port 22, and tw's relay admin key is pinned `from="127.0.0.1"` so it only
   authenticates for connections arriving through the encrypted tunnel.
   Management access is `tw relay ssh` (through the tunnel) — nothing else.
 - **`--ssh-open`** — `sshd` listens on `0.0.0.0`, the firewall allows port 22,
-  **and** the tw admin key is written *unpinned*, so `tw`'s own key also works
+  **and** the tw's relay admin key is written *unpinned*, so `tw`'s own key also works
   directly over port 22. Password authentication is off in both cases; tenant
   server keys stay pinned to the tunnel regardless.
 
 You can close port 22 later from the dashboard, which also restores the
-loopback pin on the admin key. The full model — including exactly which
+loopback pin on the relay admin key. The full model — including exactly which
 `authorized_keys` lines change — is on [SSH access](ssh-access.md).
 
 ## Cloud provisioning (Terraform)
@@ -90,10 +90,10 @@ relay only shuffles encrypted bytes and needs almost no resources.
 ### What gets installed
 
 The VM is configured entirely by cloud-init (rendered at provision time on the
-admin machine — the relay never generates anything itself):
+relay admin's machine — the relay never generates anything itself):
 
-- An SSH admin user (`ubuntu` by default, passwordless sudo) whose
-  `authorized_keys` holds the admin key (tw manages only its own lines;
+- A relay admin account (`ubuntu` by default, passwordless sudo) whose
+  `authorized_keys` holds the relay admin key (tw manages only its own lines;
   other keys, e.g. the cloud provider's, are kept)
 - The **tenant request handler** (`/usr/local/lib/tw/`, the
   `tw-tenant@.socket`/`.service` units, and the sshd drop-in
@@ -103,12 +103,12 @@ admin machine — the relay never generates anything itself):
   `python3`, which Ubuntu cloud images already include
 - **Caddy** from the official apt repository — TLS/ACME termination with
   `client_auth verify_if_given` against the per-tenant CA trust pool (a bare
-  handshake is allowed so unenrolled invitees can reach `/enroll`; every
+  handshake is allowed so not-yet-enrolled invitees can reach `/enroll`; every
   tunnel route still requires a verified per-tenant CN — see [Relay
   Authentication](../security/relay-authentication.md))
 - **Xray** at pinned version `v26.6.27` — VLESS inbound on localhost with
   XHTTP transport
-- The rendered Caddyfile and Xray `config.json`, plus the admin's CA
+- The rendered Caddyfile and Xray `config.json`, plus the relay admin's CA
   certificate at `/etc/caddy/ca/<server-id>.crt`
 - SSH locked to localhost (or opened, with `--ssh-open`), password auth off
 - Firewall: deny all incoming, allow 80/tcp + 443/tcp (+ 22/tcp with
@@ -146,7 +146,7 @@ Both forms:
 
 1. Generate the install script and write it to **`tw-install-<domain>.sh`** in
    the current directory (mode `0700` — it carries the tunnel UUID).
-2. Record the relay locally (domain, IP, `ssh_open`) and emit the admin
+2. Record the relay locally (domain, IP, `ssh_open`) and emit the relay admin
    bundle.
 
 You then finish on the VM side:
@@ -180,10 +180,10 @@ What it deliberately does **not** touch:
   one is written.
 
 !!! warning "Re-running resets the tenant set"
-    Because the script re-renders the relay from the *admin's own* slot only,
-    a re-run removes enrolled server tenants from the relay's config. Re-add
+    Because the script re-renders the relay from the *relay admin's own* slot only,
+    a re-run removes enrolled servers from the relay's config. Re-add
     them afterwards by re-running the enrollment (see
-    [Tenants](tenants.md)) — their registry entries on the admin machine are
+    [Tenants](tenants.md)) — their registry entries on the relay admin's machine are
     untouched.
 
 ## Testing the relay
@@ -203,7 +203,7 @@ the other roles):
    confirms only that Caddy answers — routing to a tenant still requires the
    cert.
 3. **Xray + SSH** — a full tunnel is established. On the relay, a real SSH
-   command is executed on the relay as the admin account. On a server, it
+   command is executed on the relay as the relay admin account. On a server, it
    logs in as the server's tenant account and sends a `list` request to the
    tenant handler (expect "tunnel and tenant request channel working"); a
    tenant account cannot run commands. On the client, an SSH publickey

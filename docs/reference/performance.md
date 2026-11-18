@@ -10,8 +10,8 @@ tw install script, a real enrolled server, a real client tunnel.
     On a LAN, tw moves 0.97 Gbit/s single-stream against 3.64 (Pure SSH) and 1.20 (WireGuard) Gbit/s; scp over the same LAN moves 122 MB/s against 359 and 149 MB/s; per busy CPU core tw sustains 0.12 Gbit/s against 1.37 and 0.29. On a 30 ms / 0.1 % loss WAN link every single-stream transfer is loss-bound at the same ≈0.03 Gbit/s / 2–4 MB/s; only multi-stream separates them, and there tw does not scale.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../assets/bench-chart-dark.svg">
-  <img alt="Benchmark: pure SSH vs SSH over WireGuard vs SSH over Tunnel Whisperer — LAN throughput, file copy, latency, lossy-WAN parallel streams, CPU per copy" src="../assets/bench-chart.svg" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="../../assets/bench-chart-dark.svg">
+  <img alt="Benchmark: pure SSH vs SSH over WireGuard vs SSH over Tunnel Whisperer — LAN throughput, file copy, latency, lossy-WAN parallel streams, CPU per copy" src="../../assets/bench-chart.svg" width="100%">
 </picture>
 
 ## What is compared

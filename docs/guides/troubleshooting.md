@@ -220,9 +220,9 @@ removes the registry entry automatically.
 
 ### "invalid enrollment offer: join request ..." / "issuer denied the enrollment"
 
-The admin side rejected the server's join request. The enrollee only sees
+The relay admin's side rejected the server's join request. The enrollee only sees
 `issuer denied the enrollment (SAS mismatch, expiry, or a burned invite)`.
-The admin sees the reason:
+The relay admin sees the reason:
 
 - `server_id is N characters; the limit is 64`: the joining machine's
   sanitized hostname is longer than 55 characters. Shorten it and get a new
@@ -294,7 +294,7 @@ request.
 this command requires server mode, but tw is configured in client mode
 ```
 
-Server-only commands (like `tw server user invite`) cannot run in client mode, and vice versa.
+Server-only commands (like `tw server user invite`) cannot run in the client role, and vice versa.
 
 **Fix:** Ensure you're running the command on the correct machine, or check `mode` in your `config.yaml`.
 
@@ -312,7 +312,7 @@ Relays provisioned by an older `tw` (which pinned Xray v26.2.6) may show this in
 [Warning] common/errors: The feature VLESS (with no Flow, etc.) is deprecated, not recommended for using and might be removed. Please migrate to VLESS with Flow & Seed as soon as possible.
 ```
 
-This is **normal and harmless**. It is an upstream xray-core advisory aimed at setups where VLESS is the only encryption layer. Tunnel Whisperer intentionally runs "plain" VLESS:
+This is **normal and harmless**. It is an upstream Xray-core advisory aimed at setups where VLESS is the only encryption layer. Tunnel Whisperer intentionally runs "plain" VLESS:
 
 - **Flow** (XTLS Vision) requires a raw TCP+TLS transport. Tunnel Whisperer runs VLESS over XHTTP behind Caddy, where Flow does not apply by design.
 - **Seed** (VLESS Encryption) would add encryption at the VLESS layer, but the stream is already wrapped in Caddy's TLS 1.3 with mutual TLS, and the payload inside is end-to-end SSH-encrypted. A third encryption layer adds nothing.

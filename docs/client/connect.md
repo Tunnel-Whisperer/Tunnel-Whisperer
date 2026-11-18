@@ -61,7 +61,7 @@ Takes effect on the next reconnect.
 
 ## Local Port Conflicts & Overrides
 
-The `local_port` values granted to you were chosen by the server admin — they
+The `local_port` values granted to you were chosen by the server operator — they
 may clash with something already running on *your* machine. The local port is
 purely your machine's business (access control is enforced on the server
 port), so you can remap it freely.
@@ -81,7 +81,7 @@ local port 8080 (→ server port 15432) is already in use — override it with
 ```bash
 tw client set-port 15432 4000     # server port 15432 now binds on localhost:4000
 tw client set-port                # list tunnels: default, override, effective
-tw client set-port 15432 --clear  # back to the admin default
+tw client set-port 15432 --clear  # back to the server operator's default
 ```
 
 Changes take effect on the next reconnect.

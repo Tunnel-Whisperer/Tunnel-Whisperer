@@ -1,9 +1,9 @@
 # Joining a Relay
 
-A server does not provision its own relay — it joins one owned by a relay admin. The join is a **zero-file, spoken invite**: the admin mints a one-time code and reads it to you over any channel (chat, phone, whatever's convenient); you redeem it with one command, and a short authentication string confirms neither side was intercepted.
+A server does not provision its own relay — it joins one owned by a relay admin. The join is a **zero-file, spoken invite**: the relay admin mints a one-time code and reads it to you over any channel (chat, phone, whatever's convenient); you redeem it with one command, and a short authentication string confirms neither side was intercepted.
 
 ```
-admin (relay owner)                    server
+relay admin                             server
 ────────────────────                   ──────
 tw relay invite
     │  mints code, waits
@@ -18,16 +18,16 @@ tw relay invite
                                         tw server start
 ```
 
-## 1. The admin mints an invite
+## 1. The relay admin mints an invite
 
-On the admin machine (in `relay` mode):
+On the relay admin's machine (in the relay role):
 
 ```bash
 tw relay invite [--ttl 15m]
 ```
 
 This mints a one-time code — `<tok>-NN-word-word`, drawn from a curated
-BIP-39 wordlist — and blocks, waiting for you to redeem it. The admin reads
+BIP-39 wordlist — and blocks, waiting for you to redeem it. The relay admin reads
 the code to you over any channel: it's a
 [SPAKE2](https://en.wikipedia.org/wiki/Password-authenticated_key_agreement)
 password, not a bearer credential, so someone who only overhears it can't
@@ -41,19 +41,19 @@ On your machine:
 sudo tw join relay.example.com <code>
 ```
 
-`tw join` is role-neutral — the admin's invite decided this one's a server —
+`tw join` is role-neutral — the relay admin's invite decided this one's a server —
 and generates the new context's permanent identity locally: an Xray UUID, an
 ed25519 SSH key pair, and a per-server CA plus client certificate for the
 relay's mutual-TLS gate. None of this material leaves the machine except the
 public halves, carried inside the encrypted PAKE channel.
 
-Both your terminal and the admin's now show a **short authentication string**
-(SAS), e.g. `7F2-A91`. **Read yours aloud to the admin** — they approve only
+Both your terminal and the relay admin's now show a **short authentication string**
+(SAS), e.g. `7F2-A91`. **Read yours aloud to the relay admin** — they approve only
 on an exact match.
 
-## 3. The admin approves, enrollment runs
+## 3. The relay admin approves, enrollment runs
 
-Once the admin confirms the read-back, their side runs the same enrollment
+Once the relay admin confirms the read-back, their side runs the same enrollment
 that always ran: register the tenant, allocate a port, rewrite the relay's
 Caddyfile / Xray config, create this server's own relay account, and
 live-add the new tenant's Xray inbound — no restart, no disruption to other
@@ -81,24 +81,24 @@ tw server test           # expect: tunnel and tenant request channel working
 ## Security
 
 - **The code is a PAKE password, not a bearer credential.** The relay only
-  ever forwards ciphertext between you and the admin.
+  ever forwards ciphertext between you and the relay admin.
 - **The SAS read-back defeats code theft and MITM.** If someone else
   redeemed the code first, they burn it — your `tw join` then fails with
   "already used", which is the tell.
 - **Single-use, short TTL, burns on any attempt.** Default 15 minutes
-  (`--ttl` on the admin side); the invite is consumed by the *first*
+  (`--ttl` on the relay admin's side); the invite is consumed by the *first*
   redemption attempt, successful or not.
 - **Only the enrollee can complete or break the exchange.** The route token
   in the code is not secret. Once a valid offer has arrived, a garbage offer
   from someone else no longer cancels the enrollment. The issuer also counts
   the grant as collected only when the `/result` poll proves the session key,
-  so a third party cannot make the admin's side report success. Old and new
+  so a third party cannot make the relay admin's side report success. Old and new
   versions interoperate. An enrollee that predates the proof still works,
   and its unauthenticated poll still counts. The issuer then logs `enrollee
   predates the result proof; counting an unauthenticated /result poll as
   grant collection`. Upgrade `tw` on both sides to close that gap.
-- **The join request is validated before anything is stored.** The admin
-  side refuses the request (and denies the enrollment) unless:
+- **The join request is validated before anything is stored.** The relay admin's side
+  refuses the request (and denies the enrollment) unless:
     - `server_id` is lowercase alphanumerics and dashes, at most 64
       characters,
     - `uuid` is a canonical lowercase UUID,
@@ -107,7 +107,7 @@ tw server test           # expect: tunnel and tenant request channel working
     - `ssh_pubkey` is a single valid public key.
 
   Your `tw join` then fails with `issuer denied the enrollment`, and the
-  admin sees `invalid enrollment offer: join request <reason>`. Requests made
+  relay admin sees `invalid enrollment offer: join request <reason>`. Requests made
   by `tw join` always pass. The exception is the length cap: the server-id
   is `<sanitized hostname>-<first 8 hex of the UUID>`, so a hostname whose
   sanitized form is longer than 55 characters yields a server-id that is too
@@ -116,9 +116,9 @@ tw server test           # expect: tunnel and tenant request channel working
 ## Re-enrolling and edge cases
 
 **Lost the code before redeeming it.** Invite codes aren't persisted — if it
-expires or is lost, the admin just runs `tw relay invite` again.
+expires or is lost, the relay admin just runs `tw relay invite` again.
 
-**After being un-enrolled.** If the admin removes the server
+**After being un-enrolled.** If the relay admin removes the server
 (`tw relay un-enroll-server <server-id>`), the tunnel stops being admitted. To
 rejoin, repeat the invite exchange — a fresh enrollment may assign a new
 remote port.
