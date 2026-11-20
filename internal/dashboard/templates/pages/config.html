@@ -55,6 +55,8 @@
     <h2>Proxy</h2>
     {{if .Proxy}}
     <span class="badge badge-green" id="proxy-badge">configured</span>
+    {{else if eq .ProxySource "env"}}
+    <span class="badge badge-green" id="proxy-badge">environment</span>
     {{else}}
     <span class="badge badge-dim" id="proxy-badge">none</span>
     {{end}}
@@ -63,6 +65,7 @@
   <div class="form-group">
     <label>Proxy URL</label>
     <input type="text" id="proxy-url" placeholder="socks5://user:pass@host:port" value="{{.Proxy}}" autocomplete="off">
+    <p class="text-dim">Effective: {{.EffectiveProxy}}{{if eq .ProxySource "env"}} — set a proxy here to override it{{end}}</p>
   </div>
   <div class="flex gap-8">
     <button class="btn btn-primary" id="btn-proxy-save" onclick="saveProxy()">Save</button>

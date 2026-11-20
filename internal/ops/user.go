@@ -11,10 +11,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
+	"github.com/tunnelwhisperer/tw/internal/egress"
 	"github.com/tunnelwhisperer/tw/internal/pki"
 	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
 	twxray "github.com/tunnelwhisperer/tw/internal/xray"
@@ -846,6 +848,12 @@ func freeLoopbackPort() (int, error) {
 }
 
 func withRelaySSH(cfg *config.Config, fn func(client *gossh.Client) error) error {
+	// Resolves directly instead of o.egress(): DeleteUser holds o.mu across this call (deadlock).
+	p, err := egress.Resolve(cfg.Proxy, os.LookupEnv)
+	if err != nil {
+		return err
+	}
+	proxyURL := p.URLFor(net.JoinHostPort(cfg.Xray.RelayHost, strconv.Itoa(cfg.Xray.RelayPort)))
 	// Present the server's client cert so the relay's mTLS gate admits this
 	// management tunnel (covers TestRelay, the SSH terminal, enrollment, and
 	// user add/remove — every withRelaySSH caller).
@@ -872,7 +880,7 @@ func withRelaySSH(cfg *config.Config, fn func(client *gossh.Client) error) error
 		}
 		listenPort = p
 	}
-	if err := xrayInstance.Start(listenPort, cfg.Server.RelaySSHPort, cfg.Proxy); err != nil {
+	if err := xrayInstance.Start(listenPort, cfg.Server.RelaySSHPort, proxyURL); err != nil {
 		// The port may have been taken between the free-check and the bind
 		// (tight race / lingering listener). Retry once on a fresh free port.
 		p, perr := freeLoopbackPort()
@@ -880,7 +888,7 @@ func withRelaySSH(cfg *config.Config, fn func(client *gossh.Client) error) error
 			return fmt.Errorf("starting Xray: %w", err)
 		}
 		listenPort = p
-		if err := xrayInstance.Start(listenPort, cfg.Server.RelaySSHPort, cfg.Proxy); err != nil {
+		if err := xrayInstance.Start(listenPort, cfg.Server.RelaySSHPort, proxyURL); err != nil {
 			return fmt.Errorf("starting Xray: %w", err)
 		}
 	}

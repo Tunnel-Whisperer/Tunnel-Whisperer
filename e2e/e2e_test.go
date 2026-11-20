@@ -45,6 +45,7 @@ func TestE2E(t *testing.T) {
 		{"PermitOpen", testPermitOpen},
 		{"AppCatalog", testAppCatalog},
 		{"ProxyRoute", testProxyRoute},
+		{"ProxyEnv", testProxyEnv},
 		{"Revocation", testRevocation},
 		{"UserExpiry", testUserExpiry},
 		{"Contexts", testContexts},

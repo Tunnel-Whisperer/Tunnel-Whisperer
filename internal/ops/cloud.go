@@ -81,10 +81,16 @@ func CloudProviders() []CloudProvider {
 // TestCloudCredentials validates credentials for the given provider.
 func (o *Ops) TestCloudCredentials(providerName, token, awsSecret string) error {
 	switch providerName {
-	case "Hetzner":
-		return testHTTPToken("https://api.hetzner.cloud/v1/servers", token)
-	case "DigitalOcean":
-		return testHTTPToken("https://api.digitalocean.com/v2/account", token)
+	case "Hetzner", "DigitalOcean":
+		p, err := o.egress()
+		if err != nil {
+			return err
+		}
+		httpc := p.HTTPClient(10*time.Second, nil)
+		if providerName == "Hetzner" {
+			return testHTTPToken(httpc, "https://api.hetzner.cloud/v1/servers", token)
+		}
+		return testHTTPToken(httpc, "https://api.digitalocean.com/v2/account", token)
 	case "AWS":
 		if len(token) < 16 {
 			return fmt.Errorf("Access Key ID looks too short")
@@ -97,13 +103,13 @@ func (o *Ops) TestCloudCredentials(providerName, token, awsSecret string) error 
 	return fmt.Errorf("unknown provider: %s", providerName)
 }
 
-func testHTTPToken(url, token string) error {
+func testHTTPToken(httpc *http.Client, url, token string) error {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	resp, err := httpc.Do(req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}

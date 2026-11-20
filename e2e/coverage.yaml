@@ -45,7 +45,7 @@ commands:
   "service uninstall":       {exempt: "native service-manager integration; see 'service install'"}
   "service start":           {exempt: "native service-manager integration; see 'service install'"}
   "service stop":            {exempt: "native service-manager integration; see 'service install'"}
-  "proxy":                   [TestE2E/ProxyRoute]
+  "proxy":                   [TestE2E/ProxyRoute, TestE2E/ProxyEnv]
   "proxy set":               [TestE2E/ProxyRoute]
   "proxy clear":             [TestE2E/ProxyRoute]
   "dashboard":               [TestE2E/Dashboard, TestE2E/PortOverride]

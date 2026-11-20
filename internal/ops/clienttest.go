@@ -16,7 +16,7 @@ import (
 // embedded SSH as the tunnel user. Tenant users are forward-only, so a
 // successful auth (no exec) is the proof. The per-user key is never valid
 // on the relay VM — that path belongs to relay/server roles only.
-func testClientSSH(cfg *config.Config) error {
+func testClientSSH(cfg *config.Config, proxyURL string) error {
 	applyClientCertPaths(&cfg.Xray)
 	xrayInstance, err := twxray.NewClient(cfg.Xray)
 	if err != nil {
@@ -26,7 +26,7 @@ func testClientSSH(cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("allocating local tunnel port: %w", err)
 	}
-	if err := xrayInstance.StartClient(cfg.Client, listenPort, cfg.Proxy); err != nil {
+	if err := xrayInstance.StartClient(cfg.Client, listenPort, proxyURL); err != nil {
 		return fmt.Errorf("starting Xray: %w", err)
 	}
 	defer xrayInstance.Close()

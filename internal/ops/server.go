@@ -3,7 +3,9 @@ package ops
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -123,7 +125,12 @@ func (m *serverManager) Start(o *Ops, progress ProgressFunc) error {
 			return fail(step, total, "Xray tunnel", err)
 		}
 		xrayListenPort := serverXrayPort(cfg)
-		if err := xrayInstance.Start(xrayListenPort, cfg.Server.RelaySSHPort, cfg.Proxy); err != nil {
+		p, err := o.egress()
+		if err != nil {
+			return fail(step, total, "Xray tunnel", err)
+		}
+		slog.Info("outbound proxy", "proxy", p.String())
+		if err := xrayInstance.Start(xrayListenPort, cfg.Server.RelaySSHPort, p.URLFor(net.JoinHostPort(cfg.Xray.RelayHost, strconv.Itoa(cfg.Xray.RelayPort)))); err != nil {
 			return fail(step, total, "Xray tunnel", err)
 		}
 		m.mu.Lock()

@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
+	"github.com/tunnelwhisperer/tw/internal/egress"
 	"github.com/tunnelwhisperer/tw/internal/logging"
 	"github.com/xtls/xray-core/core"
 	_ "github.com/xtls/xray-core/main/distro/all"
@@ -113,28 +114,20 @@ func redactProxyURL(raw string) string {
 // proxyOutbound parses a proxy URL and returns an Xray outbound config block.
 // Supported schemes: socks5 (→ "socks" protocol), http (→ "http" protocol).
 func proxyOutbound(proxyURL string) (map[string]interface{}, error) {
-	u, err := url.Parse(proxyURL)
+	u, err := egress.ParseURL(proxyURL)
 	if err != nil {
 		return nil, fmt.Errorf("parsing proxy URL: %w", err)
 	}
 
-	var protocol string
-	switch u.Scheme {
-	case "socks5":
+	protocol := "http"
+	if u.Scheme == "socks5" {
 		protocol = "socks"
-	case "http":
-		protocol = "http"
-	default:
-		return nil, fmt.Errorf("unsupported proxy scheme %q (use socks5:// or http://)", u.Scheme)
 	}
 
 	host := u.Hostname()
-	port := 1080
-	if p := u.Port(); p != "" {
-		port, err = strconv.Atoi(p)
-		if err != nil {
-			return nil, fmt.Errorf("invalid proxy port %q: %w", p, err)
-		}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		return nil, fmt.Errorf("invalid proxy port %q: %w", u.Port(), err)
 	}
 
 	server := map[string]interface{}{

@@ -126,7 +126,12 @@ func (m *clientManager) Start(o *Ops, progress ProgressFunc, overrides map[int]i
 	if xrayPort == 0 {
 		xrayPort = 54001
 	}
-	if err := xrayInstance.StartClient(cfg.Client, xrayPort, cfg.Proxy); err != nil {
+	p, err := o.egress()
+	if err != nil {
+		return fail(2, "Xray tunnel", err)
+	}
+	slog.Info("outbound proxy", "proxy", p.String())
+	if err := xrayInstance.StartClient(cfg.Client, xrayPort, p.URLFor(net.JoinHostPort(cfg.Xray.RelayHost, strconv.Itoa(cfg.Xray.RelayPort)))); err != nil {
 		return fail(2, "Xray tunnel", err)
 	}
 	m.mu.Lock()

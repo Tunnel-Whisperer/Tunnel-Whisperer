@@ -7,11 +7,12 @@ package ops
 import (
 	"fmt"
 	"log/slog"
-	"net/url"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
+	"github.com/tunnelwhisperer/tw/internal/egress"
 	"github.com/tunnelwhisperer/tw/internal/logging"
 	"github.com/tunnelwhisperer/tw/internal/stats"
 )
@@ -50,6 +51,9 @@ type Ops struct {
 	cli   clientManager
 	stats *stats.Collector // nil when analytics disabled
 
+	proxy    egress.Proxy // guarded by mu
+	proxyErr error        // guarded by mu; set when the env/config proxy is invalid
+
 	onlineMu      sync.RWMutex
 	onlineCache   map[string]bool
 	onlinePoll    time.Time
@@ -75,8 +79,29 @@ func New() (*Ops, error) {
 		}
 		o.stats = stats.New(histSize)
 	}
+	o.resolveEgress()
 	trackLiveOps(o)
 	return o, nil
+}
+
+// resolveEgress re-resolves the outbound proxy from config and environment.
+// A broken proxy is stored, not returned, so config-only commands still work.
+func (o *Ops) resolveEgress() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.proxy, o.proxyErr = egress.Resolve(o.cfg.Proxy, os.LookupEnv)
+}
+
+// egress returns the resolved outbound proxy, or the error that made it invalid.
+func (o *Ops) egress() (egress.Proxy, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.proxy, o.proxyErr
+}
+
+// Proxy returns the resolved outbound proxy, or the error that made it invalid.
+func (o *Ops) Proxy() (egress.Proxy, error) {
+	return o.egress()
 }
 
 // Stats returns the bandwidth collector (nil if analytics disabled).
@@ -106,6 +131,7 @@ func (o *Ops) ReloadConfig() error {
 	o.mu.Lock()
 	o.cfg = cfg
 	o.mu.Unlock()
+	o.resolveEgress()
 	return nil
 }
 
@@ -130,24 +156,19 @@ func (o *Ops) SetMode(mode string) error {
 }
 
 // SetProxy validates and persists the proxy URL to config.
-// An empty string clears the proxy. Takes effect on next server/client start.
+// An empty string clears the proxy. The Xray tunnel picks it up on its next
+// start/reconnect; other outbound paths use it immediately.
 func (o *Ops) SetProxy(proxyURL string) error {
 	if proxyURL != "" {
-		u, err := url.Parse(proxyURL)
-		if err != nil {
-			return fmt.Errorf("invalid proxy URL: %w", err)
-		}
-		if u.Scheme != "socks5" && u.Scheme != "http" {
-			return fmt.Errorf("unsupported proxy scheme %q (use socks5:// or http://)", u.Scheme)
-		}
-		if u.Hostname() == "" {
-			return fmt.Errorf("proxy URL must include a host")
+		if _, err := egress.ParseURL(proxyURL); err != nil {
+			return err
 		}
 	}
 	o.mu.Lock()
 	o.cfg.Proxy = proxyURL
 	cfg := o.cfg
 	o.mu.Unlock()
+	o.resolveEgress()
 	return config.Save(cfg)
 }
 

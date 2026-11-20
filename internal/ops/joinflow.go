@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,7 +59,11 @@ func (o *Ops) Join(ctx context.Context, relayHost, code, name string, ui JoinUI,
 	if err != nil {
 		return nil, err
 	}
-	httpc := &http.Client{Timeout: 30 * time.Second}
+	p, err := o.egress()
+	if err != nil {
+		return nil, err
+	}
+	httpc := p.HTTPClient(30*time.Second, nil)
 	base := fmt.Sprintf("https://%s/enroll/%s", relayHost, tok)
 
 	var srvIdent *localServerIdentity

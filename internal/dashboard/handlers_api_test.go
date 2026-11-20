@@ -100,3 +100,56 @@ func TestUsersPageShowsExpiry(t *testing.T) {
 		t.Errorf("expired badges = %d, want 1", n)
 	}
 }
+
+func clearProxyEnv(t *testing.T) {
+	t.Helper()
+	for _, k := range []string{"HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"} {
+		t.Setenv(k, "")
+	}
+}
+
+func TestAPISetProxyRedactsResponse(t *testing.T) {
+	clearProxyEnv(t)
+	s := newClientDashboardForTest(t, "client")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/proxy", strings.NewReader(`{"proxy":"socks5://u:secret@h:1080"}`))
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %q", rec.Code, body)
+	}
+	if !strings.Contains(body, `"proxy":"socks5://redacted@h:1080"`) {
+		t.Fatalf("response must carry the redacted normalised proxy URL: %s", body)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/proxy", strings.NewReader(`{"proxy":""}`))
+	rec = httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"proxy":""`) {
+		t.Fatalf("clear: status %d, body %q; want 200 with empty proxy", rec.Code, rec.Body.String())
+	}
+}
+
+func TestConfigPageShowsEnvProxy(t *testing.T) {
+	clearProxyEnv(t)
+	t.Setenv("HTTPS_PROXY", "http://envproxy:3128")
+	s := newClientDashboardForTest(t, "client")
+
+	req := httptest.NewRequest(http.MethodGet, "/config", nil)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %q", rec.Code, body)
+	}
+	for _, want := range []string{
+		"source: env HTTPS_PROXY",
+		`<span class="badge badge-green" id="proxy-badge">environment</span>`,
+		"set a proxy here to override it",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("config page missing %q", want)
+		}
+	}
+}

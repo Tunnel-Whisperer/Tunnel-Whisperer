@@ -334,7 +334,9 @@ directory. The same token also gates `/metrics`.
 
 ## `tw proxy`
 
-Configure the outbound proxy used for all outbound connections. Works in all
+Configure the outbound proxy used for all tw traffic (tunnel, enrollment, cloud
+checks, relay checks, relay SSH, Terraform). A configured proxy wins over
+`HTTPS_PROXY`/`ALL_PROXY`; see [Proxy](../global/proxy.md). Works in all
 three modes.
 
 | Command | Description |
@@ -344,7 +346,12 @@ three modes.
 | `tw proxy clear` | Remove the proxy. |
 
 Supported URL formats: `socks5://host:port`, `socks5://user:pass@host:port`,
-`http://host:port`, `http://user:pass@host:port`.
+`http://host:port`, `http://user:pass@host:port`. If the port is omitted, 1080
+is used (for both `socks5://` and `http://`). Config values must carry a
+scheme. In the environment variables, a value without a scheme
+(`proxy.corp:3128`) is treated as `http://`; a missing port means 1080.
+`socks5h://` is accepted as an alias of `socks5://`; the proxy always resolves
+the relay's DNS name, so the two behave identically.
 
 ## Mode enforcement
 

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
+	"github.com/tunnelwhisperer/tw/internal/egress"
 	"github.com/tunnelwhisperer/tw/internal/ops"
 	"github.com/tunnelwhisperer/tw/internal/stats"
 	"github.com/tunnelwhisperer/tw/internal/version"
@@ -619,7 +620,21 @@ func (s *Server) apiSetProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jsonOK(w, map[string]string{"status": "ok", "proxy": req.Proxy})
+	shown := ""
+	if req.Proxy != "" {
+		p, err := s.ops.Proxy()
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if p.URL == nil {
+			jsonError(w, "proxy saved but not resolved", http.StatusInternalServerError)
+			return
+		}
+		shown = egress.RedactURL(p.URL)
+	}
+
+	jsonOK(w, map[string]string{"status": "ok", "proxy": shown})
 }
 
 // ── Analytics settings ───────────────────────────────────────────────────────

@@ -10,9 +10,9 @@ import (
 	"log/slog"
 	"math/big"
 	"net"
-	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -784,10 +784,12 @@ func (o *Ops) TestRelay(progress ProgressFunc) {
 		tlsCfg.Certificates = []tls.Certificate{cert}
 		presentedCert = true
 	}
-	httpClient := &http.Client{
-		Timeout:   10 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: tlsCfg},
+	ep, err := o.egress()
+	if err != nil {
+		progress(ProgressEvent{Step: 2, Total: 3, Label: "HTTPS (Caddy)", Status: "failed", Error: err.Error()})
+		return
 	}
+	httpClient := ep.HTTPClient(10*time.Second, tlsCfg)
 	resp, err := httpClient.Get("https://" + domain)
 	switch {
 	case err == nil:
@@ -809,7 +811,11 @@ func (o *Ops) TestRelay(progress ProgressFunc) {
 	// SERVER's embedded SSH; relay/server keys are valid on the relay VM.
 	if cfg.Mode == "client" {
 		progress(ProgressEvent{Step: 3, Total: 3, Label: "Xray + SSH (server auth)", Status: "running"})
-		if err := testClientSSH(cfg); err != nil {
+		p, err := o.egress()
+		if err == nil {
+			err = testClientSSH(cfg, p.URLFor(net.JoinHostPort(cfg.Xray.RelayHost, strconv.Itoa(cfg.Xray.RelayPort))))
+		}
+		if err != nil {
 			progress(ProgressEvent{Step: 3, Total: 3, Label: "Xray + SSH (server auth)", Status: "failed", Error: err.Error()})
 		} else {
 			progress(ProgressEvent{Step: 3, Total: 3, Label: "Xray + SSH (server auth)", Status: "completed", Message: "authenticated as " + cfg.Client.SSHUser})
@@ -918,10 +924,22 @@ func (o *Ops) DirectRelaySSH(fn func(client *gossh.Client) error) error {
 	}
 
 	addr := fmt.Sprintf("%s:22", status.IP)
-	client, err := gossh.Dial("tcp", addr, sshCfg)
+	p, err := o.egress()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), sshCfg.Timeout)
+	defer cancel()
+	conn, err := p.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("direct SSH to relay: %w", err)
 	}
+	c, chans, reqs, err := gossh.NewClientConn(conn, addr, sshCfg)
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("direct SSH to relay: %w", err)
+	}
+	client := gossh.NewClient(c, chans, reqs)
 	defer client.Close()
 
 	return fn(client)
@@ -1120,7 +1138,11 @@ func (o *Ops) WaitForDNS(ctx context.Context, domain, expectedIP string, progres
 // and a human-readable reason for the current failure.
 func (o *Ops) WaitForRelay(ctx context.Context, domain string, timeout time.Duration, progress ProgressFunc) error {
 	deadline := time.Now().Add(timeout)
-	client := &http.Client{Timeout: 10 * time.Second}
+	p, err := o.egress()
+	if err != nil {
+		return err
+	}
+	client := p.HTTPClient(10*time.Second, nil)
 	start := time.Now()
 	attempt := 0
 

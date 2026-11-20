@@ -68,7 +68,6 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	mode := s.ops.Mode()
 
-
 	// No mode chosen yet — show mode selection.
 	if mode == "" {
 		s.renderPage(w, "setup", struct {
@@ -252,7 +251,6 @@ func (s *Server) handleUserDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	// Populate online status.
 	if found.UUID != "" {
 		online := s.ops.GetOnlineUsers()
@@ -264,7 +262,7 @@ func (s *Server) handleUserDetail(w http.ResponseWriter, r *http.Request) {
 		User         ops.UserInfo
 		StatsEnabled bool
 	}{
-		pageData:     s.newPageData("User: " + name, "users"),
+		pageData:     s.newPageData("User: "+name, "users"),
 		User:         *found,
 		StatsEnabled: s.ops.StatsEnabled(),
 	}
@@ -293,12 +291,21 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		historySize = 720
 	}
 
+	effectiveProxy, proxySource := "", ""
+	if p, err := s.ops.Proxy(); err != nil {
+		effectiveProxy = "error: " + err.Error()
+	} else {
+		effectiveProxy, proxySource = p.String(), string(p.Source)
+	}
+
 	data := struct {
 		pageData
 		ConfigPath       string
 		ConfigYAML       string
 		LogLevel         string
 		Proxy            string
+		EffectiveProxy   string
+		ProxySource      string
 		Running          bool
 		Server           config.ServerConfig
 		Client           config.ClientConfig
@@ -312,6 +319,8 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		ConfigYAML:       string(cfgYAML),
 		LogLevel:         logLevel,
 		Proxy:            cfg.Proxy,
+		EffectiveProxy:   effectiveProxy,
+		ProxySource:      proxySource,
 		Running:          running,
 		Server:           cfg.Server,
 		Client:           cfg.Client,

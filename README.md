@@ -176,7 +176,7 @@ Structured by role — with dynamic tab completion for contexts, users, and serv
 | `tw status` | Unified status: active context, mode, live state (any role) |
 | `tw config get-contexts / use-context <name\|id> / import / export [-o <path>] ...` | kubectl-style contexts: many relays/identities per machine; `export -o` writes the bundle to a directory or file |
 | `tw dashboard` | Web dashboard (role-aware: tenant management, users, contexts, stats) |
-| `tw proxy set/clear` | Outbound SOCKS5/HTTP proxy for all tunnel traffic |
+| `tw proxy set/clear` | Outbound SOCKS5/HTTP proxy for all tw traffic (tunnel, enrollment, relay ops) |
 | `tw service install/start/stop/uninstall` | Native service (Linux systemd / Windows SCM / macOS launchd) |
 | `tw completion` | zsh completion with live object completion |
 

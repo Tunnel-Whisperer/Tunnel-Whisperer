@@ -39,7 +39,7 @@ These commands and facilities work identically in every role:
 | Contexts — store, switch, export, and import complete identities | `tw config …` | [Contexts](contexts.md) |
 | Unified status — context, mode, relay, live component health | `tw status` | [Status, Service & Completion](status-service.md) |
 | System service — run on boot via systemd / Windows SCM / launchd | `tw service …` | [Status, Service & Completion](status-service.md) |
-| Outbound proxy — route all traffic through SOCKS5/HTTP | `tw proxy …` | [Proxy](proxy.md) |
+| Outbound proxy — route all tw traffic (tunnel, enrollment, relay ops) through SOCKS5/HTTP | `tw proxy …` | [Proxy](proxy.md) |
 | Web dashboard — browser UI on :8080, pages adapt to the role | `tw dashboard` | [Dashboard](dashboard.md) |
 | Shell completion — zsh, with dynamic candidates | `tw completion` | [Status, Service & Completion](status-service.md#shell-completion) |
 

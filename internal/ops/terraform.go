@@ -68,21 +68,36 @@ func removeLegacyTerraformDir() error {
 	return nil
 }
 
+// terraformProcessEnv builds the environment for a network-using terraform
+// run: the inherited env, the resolved proxy, then tw's own variables.
+func (o *Ops) terraformProcessEnv(env map[string]string) ([]string, error) {
+	env, err := o.terraformEnv(env)
+	if err != nil {
+		return nil, err
+	}
+	p, err := o.egress()
+	if err != nil {
+		return nil, err
+	}
+	out := append(os.Environ(), p.SubprocessEnv()...)
+	out = append(out, "TF_IN_AUTOMATION=1") // suppress color and interactive prompts
+	for k, v := range env {
+		out = append(out, k+"="+v)
+	}
+	return out, nil
+}
+
 // RunTerraform executes a terraform command in dir with the given env vars.
 // Output is streamed line-by-line as progress events so the dashboard shows
 // real-time feedback instead of blocking silently.
 func (o *Ops) RunTerraform(ctx context.Context, dir string, env map[string]string, progress ProgressFunc, args ...string) error {
-	env, err := o.terraformEnv(env)
+	tfEnv, err := o.terraformProcessEnv(env)
 	if err != nil {
 		return err
 	}
 	cmd := exec.CommandContext(ctx, "terraform", args...)
 	cmd.Dir = dir
-	cmd.Env = os.Environ()
-	cmd.Env = append(cmd.Env, "TF_IN_AUTOMATION=1") // suppress color and interactive prompts
-	for k, v := range env {
-		cmd.Env = append(cmd.Env, k+"="+v)
-	}
+	cmd.Env = tfEnv
 
 	// Pipe stdout+stderr so we can stream to progress.
 	stdout, err := cmd.StdoutPipe()
