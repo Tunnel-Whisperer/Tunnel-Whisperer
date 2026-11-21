@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -76,7 +77,7 @@ func (s *Server) apiStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) apiConfig(w http.ResponseWriter, r *http.Request) {
 	cfg := s.ops.Config()
-	jsonOK(w, cfg)
+	jsonOK(w, redactedConfig(cfg))
 }
 
 func (s *Server) apiProviders(w http.ResponseWriter, r *http.Request) {
@@ -613,6 +614,18 @@ func (s *Server) apiSetProxy(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
 		return
+	}
+
+	// The config page shows the stored proxy as scheme://redacted@host:port;
+	// saving that back keeps the stored credentials.
+	if u, err := url.Parse(req.Proxy); err == nil && u.User != nil && u.User.Username() == "redacted" {
+		stored, err := url.Parse(s.ops.Config().Proxy)
+		if err != nil || stored.User == nil {
+			jsonError(w, "stored proxy has no credentials to keep", http.StatusBadRequest)
+			return
+		}
+		u.User = stored.User
+		req.Proxy = u.String()
 	}
 
 	if err := s.ops.SetProxy(req.Proxy); err != nil {

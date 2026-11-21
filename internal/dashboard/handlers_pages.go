@@ -5,10 +5,12 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
+	"github.com/tunnelwhisperer/tw/internal/egress"
 	"github.com/tunnelwhisperer/tw/internal/ops"
 	"github.com/tunnelwhisperer/tw/internal/version"
 	"gopkg.in/yaml.v3"
@@ -269,6 +271,21 @@ func (s *Server) handleUserDetail(w http.ResponseWriter, r *http.Request) {
 	s.renderPage(w, "user_detail", data)
 }
 
+// redactedConfig returns a copy of cfg safe to display: proxy userinfo and
+// the VLESS UUID (xray.uuid) are replaced with "redacted".
+func redactedConfig(cfg *config.Config) config.Config {
+	c := *cfg
+	if c.Proxy != "" {
+		if u, err := url.Parse(c.Proxy); err == nil {
+			c.Proxy = egress.RedactURL(u)
+		}
+	}
+	if c.Xray.UUID != "" {
+		c.Xray.UUID = "redacted"
+	}
+	return c
+}
+
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	// Read from disk so we always show the actual file contents,
 	// even if it was edited outside the dashboard.
@@ -276,7 +293,12 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		cfg = s.ops.Config()
 	}
-	cfgYAML, _ := yaml.Marshal(cfg)
+	shown := redactedConfig(cfg)
+	cfgYAML, err := yaml.Marshal(shown)
+	if err != nil {
+		http.Error(w, "marshal config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	running := string(s.ops.ServerStatus().State) == "running" ||
 		string(s.ops.ClientStatus().State) == "running"
@@ -318,13 +340,13 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		ConfigPath:       config.FilePath(),
 		ConfigYAML:       string(cfgYAML),
 		LogLevel:         logLevel,
-		Proxy:            cfg.Proxy,
+		Proxy:            shown.Proxy,
 		EffectiveProxy:   effectiveProxy,
 		ProxySource:      proxySource,
 		Running:          running,
 		Server:           cfg.Server,
 		Client:           cfg.Client,
-		Xray:             cfg.Xray,
+		Xray:             shown.Xray,
 		AnalyticsEnabled: cfg.Analytics.Enabled,
 		HistorySize:      historySize,
 		Version:          version.Version,

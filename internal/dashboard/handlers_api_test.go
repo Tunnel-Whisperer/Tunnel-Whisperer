@@ -153,3 +153,130 @@ func TestConfigPageShowsEnvProxy(t *testing.T) {
 		}
 	}
 }
+
+func writeProxyConfig(t *testing.T, s *Server, proxy, uuid string) {
+	t.Helper()
+	cfgYAML := "mode: client\nproxy: " + proxy + "\nxray:\n  uuid: " + uuid + "\n"
+	if err := os.WriteFile(config.FilePath(), []byte(cfgYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ops.ReloadConfig(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConfigPageRedactsSecrets(t *testing.T) {
+	clearProxyEnv(t)
+	s := newClientDashboardForTest(t, "client")
+	const uuid = "0b7a3c52-9f1e-4d6b-8a2c-5e4f3d2c1b0a"
+	writeProxyConfig(t, s, "http://u:secret@p:3128", uuid)
+
+	req := httptest.NewRequest(http.MethodGet, "/config", nil)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %q", rec.Code, body)
+	}
+	for _, leak := range []string{"secret", uuid} {
+		if strings.Contains(body, leak) {
+			t.Errorf("config page leaks %q", leak)
+		}
+	}
+	if !strings.Contains(body, `value="http://redacted@p:3128"`) {
+		t.Errorf("proxy input missing redacted URL")
+	}
+	pre := body[strings.Index(body, "<pre>"):]
+	for _, want := range []string{"proxy: http://redacted@p:3128", "uuid: redacted"} {
+		if !strings.Contains(pre, want) {
+			t.Errorf("config YAML missing %q", want)
+		}
+	}
+
+	raw, err := os.ReadFile(config.FilePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "u:secret@p:3128") || !strings.Contains(string(raw), uuid) {
+		t.Errorf("config file must keep the real secrets: %s", raw)
+	}
+}
+
+func postProxy(s *Server, proxy string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/api/proxy", strings.NewReader(`{"proxy":"`+proxy+`"}`))
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestAPISetProxyKeepsRedactedCredentials(t *testing.T) {
+	clearProxyEnv(t)
+	s := newClientDashboardForTest(t, "client")
+	writeProxyConfig(t, s, "http://u:secret@p:3128", "")
+
+	rec := postProxy(s, "http://redacted@p2:3128")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %q", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "secret") {
+		t.Fatalf("response leaks the password: %s", rec.Body.String())
+	}
+	if got := s.ops.Config().Proxy; got != "http://u:secret@p2:3128" {
+		t.Fatalf("stored proxy = %q, want http://u:secret@p2:3128", got)
+	}
+
+	rec = postProxy(s, "http://a:b@p:1")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %q", rec.Code, rec.Body.String())
+	}
+	if got := s.ops.Config().Proxy; got != "http://a:b@p:1" {
+		t.Fatalf("stored proxy = %q, want http://a:b@p:1", got)
+	}
+
+	// Only the username "redacted" is the placeholder; a real username with
+	// the literal password "redacted" is stored as typed.
+	rec = postProxy(s, "http://a:redacted@p:1")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %q", rec.Code, rec.Body.String())
+	}
+	if got := s.ops.Config().Proxy; got != "http://a:redacted@p:1" {
+		t.Fatalf("stored proxy = %q, want http://a:redacted@p:1", got)
+	}
+}
+
+func TestAPISetProxyRedactedWithoutStoredCredentials(t *testing.T) {
+	clearProxyEnv(t)
+	s := newClientDashboardForTest(t, "client")
+	writeProxyConfig(t, s, "http://p:3128", "")
+
+	rec := postProxy(s, "http://redacted@p:3128")
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "stored proxy has no credentials to keep") {
+		t.Fatalf("status %d, body %q; want 400 no credentials", rec.Code, rec.Body.String())
+	}
+	if got := s.ops.Config().Proxy; got != "http://p:3128" {
+		t.Fatalf("stored proxy changed to %q", got)
+	}
+}
+
+func TestAPIConfigRedactsSecrets(t *testing.T) {
+	clearProxyEnv(t)
+	s := newClientDashboardForTest(t, "client")
+	const uuid = "0b7a3c52-9f1e-4d6b-8a2c-5e4f3d2c1b0a"
+	writeProxyConfig(t, s, "http://u:secret@p:3128", uuid)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %q", rec.Code, body)
+	}
+	for _, leak := range []string{"secret", uuid} {
+		if strings.Contains(body, leak) {
+			t.Errorf("/api/config leaks %q", leak)
+		}
+	}
+	if !strings.Contains(body, "redacted@") {
+		t.Errorf("/api/config missing redacted proxy: %s", body)
+	}
+}
