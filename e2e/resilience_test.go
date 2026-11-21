@@ -44,10 +44,7 @@ func testRelayResilience(t *testing.T) {
 	// deleted the client's context or switched away from it), so tw join
 	// won't auto-activate bob's new context; switch to it explicitly, the
 	// same role --activate played on config import.
-	issuerLog, joinLog := runInviteExchange(t, "server", "tw server user invite bob -m "+bobPort+":"+echoPort, "client", "tw join "+domain+" {code}")
-	if strings.Contains(issuerLog, "mode is unsigned") || strings.Contains(joinLog, "mode is unsigned") {
-		fatalf(t, "invite/join printed the unsigned-mode warning:\nissuer:\n%s\njoin:\n%s", issuerLog, joinLog)
-	}
+	runInviteExchange(t, "server", "tw server user invite bob -m "+bobPort+":"+echoPort, "client", "tw join "+domain+" {code}")
 	execIn(t, "server", "tw server user apply bob")
 	execIn(t, "client", "tw config use-context bob")
 	execDetached(t, "client", "tw client connect > /var/log/tw-client-bob.log 2>&1")

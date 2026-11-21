@@ -15,13 +15,13 @@ import (
 // mints a one-time invite code (`tw relay invite`), the server redeems it
 // (`tw join`) — reading back a shared authentication string (SAS) that both
 // sides must agree on before the admin approves — and the result lands as a
-// mode-signed context, born already active on the freshly-wiped server
+// server context, born already active on the freshly-wiped server
 // container. It then starts the echo target and the server daemon and
 // proves the tunnel is up via `tw server test`.
 func testServerJoin(t *testing.T) {
 	scenario(t, "a server joins the admin's relay non-disruptively and publishes its reverse tunnel",
 		"tw relay invite mints a one-time code and waits for the enrollee",
-		"tw join <relay-host> <code> shows the SAS, gets approved on an exact read-back match, and creates a mode-signed server context",
+		"tw join <relay-host> <code> shows the SAS, gets approved on an exact read-back match, and creates a server context",
 		"the invite's EnrollServer step re-renders + reloads the relay Caddyfile ('Caddyfile reloaded') AFTER SAS approval",
 		"the fresh server container has no live profile, so tw join activates the new context immediately (no separate use-context)",
 		"tw server start + echo target come up and tw server test reports 'tunnel and tenant request channel working'",
@@ -52,11 +52,8 @@ func testServerJoin(t *testing.T) {
 	// now (EnrollServer runs only once the human confirms the read-back),
 	// unlike the old file-based flow where the reload could happen before
 	// any interactive step.
-	issuerLog, joinLog := runInviteExchange(t, "admin", "tw relay invite", "server", "tw join "+domain+" {code}")
+	_, joinLog := runInviteExchange(t, "admin", "tw relay invite", "server", "tw join "+domain+" {code}")
 
-	if strings.Contains(issuerLog, "mode is unsigned") || strings.Contains(joinLog, "mode is unsigned") {
-		fatalf(t, "invite/join printed the unsigned-mode warning:\nissuer:\n%s\njoin:\n%s", issuerLog, joinLog)
-	}
 	if !regexp.MustCompile(`Context "relay-tw-test" \(server\) created\.`).MatchString(joinLog) {
 		fatalf(t, "join log missing the expected context-created line:\n%s", joinLog)
 	}
@@ -78,22 +75,6 @@ func testServerJoin(t *testing.T) {
 	})
 	out := execIn(t, "server", "tw server status")
 	t.Logf("server status:\n%s", out)
-
-	// Tamper-evidence: flip mode: server -> mode: relay in the active config
-	// (TW_CONFIG_DIR=/etc/tw-test in the e2e images, see e2e/images/tw/Dockerfile,
-	// so the active file is /etc/tw-test/config.yaml — config.FilePath()).
-	// A relay-gated command must now be refused by the mode-signature check,
-	// not merely by the plain role gate, since the signed mode no longer
-	// matches the profile's identity.
-	execIn(t, "server", `sed -i 's/^mode: server/mode: relay/' /etc/tw-test/config.yaml`)
-	if tamperOut, tamperErr := execInOK("server", "tw relay get-servers"); tamperErr == nil {
-		fatalf(t, "relay command succeeded on a tampered server profile:\n%s", tamperOut)
-	} else if !strings.Contains(tamperOut, "mode signature invalid") {
-		fatalf(t, "expected a mode-signature error after tampering mode: server -> relay, got:\n%s", tamperOut)
-	}
-	// Restore so later scenarios (PermitOpen, Revocation, SecondTenant) are unaffected.
-	execIn(t, "server", `sed -i 's/^mode: relay/mode: server/' /etc/tw-test/config.yaml`)
-	t.Logf("server config restored after tamper test; status:\n%s", execIn(t, "server", "tw server status"))
 }
 
 // testSecondTenant enrolls a SECOND server (the relay's third tenant, after
@@ -149,10 +130,7 @@ func testSecondTenant(t *testing.T) {
 	// get-servers row regexes below.
 	host := strings.TrimSpace(execIn(t, "server2", "hostname"))
 
-	issuerLog, joinLog := runInviteExchange(t, "admin", "tw relay invite", "server2", "tw join "+domain+" {code}")
-	if strings.Contains(issuerLog, "mode is unsigned") || strings.Contains(joinLog, "mode is unsigned") {
-		fatalf(t, "invite/join printed the unsigned-mode warning:\nissuer:\n%s\njoin:\n%s", issuerLog, joinLog)
-	}
+	_, joinLog := runInviteExchange(t, "admin", "tw relay invite", "server2", "tw join "+domain+" {code}")
 	if !regexp.MustCompile(`Context "relay-tw-test" \(server\) created\.`).MatchString(joinLog) {
 		fatalf(t, "join log missing the expected context-created line:\n%s", joinLog)
 	}

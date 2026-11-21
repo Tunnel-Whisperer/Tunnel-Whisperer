@@ -53,7 +53,7 @@ Everything the relay admin does to the relay. All subcommands require
 | Command | Description |
 |---|---|
 | `tw relay create` | Provision a relay server — interactive wizard (cloud providers via Terraform, or a manual bring-your-own-VM flow); refuses to start the cloud path if Terraform is missing or older than 1.0. Writes the relay's portable context bundle (domain sanitized: `tw_relay-example-com.twctx`) on success. |
-| `tw relay add-server [<context-name>]` | Enroll **this machine** as a server in one command and store the result as a new, ready-to-use context (default name `server-<relay's first DNS label>`). The single-person-setup shortcut: no join/response files, no context switching, and the context is born mode-signed. |
+| `tw relay add-server [<context-name>]` | Enroll **this machine** as a server in one command and store the result as a new, ready-to-use context (default name `server-<relay's first DNS label>`). The single-person-setup shortcut: no join/response files and no context switching. |
 | `tw relay destroy` | Destroy the provisioned relay (Terraform for cloud relays: runs `terraform init` then `terraform destroy`, so it works from any machine that imported the relay bundle; refuses if Terraform is missing or older than 1.0; prompts for AWS credentials when needed). |
 | `tw relay invite [--ttl 15m]` | Mint a one-time code that enrolls a remote server — no files. Prints the code, waits for the enrollee's `tw join`, shows a short authentication string (SAS) to confirm against their read-back, then registers it, allocates its port, rewrites the relay's Caddyfile/Xray config/relay admin account's `authorized_keys` live, and creates the server's own relay account. |
 | `tw relay get-servers` | List servers registered on the relay (`SERVER-ID`, `PATH`, `PORT`, `ENROLLED`, `TUNNEL` up/down — live-checked against the relay). |
@@ -365,12 +365,8 @@ Error: this command requires server mode, but tw is configured in client mode
 
 If `mode` is empty (not yet configured), all commands are allowed.
 
-The mode field is **tamper-evident**: profiles carry a `mode_auth` signature
-over the mode and the profile's identity key. A present-but-invalid signature
-is refused with instructions to re-enroll/re-import/re-create; a missing
-signature on legacy profiles produces a one-time warning (a relay self-heals
-by re-signing). This is tamper-evidence only — the real role boundary is the
-relay's `authorized_keys` and the mTLS trust chain (see
+The mode field only steers which commands run locally — the role boundary is
+the relay's `authorized_keys` and the mTLS trust chain (see
 [Security](../security/index.md)).
 
 ## Running as a Service

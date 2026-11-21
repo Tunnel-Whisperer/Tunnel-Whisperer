@@ -91,6 +91,4 @@ type ClientGrant struct {
 	ServerHostKey string        `json:"server_host_key,omitempty"` // server SSH host public key (authorized_keys format), pinned by the client
 	Tunnels       []GrantTunnel `json:"tunnels"`
 	ClientCertPEM string        `json:"client_cert_pem"`
-	ModeSig       string        `json:"mode_sig,omitempty"`
-	ModeIssuer    string        `json:"mode_issuer,omitempty"`
 }

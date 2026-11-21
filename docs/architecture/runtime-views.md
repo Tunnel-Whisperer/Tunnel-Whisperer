@@ -100,9 +100,9 @@ sequenceDiagram
     A ->> A: [2] Build FULL tenant list (the relay admin's own entry + every registered server)
     A ->> R: [3] Over relay SSH: write CA certs, re-render + validate +<br/>graceful-reload Caddyfile, update tw's authorized_keys lines,<br/>persist full Xray config.json
     A ->> R: [4] gRPC live-add (AddInbound + AddRule via :10085<br/>over the SSH tunnel) — no Xray restart
-    A ->> S: encrypted grant (relay host, path, remote_port, ssh_user,<br/>+ ed25519 mode signature), via /enroll/tok/result
+    A ->> S: encrypted grant (relay host, path, remote_port, ssh_user),<br/>via /enroll/tok/result
 
-    S ->> S: Store context (auto-activate if no live profile), persist coordinates + mode_auth signature
+    S ->> S: Store context (auto-activate if no live profile), persist coordinates
     S ->> R: tw server start — reverse tunnel on remote_port
 ```
 
@@ -163,7 +163,7 @@ sequenceDiagram
     Admin ->> Admin: Sign the CSR with the server CA
     Admin ->> R: Hot-add UUID to this server's own<br/>vless-in-#lt;server-id#gt; inbound on the relay
     Admin ->> AK: Append public key with permitopen restrictions
-    Admin ->> C: Signed cert + coordinates +<br/>mode_auth-signed config (encrypted channel)
+    Admin ->> C: Signed cert + coordinates +<br/>client config (encrypted channel)
 ```
 
 The *client* generates its SSH key pair and certificate signing request

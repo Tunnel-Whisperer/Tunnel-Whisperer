@@ -23,12 +23,8 @@ The mode is set by the first role action a machine performs — `tw relay create
 
     To act in a different role on the same machine, use a separate [context](contexts.md).
 
-## Signed Mode (Tamper Evidence)
-
-The `mode` field in `config.yaml` is **signed** (ed25519) against the profile's identity. If the file is hand-edited to flip a client into a server — or the signature no longer matches the identity — `tw` refuses to run role commands until the profile is restored (re-enroll for servers, re-import for clients, re-create for relays). Relay profiles hold their own signing key and self-heal an unsigned mode.
-
-!!! note "Tamper evidence, not the security boundary"
-    The signature only makes local tampering *evident*. The real access control lives on the other end of the wire: the relay routes every tunnel via **mTLS** (Caddy verifies a CA-issued client certificate and matches it to a tenant before proxying), and the server's SSH `authorized_keys` gates every user with per-port `permitopen` restrictions. A tampered local mode gains nothing — the relay and server still reject unknown keys and certificates.
+!!! note "The mode is not the security boundary"
+    The `mode` field only steers which commands run locally. The real access control lives on the other end of the wire: the relay routes every tunnel via **mTLS** (Caddy verifies a CA-issued client certificate and matches it to a tenant before proxying), and the relay's and server's SSH `authorized_keys` gate every tenant and user with per-port restrictions. Editing the local mode gains nothing — the relay and server still reject unknown keys and certificates.
 
 ## Shared Across All Roles
 

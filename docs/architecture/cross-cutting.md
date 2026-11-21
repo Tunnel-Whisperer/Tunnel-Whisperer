@@ -171,7 +171,7 @@ func modeError(current string, allowed []string) error {
 }
 ```
 
-**Mode signature (tamper-evidence).** The mode is additionally protected by a detached ed25519 signature (`mode_auth: {sig, issuer}` in config, `internal/ops/modeauth`) over `(mode, profile identity)`, where the identity is the profile's own `id_ed25519.pub`. The relay signs its own mode with its own key; a server's mode is signed by the relay admin inside the invite grant (`tw relay invite` / `tw join`); a client's mode is signed by its server inside the invite grant (`tw server user invite` / `tw join`). `requireMode` verifies the signature on every gated command: a present-but-invalid signature (a hand-edited `mode` field) is refused with a re-enroll/re-import hint; a missing signature is legacy-tolerated with a warning (the relay self-heals by re-signing). This is deliberately *not* a security boundary — the real role boundary is the relay's `authorized_keys` restrictions and the mTLS/PKI trust chain.
+The mode is not a security boundary: it only steers which commands run locally. The role boundary is the relay's `authorized_keys` restrictions and the mTLS/PKI trust chain.
 
 ---
 

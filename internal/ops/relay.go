@@ -246,9 +246,6 @@ func (o *Ops) ProvisionRelay(ctx context.Context, req RelayProvisionRequest, pro
 	if cfg.Mode == "" {
 		cfg.Mode = "relay"
 		changed = true
-		if err := o.stampModeAuth(cfg); err != nil {
-			slog.Warn("stamping mode_auth", "error", err)
-		}
 	}
 	if cfg.Xray.UUID == "" {
 		cfg.Xray.UUID = uuid.New().String()
@@ -453,9 +450,6 @@ func (o *Ops) GenerateManualInstallScript(domain string, sshOpen bool) (string, 
 	if cfg.Mode == "" {
 		cfg.Mode = "relay"
 		changed = true
-		if err := o.stampModeAuth(cfg); err != nil {
-			slog.Warn("stamping mode_auth", "error", err)
-		}
 	}
 	if cfg.Xray.UUID == "" {
 		cfg.Xray.UUID = uuid.New().String()

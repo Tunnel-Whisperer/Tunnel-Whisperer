@@ -30,7 +30,7 @@ Tunnel Whisperer connects services across separated private networks via resilie
 The **relay admin** provisions the relay and invites servers. Each **server operator** redeems an invite to join the relay, invites its own users, and runs `tw server start`. Each **client user** redeems a user invite — which generates their identity locally and never transmits a private key — and runs `tw client connect` to establish local port forwarding. Every invite is a spoken one-time code confirmed by a short authentication string read back between the two humans involved; see [Tenants — security](../relay/tenants.md#security).
 
 !!! warning "Role commands are locked to the profile's mode"
-    A machine's mode (`relay`, `server`, or `client`) is set by `tw relay create`, `tw join`, `tw relay add-server` or `tw config import --activate` and is signed for tamper evidence — commands of other roles refuse to run. See [Global — the role model](../global/index.md).
+    A machine's mode (`relay`, `server`, or `client`) is set by `tw relay create`, `tw join`, `tw relay add-server` or `tw config import --activate` — commands of other roles refuse to run. See [Global — the role model](../global/index.md).
 
 ## Pick Your Role
 

@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/tunnelwhisperer/tw/internal/config"
-	"github.com/tunnelwhisperer/tw/internal/ops/modeauth"
 	relaytenant "github.com/tunnelwhisperer/tw/internal/relay/tenant"
 	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
 )
@@ -109,26 +108,6 @@ func TestRenderTenantSyncAccounts(t *testing.T) {
 	}
 }
 
-func TestEnrollServerSignsServerMode(t *testing.T) {
-	t.Setenv("TW_CONFIG_DIR", t.TempDir())
-	writeProfileKey(t) // relay's own key (helper from modeauth_wire_test.go)
-	// Minimal relay config so EnrollServer can render (relay host + a UUID).
-	o, _ := New()
-	// The join request carries the SERVER's identity pubkey; reuse a fresh key.
-	_, serverPub, _ := twssh.GenerateKeyPair()
-	req := &JoinRequest{Version: 1, ServerID: "srv-1", UUID: "u-srv",
-		Hostname: "srv", RelayHost: "relay.example", CACertPEM: testCAPEM(t, "srv-1"),
-		SSHPubkey: strings.TrimSpace(string(serverPub))}
-	// Sign only — call the signing helper EnrollServer uses, not the full
-	// SSH flow. If EnrollServer cannot be unit-run without a relay, assert on
-	// the extracted helper signServerMode(req) instead (see Step 3).
-	resp, sig, issuer := signServerModeForTest(t, o, req)
-	_ = resp
-	if err := modeauth.Verify("server", req.SSHPubkey, sig, issuer); err != nil {
-		t.Fatalf("relay-signed server token does not verify: %v", err)
-	}
-}
-
 // TestRenderRelayAuthorizedKeysSSHOpen: --ssh-open means the admin key must
 // actually WORK over the open port 22 — so the admin line drops its
 // from="127.0.0.1" pin (which rejects any non-loopback source and made the
@@ -218,15 +197,6 @@ func TestEnrollPort(t *testing.T) {
 	if got := enrollPort(20000); got != 40000 {
 		t.Fatalf("enrollPort(20000) = %d", got)
 	}
-}
-
-func signServerModeForTest(t *testing.T, o *Ops, req *JoinRequest) (*JoinResponse, string, string) {
-	t.Helper()
-	sig, issuer, err := o.signServerMode(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &JoinResponse{ServerID: req.ServerID, ModeSig: sig, ModeIssuer: issuer}, sig, issuer
 }
 
 // TestEnrollServerRollsBackRegistryBeforeRelay is the C7 regression: a

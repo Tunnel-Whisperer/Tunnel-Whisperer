@@ -35,6 +35,32 @@ func TestLoadMigratesAdminToRelay(t *testing.T) {
 	}
 }
 
+// Profiles written before v3.4.0 carry a mode_auth: block (an ed25519 mode
+// signature that was removed). They must keep loading and the block must be
+// dropped on the next save.
+func TestLoadIgnoresLegacyModeAuthBlock(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TW_CONFIG_DIR", dir)
+	legacy := "mode: client\nmode_auth:\n  sig: AAAA\n  issuer: BBBB\n"
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("legacy config with mode_auth must still load: %v", err)
+	}
+	if cfg.Mode != "client" {
+		t.Fatalf("loaded mode = %q, want client", cfg.Mode)
+	}
+	if err := Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "config.yaml"))
+	if strings.Contains(string(data), "mode_auth") {
+		t.Errorf("mode_auth block survived a save:\n%s", data)
+	}
+}
+
 func TestValidModeAcceptsRelayNotAdmin(t *testing.T) {
 	if !ValidMode("relay") {
 		t.Error("relay should be valid")

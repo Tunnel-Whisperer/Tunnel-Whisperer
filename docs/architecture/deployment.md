@@ -36,14 +36,10 @@ client:                            # only needed for `tw client connect`
     - local_port: 5432             # listen on client localhost
       remote_host: 127.0.0.1      # target on server (localhost only)
       remote_port: 5432            # PostgreSQL
-
-# mode_auth:                       # ed25519 signature over (mode, identity) —
-#   sig: ...                       # written by relay create / enrollment / user
-#   issuer: ...                    # export; makes the mode field tamper-evident
 ```
 
 !!! note "Mode field"
-    The `mode` field prevents accidental cross-role usage. When set, `requireMode()` in the CLI rejects commands belonging to other roles (legacy `admin` is canonicalized to `relay` on read). The mode is additionally ed25519-signed (`mode_auth`, see `internal/ops/modeauth`) as tamper-evidence: a present-but-invalid signature is refused, an unsigned mode is legacy-tolerated with a warning (the relay self-heals by re-signing with its own key). The dashboard adapts its UI based on this field.
+    The `mode` field prevents accidental cross-role usage. When set, `requireMode()` in the CLI rejects commands belonging to other roles (legacy `admin` is canonicalized to `relay` on read). It only steers which commands run locally; the role boundary is the relay's `authorized_keys` and the mTLS chain. The dashboard adapts its UI based on this field.
 
 ---
 

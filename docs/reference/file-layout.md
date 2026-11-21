@@ -17,7 +17,7 @@ state under a single platform-specific directory.
 | File | Description |
 |---|---|
 | `config.yaml` | Main configuration file (see [Configuration](configuration.md)) |
-| `id_ed25519` / `id_ed25519.pub` | The profile's ed25519 SSH identity key pair, generated on first initialization. Server: authenticates the reverse tunnel to the relay. Relay: the relay admin management key. Client: the per-user key received in the bundle. Also the signing/identity key for `mode_auth`. |
+| `id_ed25519` / `id_ed25519.pub` | The profile's ed25519 SSH identity key pair, generated on first initialization. Server: authenticates the reverse tunnel to the relay. Relay: the relay admin management key. Client: the per-user key received in the bundle. |
 | `dashboard.token` | The web dashboard's login token (`0600`). Fetch with `tw dashboard token`; `--rotate` replaces it and invalidates active sessions. |
 | `api.token` | The gRPC control-plane bearer token (`0600`). Required on every RPC; the CLI reads it automatically. |
 | `contexts.yaml` | Plaintext context index: the active context name plus non-secret metadata (role, relay, user, short ID, created) per stored context |
@@ -50,7 +50,7 @@ A server enrolled on a relay, with two users, has this layout:
 ├── client.key               # Private key (PEM) for client.crt
 └── users/
     ├── alice/
-    │   ├── config.yaml      # Client config pre-filled for this user (mode/mode_auth are injected into the invite grant, not stored here)
+    │   ├── config.yaml      # Client config pre-filled for this user (mode is set by the invite grant, not stored here)
     │   ├── id_ed25519.pub   # User's SSH public key (mirrored into authorized_keys)
     │   ├── .applied         # Marker: user is registered on the relay (written by invite/apply)
     │   ├── .single-session  # Optional marker: enforce one concurrent session for this user
@@ -136,7 +136,7 @@ which unpacks into the config directory:
 
 ```
 /etc/tw/config/
-├── config.yaml              # Client configuration (mode: client, xray, tunnels, mode_auth)
+├── config.yaml              # Client configuration (mode: client, xray, tunnels)
 ├── contexts.yaml / contexts/
 ├── id_ed25519               # This user's SSH private key (from the bundle)
 ├── id_ed25519.pub
@@ -203,7 +203,7 @@ once stored, is still a perfectly ordinary context and can be exported with
 
 Either way, a client context's `config.yaml` is pre-filled with:
 
-- `mode: client` (plus the server-signed `mode_auth` block)
+- `mode: client`
 - `xray.uuid` — the user's unique UUID
 - `xray.relay_host`, `xray.relay_port`, `xray.path` — transport settings for the server's relay slot
 - `client.ssh_user` — the user's name

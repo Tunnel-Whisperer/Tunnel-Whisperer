@@ -129,9 +129,6 @@ func testConfigDirSafety(t *testing.T) {
 	}
 
 	joinOut := execIn(t, "client", "cat "+joinLog)
-	if strings.Contains(joinOut, "mode is unsigned") {
-		fatalf(t, "configdir join printed the unsigned-mode warning:\n%s", joinOut)
-	}
 	if !regexp.MustCompile(`Context "carol" \(client\) created\.`).MatchString(joinOut) {
 		fatalf(t, "configdir join log missing the expected context-created line:\n%s", joinOut)
 	}

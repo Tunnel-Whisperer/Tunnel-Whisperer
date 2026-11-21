@@ -167,12 +167,6 @@ client:
   # tunnel's local_port; `tw client connect --map` wins over both for one run.
   port_overrides:
     3389: 13389
-
-# Tamper-evidence signature over (mode, profile identity). Written by
-# enrollment / bundle export / relay self-signing — never by hand.
-mode_auth:
-  sig: "base64-ed25519-signature"
-  issuer: "base64-ed25519-public-key"
 ```
 
 ## Field reference
@@ -185,7 +179,6 @@ mode_auth:
 | `log_level` | string | `info` | Log verbosity. One of `debug`, `info`, `warn`, `error`. |
 | `log_format` | string | `text` | Log output format. `text` (human-readable) or `json` (OpenTelemetry semantic-convention attribute names). Also set via `--log-format`. |
 | `proxy` | string | _(empty)_ | Outbound proxy URL for all connections. |
-| `mode_auth` | object | _(absent)_ | Detached ed25519 signature making `mode` tamper-evident (`sig` + `issuer`, both base64). A present-but-invalid signature makes role commands fail; an absent one is legacy-tolerated with a warning (a relay re-signs itself). Not a security boundary — see [Security](../security/index.md). |
 
 ### `xray` section
 
@@ -285,9 +278,9 @@ contexts:
 Prefer the CLI/dashboard over hand-editing: config mutations go through
 validated setters that persist atomically (`tw proxy set`, `tw client
 listen`, the dashboard settings pages). `tw config view` prints the active
-file (add `--as-json` for JSON output). Note that hand-editing the `mode`
-field breaks the `mode_auth`
-signature and makes role commands fail.
+file (add `--as-json` for JSON output). The `mode` field only steers which
+commands run locally; the role boundary is the relay's `authorized_keys` and
+the mTLS chain (see [Security](../security/index.md)).
 
 ## Config change detection
 

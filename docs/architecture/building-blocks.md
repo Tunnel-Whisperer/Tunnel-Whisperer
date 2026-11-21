@@ -58,7 +58,7 @@ The server brings up its internal services:
 - **API Server** -- a gRPC service exposing status and management operations (`:50051`)
 - **Dashboard** -- started alongside the server when `server.dashboard_port` is set
 
-A server that is not the relay admin's own machine joins via a zero-file invite: the relay admin mints a one-time code (`tw relay invite`), the server redeems it (`tw join <relay-host> <code>`), a SPAKE2 exchange derives a shared key from the code, both sides display a short authentication string (SAS) that the humans read back to each other, and only on an exact match does the relay admin's side enroll the tenant and hand back the grant (relay host, path, port, mode signature) over the same encrypted channel.
+A server that is not the relay admin's own machine joins via a zero-file invite: the relay admin mints a one-time code (`tw relay invite`), the server redeems it (`tw join <relay-host> <code>`), a SPAKE2 exchange derives a shared key from the code, both sides display a short authentication string (SAS) that the humans read back to each other, and only on an exact match does the relay admin's side enroll the tenant and hand back the grant (relay host, path, port) over the same encrypted channel.
 
 ### Relay
 
@@ -148,7 +148,7 @@ tw/
 │   └── tw/                             # binary entry point (main.go)
 ├── internal/
 │   ├── cli/                            # cobra commands, grouped by role
-│   │   ├── root.go                     # root command, --log-level/--log-format/--config-dir, requireMode() + mode signature check
+│   │   ├── root.go                     # root command, --log-level/--log-format/--config-dir, requireMode()
 │   │   ├── groups.go                   # tw server / tw server user command groups
 │   │   ├── relay.go                    # tw relay group (relay role)
 │   │   ├── create_relay.go             # tw relay create (wizard; cloud or manual, --ssh-open)
@@ -176,7 +176,7 @@ tw/
 │   │   ├── completion.go               # shell completion
 │   │   └── coverage_test.go            # fails the build unless e2e/coverage.yaml maps every command
 │   ├── config/                         # YAML config, platform-specific paths
-│   │   ├── config.go                   # Load/Save, Dir/RelayDir/UsersDir, FileHash(), ModeAuth, CanonicalMode
+│   │   ├── config.go                   # Load/Save, Dir/RelayDir/UsersDir, FileHash(), CanonicalMode
 │   │   └── context.go                  # context index (contexts.yaml), ContextsDir, ShortID
 │   ├── pki/                            # per-server CA + client cert issuance (ECDSA P-256)
 │   │   └── pki.go                      # GenerateCA(), IssueClientCert(), GenerateKeyAndCSR(), SignClientCSR() — the last two back the invite flow's client-local CSRs
@@ -190,7 +190,6 @@ tw/
 │   ├── auth/                           # auth primitives (Credentials, Claims, JWT provider)
 │   ├── ops/                            # business logic shared by CLI + dashboard
 │   │   ├── ops.go                      # Ops struct, config change detection, lifecycle
-│   │   ├── modeauth/                   # ed25519 signature over (mode, identity) — tamper-evidence
 │   │   ├── keys.go                     # SSH key + CA/client-cert management (ensureCerts, applyClientCertPaths)
 │   │   ├── identity.go                 # serverID (resolve once, persist xray.server_id), enrollPort (tunnel port + 20000)
 │   │   ├── join.go                     # JoinRequest/JoinResponse payload types (now travel inside invite grants, not files)

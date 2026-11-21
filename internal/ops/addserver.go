@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -13,7 +12,6 @@ import (
 
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/cryptobox"
-	"github.com/tunnelwhisperer/tw/internal/ops/modeauth"
 	"github.com/tunnelwhisperer/tw/internal/pki"
 	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
 )
@@ -92,17 +90,6 @@ func buildLocalServerConfig(ident *localServerIdentity, resp *JoinResponse, live
 	scfg.Xray.Path = resp.Path
 	scfg.Server.RemotePort = resp.RemotePort
 	scfg.Server.RelaySSHUser = resp.SSHUser
-
-	// The signature must verify against the bundle's own identity before it is
-	// stored — a signature that doesn't would brick the context (every command
-	// would fail "mode signature invalid"). Degrade to legacy-unsigned instead.
-	if resp.ModeSig != "" && resp.ModeIssuer != "" {
-		if err := modeauth.Verify("server", strings.TrimSpace(string(ident.sshPub)), resp.ModeSig, resp.ModeIssuer); err != nil {
-			slog.Warn("mode signature from local enroll does not verify; storing profile unsigned", "error", err)
-		} else {
-			scfg.ModeAuth = &config.ModeAuth{Sig: resp.ModeSig, Issuer: resp.ModeIssuer}
-		}
-	}
 
 	// Both contexts live on this machine: if the relay profile holds the same
 	// daemon ports the new context would get, the two daemons could never run
@@ -189,8 +176,7 @@ func sealLocalServerBundle(ident *localServerIdentity, scfg *config.Config) ([]b
 // stores the result as a new, ready-to-use context — the single-operator
 // alternative to the join-request/response file handshake. The whole exchange
 // runs in-process: the server identity is generated in memory, enrolled via
-// EnrollServer (which signs mode_auth with the relay key, so the context is
-// born signed), and sealed straight into the context store. The live relay
+// EnrollServer, and sealed straight into the context store. The live relay
 // profile is never modified.
 func (o *Ops) AddLocalServer(name string, progress ProgressFunc) (*LocalServerResult, error) {
 	// Fail before EnrollServer: it enrolls the tenant on the relay, so a

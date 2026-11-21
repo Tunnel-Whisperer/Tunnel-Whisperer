@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	gossh "golang.org/x/crypto/ssh"
@@ -17,7 +16,6 @@ import (
 
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/enroll"
-	"github.com/tunnelwhisperer/tw/internal/ops/modeauth"
 	"github.com/tunnelwhisperer/tw/internal/pki"
 	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
 )
@@ -252,8 +250,8 @@ func (o *Ops) InviteUser(req CreateUserRequest, ttl time.Duration, ui InviteUI, 
 			}
 			// Canonicalize the enrollee's key and reject any trailing data, then
 			// use the normalized value everywhere downstream (id_ed25519.pub,
-			// authorized_keys, the undo, and the mode signature) so a newline
-			// can't inject an unrestricted authorized_keys line on the server.
+			// authorized_keys, and the undo) so a newline can't inject an
+			// unrestricted authorized_keys line on the server.
 			canonKey, err := canonicalAuthorizedKey(off.SSHPubkey)
 			if err != nil {
 				h.Deny()
@@ -396,13 +394,6 @@ func (o *Ops) grantClient(cfg config.Config, req CreateUserRequest, off *enroll.
 		RelayHost: cfg.Xray.RelayHost, RelayPort: cfg.Xray.RelayPort, Path: cfg.Xray.Path,
 		SSHUser: req.Name, ServerSSHPort: cfg.Server.RemotePort, ServerHostKey: serverHostKey,
 		Tunnels: tunnels, ClientCertPEM: string(certPEM),
-	}
-	// Sign the client's mode against ITS pubkey. Best-effort: an unsigned
-	// grant still works.
-	if priv, perr := profilePrivPEM(); perr == nil {
-		if sig, issuer, serr := modeauth.Sign(priv, "client", strings.TrimSpace(off.SSHPubkey)); serr == nil {
-			g.ModeSig, g.ModeIssuer = sig, issuer
-		}
 	}
 	return json.Marshal(g)
 }

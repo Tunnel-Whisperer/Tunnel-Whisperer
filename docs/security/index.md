@@ -48,11 +48,9 @@ SSH on the relay is management plumbing, not a user-facing surface:
 
 ---
 
-## Signed mode (tamper-evidence, not a boundary)
+## The `mode` field is not a boundary
 
-Each profile's `mode` field (`relay`/`server`/`client`) carries an ed25519 signature (`mode_auth`) over the mode and the profile's identity key — issued by the relay at enrollment (servers), by the server at user export (clients), or self-signed (the relay itself). A hand-edited mode fails verification and the role's commands refuse to run.
-
-This is **tamper-evidence, not the security boundary**. A user who controls their machine can always rebuild a profile; doing so gains no power, because the real role boundary lives on the relay — the `authorized_keys` restrictions above and the mTLS trust chain — which key possession, not a config field, decides.
+Each profile's `mode` field (`relay`/`server`/`client`) only steers which commands run locally. The role boundary is the relay's `authorized_keys` restrictions above and the mTLS trust chain, which key possession, not a config field, decides. A user who controls their machine can edit `mode` or rebuild a profile; doing so gains no power.
 
 ---
 

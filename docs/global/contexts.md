@@ -91,7 +91,7 @@ tw server start
 ```
 
 One command enrolls a freshly generated server identity on the relay and
-stores it as a new, mode-signed context (`--switch` also activates it). The
+stores it as a new context (`--switch` also activates it). The
 relay context is untouched, and the new context gets its own dashboard/API
 ports so both daemons can run side by side. See
 [Tenant Management](../relay/tenants.md#same-machine-self-enrollment).
@@ -195,7 +195,7 @@ This mints a one-time code carrying alice's port mappings, and blocks waiting fo
 sudo tw join relay.example.com <code>
 ```
 
-Both sides show a short authentication string; she reads hers aloud, the server operator approves on an exact match, and her SSH key (generated locally — it never transits) plus a signed CSR complete the exchange. The result lands as a ready, mode-signed **client** context on her machine — activated immediately if it's a fresh install, otherwise `tw config use-context <name>` to switch to it. See [Users](../server/users.md) and [Tenants — enrolling a server](../relay/tenants.md#enrolling-a-server) for the full invite mechanics (the client and server flows share the same code+SAS design).
+Both sides show a short authentication string; she reads hers aloud, the server operator approves on an exact match, and her SSH key (generated locally — it never transits) plus a signed CSR complete the exchange. The result lands as a ready **client** context on her machine — activated immediately if it's a fresh install, otherwise `tw config use-context <name>` to switch to it. See [Users](../server/users.md) and [Tenants — enrolling a server](../relay/tenants.md#enrolling-a-server) for the full invite mechanics (the client and server flows share the same code+SAS design).
 
 ## Tab Completion
 

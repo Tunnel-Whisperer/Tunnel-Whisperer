@@ -80,7 +80,7 @@ sudo tw join relay.example.com <code>
 
 Both terminals now show a short authentication string (SAS). Read yours aloud to the relay admin.
 
-**On the relay admin's machine:** confirm the read-back matches and approve. Enrollment then runs the usual live steps (you'll see `Caddyfile reloaded`), and the grant — relay host, path, port, SSH user, mode signature — comes back over the same encrypted channel.
+**On the relay admin's machine:** confirm the read-back matches and approve. Enrollment then runs the usual live steps (you'll see `Caddyfile reloaded`), and the grant — relay host, path, port, SSH user — comes back over the same encrypted channel.
 
 **On server1** (once `tw join` reports the context created — it's activated automatically on this freshly-installed machine):
 
@@ -173,7 +173,7 @@ A user (and its context) belongs to one server, but clients handle multiple via 
 
 ## Gotchas
 
-- Roles are enforced and signed: a client box can't run `tw server ...` commands and vice versa. If you set up a machine in the wrong role, wipe its tw config dir and start that machine's steps over.
+- Roles are enforced: a client box can't run `tw server ...` commands and vice versa. If you set up a machine in the wrong role, wipe its tw config dir and start that machine's steps over.
 - The relay VM's SSH is tunnel-only after install — the relay admin reaches it via `tw relay ssh`. If you provisioned with `--ssh-open`, the relay admin key also works directly over port 22 (close it later from the dashboard's relay page).
 - A user's port mappings are fixed at enrollment — there is no edit command. To change them, delete the user and invite them again under the same name (a "renew").
 - To kick a server off the relay: relay admin runs `tw relay un-enroll-server <server-id> --yes`; to revoke a client: server runs `tw server user unregister <name>` / `delete <name>` (takes effect on their next connection attempt).

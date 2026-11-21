@@ -168,9 +168,9 @@ func testContexts(t *testing.T) {
 		fatalf(t, "use-context completion missing name %q or id %q:\n%s", name, id, compOut)
 	}
 
-	// The relay profile's mode is tamper-evidently signed (mode_auth block).
-	if viewOut := execIn(t, "admin", "tw config view"); !strings.Contains(viewOut, "mode_auth:") {
-		fatalf(t, "relay profile is not mode-signed (no mode_auth: block):\n%s", viewOut)
+	// tw config view prints the active profile, including its role.
+	if viewOut := execIn(t, "admin", "tw config view"); !strings.Contains(viewOut, "mode: relay") {
+		fatalf(t, "tw config view does not show the relay mode:\n%s", viewOut)
 	}
 
 	// New empty context becomes current; the original is preserved (sealed).

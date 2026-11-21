@@ -50,7 +50,7 @@ Both server and client connect **outbound** to a lightweight relay VM on port 44
 
 ## Three Roles, One Binary
 
-The same `tw` binary plays three mutually exclusive roles, selected by its configured (and cryptographically signed) mode:
+The same `tw` binary plays three mutually exclusive roles, selected by its configured mode:
 
 - **Relay** — the relay admin who owns the relay VM: provisions it, holds the CA, enrolls servers (`tw relay …`)
 - **Server** — the server operator exposing services: joins a relay, creates users, runs the tunnel endpoint (`tw server …`)

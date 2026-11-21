@@ -6,7 +6,6 @@ package cli
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,8 +13,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/logging"
-	"github.com/tunnelwhisperer/tw/internal/ops"
-	"github.com/tunnelwhisperer/tw/internal/ops/modeauth"
 	"github.com/tunnelwhisperer/tw/internal/version"
 )
 
@@ -97,45 +94,7 @@ func requireMode(allowed ...string) error {
 	if err != nil {
 		return nil // can't determine mode, let the command proceed
 	}
-	if err := modeError(cfg.Mode, allowed); err != nil {
-		return err
-	}
-	return verifyModeAuth(cfg)
-}
-
-// verifyModeAuth enforces the tamper-evidence signature over cfg.Mode. An
-// unset mode is the bootstrap state and needs no signature. A present but
-// invalid signature is refused. A missing signature on a set mode is
-// legacy-tolerated with a one-time warning — except the relay, which holds
-// its own signing key and self-heals by re-signing. See internal/ops/modeauth:
-// this is tamper-evidence, not a security wall.
-func verifyModeAuth(cfg *config.Config) error {
-	if cfg.Mode == "" {
-		return nil // bootstrap: no mode set yet
-	}
-	if cfg.ModeAuth != nil {
-		// A present signature must verify. If the identity is missing we
-		// cannot verify it — fail closed rather than letting a deleted
-		// id_ed25519.pub bypass a present (possibly tampered) signature.
-		id, err := ops.ProfileIdentity()
-		if err != nil {
-			return fmt.Errorf("mode signature present but profile identity is unreadable; the profile is inconsistent")
-		}
-		if err := modeauth.Verify(cfg.Mode, id, cfg.ModeAuth.Sig, cfg.ModeAuth.Issuer); err != nil {
-			return fmt.Errorf("mode signature invalid — the 'mode' field was modified or the profile is inconsistent; re-enroll (server) / re-import (client) / re-create (relay)")
-		}
-		return nil
-	}
-	// mode_auth ABSENT (legacy / pre-setup):
-	if cfg.Mode == "relay" {
-		slog.Warn("relay profile unsigned; self-signing mode_auth", "mode", cfg.Mode)
-		if o, err := ops.New(); err == nil {
-			_ = o.StampAndSaveModeAuth() // best-effort self-heal
-		}
-		return nil
-	}
-	slog.Warn("mode is unsigned; re-enroll (server) or re-import (client) to sign it", "mode", cfg.Mode)
-	return nil
+	return modeError(cfg.Mode, allowed)
 }
 
 // modeError is the pure decision behind requireMode, split out for testing:

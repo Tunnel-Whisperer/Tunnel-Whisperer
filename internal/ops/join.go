@@ -37,8 +37,6 @@ type JoinResponse struct {
 	Path       string `json:"path"`
 	RemotePort int    `json:"remote_port"`
 	SSHUser    string `json:"ssh_user"`
-	ModeSig    string `json:"mode_sig,omitempty"`
-	ModeIssuer string `json:"mode_issuer,omitempty"`
 }
 
 // validateServerIdentity checks the tenant identity a join request carries and

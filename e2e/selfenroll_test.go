@@ -13,13 +13,12 @@ import (
 
 // testSelfEnroll drives the single-operator shortcut: the admin machine
 // enrolls ITSELF as a server tenant with one command — no join/response
-// files, no context switching mid-flow — and the resulting context is born
-// mode-signed and immediately usable.
+// files, no context switching mid-flow — and the resulting context is
+// immediately usable.
 func testSelfEnroll(t *testing.T) {
 	scenario(t, "the admin machine self-enrolls as a server tenant in one command (single-operator flow)",
 		"tw relay add-server enrolls a locally-generated identity and stores it as a new context, without touching the relay context",
 		"daemon ports are de-conflicted so relay and server contexts can run side by side",
-		"the new context is born mode-signed: config carries mode_auth and no 'mode is unsigned' warning appears",
 		"tw server test passes from the new context (identity, mTLS admission, relay SSH auth all live)",
 		"tw server start publishes the reverse tunnel: the relay LISTENs on the allocated port",
 		"cleanup: un-enroll + delete-context restore the prior topology; the admin's relay tunnel still works")
@@ -45,11 +44,6 @@ func testSelfEnroll(t *testing.T) {
 	})
 	log := execIn(t, "admin", "cat /shared/selfenroll.log")
 
-	// The whole point of the single-operator flow: the born-signed profile
-	// must never have printed the legacy-unsigned warning.
-	if strings.Contains(log, "mode is unsigned") {
-		fatalf(t, "add-server printed the unsigned-mode warning:\n%s", log)
-	}
 	row := regexp.MustCompile(`server-id (\S+), port (\d+)\)`).FindStringSubmatch(log)
 	if row == nil {
 		fatalf(t, "add-server output missing server-id/port:\n%s", log)
@@ -70,17 +64,11 @@ func testSelfEnroll(t *testing.T) {
 		fatalf(t, "admin tunnel broken after add-server:\n%s", out)
 	}
 
-	// Switch into the new context: it must be signed and immediately usable.
+	// Switch into the new context: it must be immediately usable.
 	execIn(t, "admin", "tw config use-context selfsrv")
-	if viewOut := execIn(t, "admin", "tw config view"); !strings.Contains(viewOut, "mode_auth:") {
-		fatalf(t, "self-enrolled profile is not mode-signed (no mode_auth: block):\n%s", viewOut)
-	}
 	testOut := execIn(t, "admin", "tw server test 2>&1")
 	if !strings.Contains(testOut, "tunnel and tenant request channel working") {
 		fatalf(t, "self-enrolled server test failed:\n%s", testOut)
-	}
-	if strings.Contains(testOut, "mode is unsigned") {
-		fatalf(t, "self-enrolled context still warns 'mode is unsigned':\n%s", testOut)
 	}
 
 	// The daemon publishes the reverse tunnel on the allocated relay port.

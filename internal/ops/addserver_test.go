@@ -14,8 +14,6 @@ import (
 
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/cryptobox"
-	"github.com/tunnelwhisperer/tw/internal/ops/modeauth"
-	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
 )
 
 func TestDefaultLocalServerContextName(t *testing.T) {
@@ -38,19 +36,9 @@ func TestBuildLocalServerConfig(t *testing.T) {
 		t.Fatalf("newLocalServerIdentity: %v", err)
 	}
 
-	// Sign the response like the relay does: over the identity's own pubkey.
-	issuerPriv, _, err := twssh.GenerateKeyPair()
-	if err != nil {
-		t.Fatal(err)
-	}
-	sig, issuer, err := modeauth.Sign(issuerPriv, "server", strings.TrimSpace(string(ident.sshPub)))
-	if err != nil {
-		t.Fatalf("signing: %v", err)
-	}
 	resp := &JoinResponse{
 		Version: 1, ServerID: ident.serverID, RelayHost: "relay.example.com",
 		Path: "/tw/" + ident.serverID, RemotePort: 20003, SSHUser: "ubuntu",
-		ModeSig: sig, ModeIssuer: issuer,
 	}
 
 	// Live relay profile is CONFIGURED (Mode set) and holds the defaults →
@@ -66,32 +54,11 @@ func TestBuildLocalServerConfig(t *testing.T) {
 		scfg.Server.RemotePort != 20003 || scfg.Server.RelaySSHUser != "ubuntu" {
 		t.Errorf("config fields wrong: %+v", scfg)
 	}
-	if scfg.ModeAuth == nil {
-		t.Fatal("valid signature was not stored")
-	}
-	if err := modeauth.Verify("server", strings.TrimSpace(string(ident.sshPub)), scfg.ModeAuth.Sig, scfg.ModeAuth.Issuer); err != nil {
-		t.Errorf("stored mode_auth does not verify: %v", err)
-	}
 	if scfg.Server.DashboardPort == live.Server.DashboardPort {
 		t.Errorf("dashboard port %d collides with the relay profile's", scfg.Server.DashboardPort)
 	}
 	if scfg.Server.APIPort == live.Server.APIPort {
 		t.Errorf("API port %d collides with the relay profile's", scfg.Server.APIPort)
-	}
-
-	// A signature over the WRONG identity must be dropped, not stored.
-	badSig, badIssuer, err := modeauth.Sign(issuerPriv, "server", "ssh-ed25519 AAAA someoneelse")
-	if err != nil {
-		t.Fatal(err)
-	}
-	badResp := *resp
-	badResp.ModeSig, badResp.ModeIssuer = badSig, badIssuer
-	scfg2, err := buildLocalServerConfig(ident, &badResp, live)
-	if err != nil {
-		t.Fatalf("buildLocalServerConfig (bad sig): %v", err)
-	}
-	if scfg2.ModeAuth != nil {
-		t.Error("non-verifying signature was stored; would brick the context")
 	}
 
 	// A CONFIGURED relay profile with custom daemon ports → the defaults are kept.

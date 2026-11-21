@@ -59,9 +59,8 @@ Caddyfile / Xray config, create this server's own relay account, and
 live-add the new tenant's Xray inbound — no restart, no disruption to other
 tenants.
 
-The result — relay host, path, allocated port, SSH user, and a signature
-binding your mode to your keypair — comes back over the same encrypted
-channel and is stored as a new context. The SSH user is this server's own
+The result — relay host, path, allocated port, and SSH user — comes back
+over the same encrypted channel and is stored as a new context. The SSH user is this server's own
 relay account (`twt-` followed by 24 hex characters). It can publish the server's
 reverse tunnel and manage the server's client UUIDs on the relay, and it
 has no shell (see [Tenants](../relay/tenants.md#tenant-accounts-on-the-relay)). If this machine had no active

@@ -15,7 +15,7 @@ import (
 func testUserLifecycle(t *testing.T) {
 	scenario(t, "a user is invited on the server, the client redeems the invite via tw join, and moves real bytes through the tunnel",
 		"tw server user invite alice mints a one-time code carrying her port mapping",
-		"tw join <relay-host> <code> on the client shows the SAS, gets approved, and creates a mode-signed client context named after the user",
+		"tw join <relay-host> <code> on the client shows the SAS, gets approved, and creates a client context named after the user",
 		"tw client connect opens the local tunnel port",
 		"a byte-for-byte echo round-trip (hello-tw-e2e) succeeds through relay + tunnel",
 		"tw client test: all three steps pass (DNS, HTTPS/mTLS, and an SSH auth handshake to the server's embedded SSH through the tunnel)",
@@ -45,10 +45,7 @@ func testUserLifecycle(t *testing.T) {
 	// same grant — no separate `apply` is required for her to be live. Run
 	// `apply` anyway (harmless, idempotent — see task-11-report.md) so
 	// e2e/coverage.yaml's mapping for "server user apply" stays true.
-	issuerLog, joinLog := runInviteExchange(t, "server", "tw server user invite alice -m "+userPort+":"+echoPort, "client", "tw join "+domain+" {code}")
-	if strings.Contains(issuerLog, "mode is unsigned") || strings.Contains(joinLog, "mode is unsigned") {
-		fatalf(t, "invite/join printed the unsigned-mode warning:\nissuer:\n%s\njoin:\n%s", issuerLog, joinLog)
-	}
+	_, joinLog := runInviteExchange(t, "server", "tw server user invite alice -m "+userPort+":"+echoPort, "client", "tw join "+domain+" {code}")
 	if !regexp.MustCompile(`Context "alice" \(client\) created\.`).MatchString(joinLog) {
 		fatalf(t, "join log missing the expected context-created line:\n%s", joinLog)
 	}
@@ -76,14 +73,8 @@ func testUserLifecycle(t *testing.T) {
 		fatalf(t, "imported context not named after the user: current-context = %q, want alice", curCtx)
 	}
 
-	// The imported client bundle's mode is tamper-evidently signed.
-	if viewOut := execIn(t, "client", "tw config view"); !strings.Contains(viewOut, "mode_auth:") {
-		fatalf(t, "imported client profile is not mode-signed (no mode_auth: block):\n%s", viewOut)
-	}
-
 	// The client-role gate refuses a server-only command outright — proving
-	// requireMode's cross-role check, not just the mode-signature check
-	// exercised in ServerJoin's tamper test. `tw server join-relay` (used
+	// requireMode's cross-role check. `tw server join-relay` (used
 	// here previously) no longer exists (file-based enrollment removed);
 	// `tw server test` is an equally simple, side-effect-free server-mode
 	// command that hits the same requireMode("server") gate.

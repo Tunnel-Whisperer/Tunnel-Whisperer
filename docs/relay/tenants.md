@@ -35,8 +35,8 @@ sequenceDiagram
     S->>A: reads the SAS aloud
     A->>A: confirms exact match, approves
     A->>R: write CA cert, rewrite Caddyfile + relay admin authorized_keys,<br/>create the tenant's relay account, live-add Xray inbound (no restart)
-    A->>S: encrypted grant (relay coords, mode signature)
-    S->>S: stores a ready, mode-signed context (auto-activated)
+    A->>S: encrypted grant (relay coords)
+    S->>S: stores a ready context (auto-activated)
     S->>R: tw server start — tunnel comes up
 ```
 
@@ -74,7 +74,7 @@ Once approved, `tw join`:
    before (register, build the tenant list, apply relay config, live-add the
    Xray inbound, done); nothing here changed except how the request/response
    travel.
-3. **Stores the result** — a new, mode-signed context, named
+3. **Stores the result** — a new context, named
    `--name` or auto-derived from the relay host. On a fresh machine with no
    active profile it's activated immediately; otherwise switch to it with
    `tw config use-context <name>`.
@@ -138,8 +138,6 @@ Notes:
 
 - The active relay context is never modified, and no `tw_join_*.json` files
   are written.
-- The new context is **born mode-signed** — none of the "mode is unsigned"
-  warnings that appear mid-way through the file-based handshake.
 - If the relay context uses the default dashboard/API ports, the new context
   gets free ones (printed on creation), so both contexts' daemons can run
   side by side on the one machine.

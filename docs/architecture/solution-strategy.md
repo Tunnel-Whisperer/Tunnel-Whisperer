@@ -87,7 +87,6 @@ graph LR
 | Multiple servers on one relay | Per-tenant VLESS inbound on `127.0.0.1:<remote-port>+10000`, per-tenant Caddy `handle`, per-tenant allow/deny routing rules | `internal/relay/{caddy,xray}` |
 | Relay must not become an open proxy | Freedom outbound carries `finalRules` allowing loopback only; each tenant's allow rule permits exactly ports 22 + its own remote port, then a blackhole deny | Xray routing + freedom `finalRules` |
 | Adding a server must not disrupt others | Enrollment live-adds the tenant's inbound + rules over the Xray gRPC API (`:10085`, loopback, reached over the relay admin's SSH tunnel) — no Xray restart | `AddInbound` / `AddRule` via `internal/ops/enroll.go` |
-| Hand-edited role field | Config `mode` is ed25519-signed against the profile's own identity (tamper-evidence, not a security wall) | `internal/ops/modeauth` |
 | Multiple relays / identities per machine | kubectl-style contexts: sealed profile bundles switched with `tw config use-context` | `internal/ops/context.go` + `internal/cryptobox` |
 | Per-user access control | Identity and authorization live entirely on the on-prem server — no external control plane; each user key grants specific `host:port` targets only, never network/overlay reachability | SSH `authorized_keys` + `permitopen` (+ optional `single-session`) |
 | Infrastructure provisioning | Interactive wizard generates Terraform + cloud-init, or an install script for a bring-your-own VM | Terraform (Hetzner, DigitalOcean, AWS) / manual install script |

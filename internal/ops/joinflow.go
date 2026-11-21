@@ -18,7 +18,6 @@ import (
 	"github.com/tunnelwhisperer/tw/internal/config"
 	"github.com/tunnelwhisperer/tw/internal/cryptobox"
 	"github.com/tunnelwhisperer/tw/internal/enroll"
-	"github.com/tunnelwhisperer/tw/internal/ops/modeauth"
 	"github.com/tunnelwhisperer/tw/internal/pki"
 	twssh "github.com/tunnelwhisperer/tw/internal/ssh"
 )
@@ -117,8 +116,8 @@ func clientContextName(name, username string) string {
 	return config.DefaultContextName("client", "", username)
 }
 
-// applyServerGrant turns an issuer's JoinResponse grant into a stored,
-// mode-signed server context — the remote sibling of AddLocalServer's tail.
+// applyServerGrant turns an issuer's JoinResponse grant into a stored
+// server context — the remote sibling of AddLocalServer's tail.
 func (o *Ops) applyServerGrant(ident *localServerIdentity, grant []byte, name string) (*JoinResult, error) {
 	resp, err := DecodeJoinResponse(grant)
 	if err != nil {
@@ -176,8 +175,7 @@ func (c *clientMaterial) makeOffer(username string) ([]byte, error) {
 
 // applyClientGrant turns the issuer's grant into a stored client context:
 // preflights every granted local port on THIS machine (prompting for
-// replacements), verifies the mode signature against our own pubkey, and
-// seals config + keys + signed cert into a context bundle.
+// replacements), and seals config + keys + signed cert into a context bundle.
 func (o *Ops) applyClientGrant(c *clientMaterial, grant []byte, name string, ui JoinUI) (*JoinResult, error) {
 	var g enroll.ClientGrant
 	if err := json.Unmarshal(grant, &g); err != nil {
@@ -208,13 +206,6 @@ func (o *Ops) applyClientGrant(c *clientMaterial, grant []byte, name string, ui 
 			}
 		}
 		ccfg.Client.Tunnels = append(ccfg.Client.Tunnels, t)
-	}
-	if g.ModeSig != "" && g.ModeIssuer != "" {
-		if err := modeauth.Verify("client", strings.TrimSpace(string(c.sshPub)), g.ModeSig, g.ModeIssuer); err != nil {
-			slog.Warn("mode signature from invite does not verify; storing profile unsigned", "error", err)
-		} else {
-			ccfg.ModeAuth = &config.ModeAuth{Sig: g.ModeSig, Issuer: g.ModeIssuer}
-		}
 	}
 	cfgYAML, err := yaml.Marshal(ccfg)
 	if err != nil {

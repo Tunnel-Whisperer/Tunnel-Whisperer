@@ -30,7 +30,7 @@ Both terminals then show a short authentication string (SAS); the enrollee reads
 
 - the client machine generates its own ed25519 SSH key pair **and** a certificate signing request locally — neither private key ever transits;
 - the server signs the CSR with its CA, registers the client's Xray UUID on the relay, and appends the public key to `authorized_keys` with `permitopen` restrictions. The UUID must be in canonical lowercase form (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, as `tw join` generates it); any other form is refused and the enrollment denied, so a malformed UUID never reaches the relay's shared Xray config;
-- the signed certificate and the granted coordinates come back over the encrypted channel, and the client machine stores a ready, mode-signed **client** context — activated immediately on a fresh machine.
+- the signed certificate and the granted coordinates come back over the encrypted channel, and the client machine stores a ready **client** context — activated immediately on a fresh machine.
 
 There's no bundle file to send and nothing to protect in transit beyond the code itself, which the SAS check already covers. The server keeps only public material under `users/<name>/`.
 

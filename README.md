@@ -103,7 +103,7 @@ Client Network                   Public Cloud                    Server Network
 
 ## Three Roles, One Binary
 
-Every machine runs the same `tw` binary in one of three roles (the mode is set by `tw relay create`, `tw join` or `tw relay add-server`, then signed and enforced):
+Every machine runs the same `tw` binary in one of three roles (the mode is set by `tw relay create`, `tw join` or `tw relay add-server`, then enforced):
 
 - **Relay (relay admin):** owns the relay VM — provisions it, enrolls/removes servers, holds the keys.
 - **Server:** joins a relay (enrolled as a tenant of it), publishes its reverse tunnel, manages client users.
@@ -197,7 +197,6 @@ Structured by role — with dynamic tab completion for contexts, users, and serv
 - **No signing keys** on the relay — it holds only public CA certificates; compromise does not expose user data
 - **Least privilege** — each user can only forward to explicitly allowed ports; each enrolled server has its own relay account with a forced command (no shell, no sudo), pinned to the tunnel
 - **Dynamic keys** — add/revoke users without restarting the server (authorized_keys re-read on every auth and every forwarded channel; deleting a user ends their live sessions)
-- **Signed roles** — each machine's mode (relay/server/client) is ed25519-signed by its issuer; tampering is detected
 - **SSH your way** — relay SSH is tunnel-only by default; `--ssh-open` deliberately opens port 22 for the relay admin key, closable later from the dashboard
 
 > See [Security Documentation](https://tunnel-whisperer.github.io/Tunnel-Whisperer/security/) for encryption details, access control, and compliance properties.
